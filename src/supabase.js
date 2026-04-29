@@ -33,17 +33,35 @@ function generateCode() {
 }
 
 export async function sendGuestCode(email, adminUserId) {
-  const code = generateCode();
-  // Upsert le code pour cet email
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  
   const { error } = await supabase
     .from('guest_codes')
     .upsert({ email, code, created_by: adminUserId }, { onConflict: 'email' });
   if (error) return { error };
 
-  // Envoyer l'email via Supabase Edge Function ou directement
-  // Pour l'instant on stocke le code et on le retourne pour test
-  // En production: connecter à un service email (Resend, SendGrid etc.)
-  console.log(`Code pour ${email}: ${code}`); // À remplacer par vrai email
+  // Appel à la Vercel Function
+  await fetch('/api/send-email', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      to: email,
+      subject: 'Votre code d\'accès SplitLy',
+      html: `
+        <div style="font-family:Arial,sans-serif;max-width:400px;margin:auto;padding:32px">
+          <h2 style="color:#0F0F0F">SplitLy</h2>
+          <p>Voici votre code d'accès :</p>
+          <div style="font-size:36px;font-weight:700;letter-spacing:8px;color:#0F0F0F;padding:20px;background:#f5f5f5;border-radius:10px;text-align:center">
+            ${code}
+          </div>
+          <p style="color:#888;font-size:13px;margin-top:20px">
+            Entrez ce code sur la page d'accueil de SplitLy pour accéder aux événements partagés avec vous.
+          </p>
+        </div>
+      `,
+    }),
+  });
+
   return { code, error: null };
 }
 
