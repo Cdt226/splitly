@@ -216,8 +216,17 @@ function AuthScreen({ onAuth, onGuestAuth }) {
     if (!form.email) { setError("Entrez votre email."); return; }
     setLoading(true); setError("");
     // Vérifier que cet email a bien une invitation
-    const { data: invites } = await supabase.from('invitations').select('*').eq('email', form.email);
-    if (!invites || invites.length === 0) { setError("Aucune invitation trouvée pour cet email."); setLoading(false); return; }
+
+const { data: invites } = await supabase
+  .from('invitations')
+  .select('*')
+  .eq('email', form.email);
+if (!invites || invites.length === 0) { 
+  setError("Aucune invitation trouvée pour cet email."); 
+  setLoading(false); 
+  return; 
+}
+
     // Générer et envoyer le code (pour l'instant on l'affiche en alert pour test)
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     await supabase.from('guest_codes').upsert({ email: form.email, code }, { onConflict: 'email' });
