@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import LandingPage from "./LandingPage.jsx";
 import {
   supabase, signUp, signIn, signOut, getSession,
   fetchEvents, createEvent, updateEventStatus, deleteEvent,
@@ -69,6 +70,14 @@ function useToast() {
 // ─── LOGIQUE MÉTIER ───────────────────────────────────────────
 const currencySymbol = (c) => c?.split(" ")[1] || "€";
 
+// Séparateur de milliers + 2 décimales
+function fmt(amount, sym = "") {
+  const n = Number(amount) || 0;
+  const parts = n.toFixed(2).split(".");
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, "\u00A0"); // espace insécable
+  return sym ? `${parts.join(".")} ${sym}` : parts.join(".");
+}
+
 function computeOwed(expenses, person) {
   return expenses.reduce((sum, ex) => {
     const inc = ex.included || [];
@@ -81,7 +90,25 @@ function computeNetBalance(expenses, contributions, person) {
   return (contributions[person] || 0) - computeOwed(expenses, person);
 }
 
+// Soldé strictement = écart ≤ 1 unité de monnaie
 const isSettled = (net) => Math.abs(net) <= 1;
+// Soldé exactement = écart = 0 (pour les messages)
+const isExactlySettled = (net) => Math.abs(net) < 0.01;
+
+// Statut solde lisible
+function settleStatus(net) {
+  if (isExactlySettled(net)) return { label: "✓ Soldé", color: "#2E7D32", bg: "#E8F5E9" };
+  if (isSettled(net)) return { label: "≈ Quasi soldé", color: "#2E7D32", bg: "#E8F5E9" };
+  if (net > 0) return { label: `+${fmt(net)} à recevoir`, color: "#1565C0", bg: "#E3F2FD" };
+  return { label: `${fmt(net)} à payer`, color: "#C62828", bg: "#fff5f5" };
+}
+
+// Validation montant
+function validateAmount(qty, unit) {
+  if (!qty || Number(qty) <= 0) return "La quantité doit être supérieure à 0.";
+  if (!unit || Number(unit) <= 0) return "Le prix unitaire doit être supérieur à 0.";
+  return null;
+}
 
 function computeTransactions(expenses, contributions, participants) {
   const nets = {};
@@ -270,8 +297,8 @@ function StatCard({ label, value, sub, color = "#f8f8f8", accent }) {
 }
 
 // ─── AUTH SCREEN ──────────────────────────────────────────────
-function AuthScreen({ onAuth, onGuestAuth }) {
-  const [mode, setMode] = useState("login");
+function AuthScreen({ onAuth, onGuestAuth, initialMode, onClose }) {
+  const [mode, setMode] = useState(initialMode || "login");
   const [form, setForm] = useState({ email: "", password: "", name: "", code: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -328,6 +355,11 @@ function AuthScreen({ onAuth, onGuestAuth }) {
       <div style={{ background: "#fff", borderRadius: 20, padding: 36, width: "100%", maxWidth: 400, boxShadow: "0 8px 40px rgba(0,0,0,0.1)" }}>
         {/* Logo */}
         <div style={{ textAlign: "center", marginBottom: 28 }}>
+          {onClose && (
+            <button onClick={onClose} style={{ background: "none", border: "none", color: "#aaa", fontSize: 13, cursor: "pointer", marginBottom: 12, display: "flex", alignItems: "center", gap: 4, margin: "0 auto 12px" }}>
+              ← Retour à l'accueil
+            </button>
+          )}
           <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 32, fontWeight: 700, letterSpacing: -1 }}>SplitLy</div>
           <div style={{ color: "#aaa", fontSize: 13, marginTop: 4 }}>Gestion de dépenses partagées</div>
         </div>
@@ -656,9 +688,9 @@ function GuestBalance({ events, expenses, contributions }) {
             <div key={p} style={{ background: "#fff", borderRadius: 14, padding: "16px 12px", border: `2px solid ${settled ? "#c8e6c9" : "#eee"}`, textAlign: "center" }}>
               <Avatar name={p} size={36} />
               <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p}</div>
-              <div style={{ fontSize: 10, color: "#aaa", marginTop: 3 }}>Doit: {owed.toFixed(2)}</div>
-              <div style={{ marginTop: 5, fontSize: 14, fontWeight: 700, color: settled ? "#2E7D32" : net > 0 ? "#1565C0" : "#C62828" }}>
-                {settled ? "✓ Soldé" : `${net > 0 ? "+" : ""}${net.toFixed(2)} ${sym}`}
+              <div style={{ fontSize: 10, color: "#aaa", marginTop: 3 }}>Doit: {fmt(owed, sym)}</div>
+              <div style={{ marginTop: 6, padding: "4px 6px", borderRadius: 8, background: settleStatus(net).bg, fontSize: 12, fontWeight: 700, color: settleStatus(net).color }}>
+                {settleStatus(net).label}
               </div>
             </div>
           );
@@ -676,7 +708,7 @@ function GuestBalance({ events, expenses, contributions }) {
                 <span style={{ fontWeight: 600 }}><Truncate text={t.to} max={12} /></span>
               </div>
               <Avatar name={t.to} size={28} />
-              <div style={{ fontSize: 15, fontWeight: 700, flexShrink: 0 }}>{t.amount.toFixed(2)} {sym}</div>
+              <div style={{ fontSize: 15, fontWeight: 700, flexShrink: 0 }}>{fmt(t.amount, sym)}</div>
             </div>
           ))
         )}
@@ -801,13 +833,14 @@ function Dashboard({ events, expenses, user, isMobile }) {
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
           <div style={{ background: "#fff", borderRadius: 16, padding: 20, border: "1px solid #eee" }}>
             <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Dépenses par catégorie</div>
+            <div style={{ fontSize: 11, color: "#aaa", marginBottom: 12 }}>Toutes devises confondues — voir Analyses pour le détail par événement</div>
             {byCategory.length === 0 ? <div style={{ color: "#ccc", fontSize: 13 }}>Aucune charge enregistrée</div> : byCategory.map(c => (
               <div key={c.cat} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
                 <span style={{ fontSize: 18, flexShrink: 0 }}>{CATEGORIES[c.cat].icon}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                     <span style={{ fontSize: 12 }}>{c.cat}</span>
-                    <span style={{ fontSize: 12, fontWeight: 700 }}>{c.total.toFixed(2)} € ({grandTotal > 0 ? ((c.total / grandTotal) * 100).toFixed(0) : 0}%)</span>
+                    <span style={{ fontSize: 12, fontWeight: 700 }}>{fmt(c.total)} ({grandTotal > 0 ? ((c.total / grandTotal) * 100).toFixed(0) : 0}%)</span>
                   </div>
                   <div style={{ background: "#f0f0f0", borderRadius: 6, height: 6 }}>
                     <div style={{ background: CATEGORIES[c.cat].accent, borderRadius: 6, height: 6, width: `${grandTotal > 0 ? (c.total / grandTotal) * 100 : 0}%`, transition: "width 0.5s" }} />
@@ -821,16 +854,17 @@ function Dashboard({ events, expenses, user, isMobile }) {
             {events.slice(0, 5).map((ev, i) => {
               const evTotal = expenses.filter(e => e.event_id === ev.id).reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
               const participants = (ev.event_participants || []).map(p => p.name);
+              const sym = currencySymbol(ev.currency);
               return (
                 <div key={ev.id} style={{ display: "flex", alignItems: "center", gap: 12, paddingBottom: 12, marginBottom: 12, borderBottom: i < Math.min(events.length, 5) - 1 ? "1px solid #f5f5f5" : "none" }}>
                   <div style={{ width: 36, height: 36, borderRadius: 10, background: ev.status === "closed" ? "#f5f5f5" : "#f0faf4", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>{ev.status === "closed" ? "🔒" : "🎊"}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.name}</div>
-                    <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>{ev.date} · {participants.length} participant{participants.length > 1 ? "s" : ""}</div>
+                    <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>{ev.date} · {participants.length} participant{participants.length > 1 ? "s" : ""} · {sym}</div>
                   </div>
                   <div style={{ textAlign: "right", flexShrink: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700 }}>{evTotal.toFixed(2)} {currencySymbol(ev.currency)}</div>
-                    <div style={{ fontSize: 10, color: "#aaa" }}>collectif</div>
+                    <div style={{ fontSize: 13, fontWeight: 700 }}>{fmt(evTotal, sym)}</div>
+                    <div style={{ fontSize: 10, color: "#aaa" }}>budget collectif</div>
                   </div>
                 </div>
               );
@@ -1042,7 +1076,7 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
                     )}
                   </div>
                   <div style={{ textAlign: "right", flexShrink: 0 }}>
-                    <div style={{ fontSize: 17, fontWeight: 700, fontFamily: "'Playfair Display', serif", marginBottom: 2 }}>{evTotal.toFixed(2)} {currencySymbol(ev.currency)}</div>
+                    <div style={{ fontSize: 17, fontWeight: 700, fontFamily: "'Playfair Display', serif", marginBottom: 2 }}>{fmt(evTotal, currencySymbol(ev.currency))}</div>
                     <div style={{ fontSize: 10, color: "#aaa", marginBottom: 10 }}>budget collectif</div>
                     {ev.status === "open" && (
                       <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
@@ -1089,9 +1123,11 @@ function Expenses({ events, expenses, user, reload, isMobile, addToast }) {
   const sharePerPerson = form.included.length > 0 ? total / form.included.length : 0;
 
   const handleSave = async () => {
-    if (!form.eventId || !form.category || !form.sub || !form.detail || !form.paidBy || form.included.length === 0 || total === 0) {
+    if (!form.eventId || !form.category || !form.sub || !form.detail || !form.paidBy || form.included.length === 0) {
       addToast("Veuillez remplir tous les champs.", "warning"); return;
     }
+    const amountError = validateAmount(form.qty, form.unit);
+    if (amountError) { addToast(amountError, "warning"); return; }
     setSaving(true);
     if (editingEx) {
       await updateExpense(editingEx.id, { ...form, qty: Number(form.qty), unit: Number(form.unit) }, user.id, editingEx);
@@ -1216,6 +1252,7 @@ function Expenses({ events, expenses, user, reload, isMobile, addToast }) {
           {filtered.map(ex => {
             const cat = CATEGORIES[ex.category];
             const ev = events.find(e => e.id === ex.event_id);
+            const evSym = currencySymbol(ev?.currency);
             const t = ex.qty * (ex.unit_price ?? 0);
             const inc = ex.included || [];
             const share = inc.length > 0 ? t / inc.length : 0;
@@ -1230,8 +1267,8 @@ function Expenses({ events, expenses, user, reload, isMobile, addToast }) {
                     </div>
                   </div>
                   <div style={{ textAlign: "right", flexShrink: 0 }}>
-                    <div style={{ fontSize: 16, fontWeight: 700 }}>{t.toFixed(2)}</div>
-                    <div style={{ fontSize: 11, color: "#2E7D32", fontWeight: 600 }}>{share.toFixed(2)}/p.</div>
+                    <div style={{ fontSize: 16, fontWeight: 700 }}>{fmt(t, evSym)}</div>
+                    <div style={{ fontSize: 11, color: "#2E7D32", fontWeight: 600 }}>{fmt(share, evSym)}/p.</div>
                   </div>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -1264,6 +1301,7 @@ function Expenses({ events, expenses, user, reload, isMobile, addToast }) {
               {filtered.map((ex, i) => {
                 const cat = CATEGORIES[ex.category];
                 const ev = events.find(e => e.id === ex.event_id);
+                const evSym = currencySymbol(ev?.currency);
                 const t = ex.qty * (ex.unit_price ?? 0);
                 const inc = ex.included || [];
                 const share = inc.length > 0 ? t / inc.length : 0;
@@ -1280,9 +1318,9 @@ function Expenses({ events, expenses, user, reload, isMobile, addToast }) {
                     <td style={{ padding: "11px 12px", fontSize: 13, maxWidth: 180 }}><Truncate text={ex.detail} max={25} /></td>
                     <td style={{ padding: "11px 12px", fontSize: 12, color: "#777", maxWidth: 140 }}><Truncate text={ev?.name} max={18} /></td>
                     <td style={{ padding: "11px 12px", fontSize: 13, textAlign: "center" }}>{ex.qty}</td>
-                    <td style={{ padding: "11px 12px", fontSize: 13, whiteSpace: "nowrap" }}>{(ex.unit_price ?? 0).toFixed(2)}</td>
-                    <td style={{ padding: "11px 12px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>{t.toFixed(2)}</td>
-                    <td style={{ padding: "11px 12px", fontSize: 12, color: "#2E7D32", fontWeight: 700, whiteSpace: "nowrap" }}>{share.toFixed(2)}</td>
+                    <td style={{ padding: "11px 12px", fontSize: 13, whiteSpace: "nowrap" }}>{fmt(ex.unit_price ?? 0, evSym)}</td>
+                    <td style={{ padding: "11px 12px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>{fmt(t, evSym)}</td>
+                    <td style={{ padding: "11px 12px", fontSize: 12, color: "#2E7D32", fontWeight: 700, whiteSpace: "nowrap" }}>{fmt(share, evSym)}</td>
                     <td style={{ padding: "11px 12px" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                         <Avatar name={ex.paid_by || "?"} size={20} />
@@ -1328,8 +1366,8 @@ function Balance({ events, expenses, contributions, user, reload, isMobile, addT
     const owed = computeOwed(evExp, person);
     const current = evContribMap[person] || 0;
     let newAmount, message;
-    if (net < -1) { newAmount = current + Math.abs(net); message = `Versement de ${Math.abs(net).toFixed(2)} ${sym} enregistré pour ${person}.`; }
-    else if (net > 1) { newAmount = owed; message = `Contribution de ${person} ajustée à ${owed.toFixed(2)} ${sym}. L'excédent est annulé.`; }
+    if (net < -1) { newAmount = current + Math.abs(net); message = `Versement de ${fmt(Math.abs(net), sym)} enregistré pour ${person}.`; }
+    else if (net > 1) { newAmount = owed; message = `Contribution de ${person} ajustée à ${fmt(owed, sym)}. L'excédent est annulé.`; }
     else return;
     setSettleModal({ person, newAmount, message });
   };
@@ -1351,7 +1389,7 @@ function Balance({ events, expenses, contributions, user, reload, isMobile, addT
     await upsertContribution(filterEvent, person, current + amount, user.id);
     await reload();
     setVersement(v => ({ ...v, [person]: "" }));
-    addToast(`Versement de ${amount.toFixed(2)} ${sym} enregistré pour ${person}.`, "success");
+    addToast(`Versement de ${fmt(amount, sym)} enregistré pour ${person}.`, "success");
     setSaving(false);
   };
 
@@ -1398,18 +1436,20 @@ function Balance({ events, expenses, contributions, user, reload, isMobile, addT
               const contrib = evContribMap[p] || 0;
               const net = contrib - owed;
               const settled = isSettled(net);
+              const status = settleStatus(net);
               return (
                 <div key={p} style={{ background: "#fff", borderRadius: 14, padding: "16px 12px", border: `2px solid ${settled ? "#c8e6c9" : Math.abs(net) > 10 ? "#ffcdd2" : "#eee"}`, textAlign: "center", transition: "border-color 0.2s" }}>
                   <Avatar name={p} size={36} />
                   <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p}</div>
-                  <div style={{ fontSize: 10, color: "#aaa", marginTop: 4 }}>Doit: {owed.toFixed(2)} {sym}</div>
-                  <div style={{ fontSize: 10, color: "#aaa" }}>Versé: {contrib.toFixed(2)} {sym}</div>
-                  <div style={{ marginTop: 6, fontSize: 14, fontWeight: 700, color: settled ? "#2E7D32" : net > 0 ? "#1565C0" : "#C62828" }}>
-                    {settled ? "✓ Soldé" : `${net > 0 ? "+" : ""}${net.toFixed(2)} ${sym}`}
+                  <div style={{ fontSize: 10, color: "#aaa", marginTop: 4 }}>Doit: {fmt(owed, sym)}</div>
+                  <div style={{ fontSize: 10, color: "#aaa" }}>Versé: {fmt(contrib, sym)}</div>
+                  <div style={{ marginTop: 8, padding: "5px 8px", borderRadius: 8, background: status.bg, fontSize: 12, fontWeight: 700, color: status.color }}>
+                    {status.label}
                   </div>
                   {!settled && ev?.status === "open" && (
                     <div style={{ marginTop: 10, display: "flex", gap: 4, justifyContent: "center", flexWrap: "wrap" }}>
-                      <input type="number" placeholder="Montant" style={{ ...S.input, width: 68, padding: "5px 6px", fontSize: 11, textAlign: "center" }}
+                      <input type="number" placeholder="Montant" min="0.01" step="0.01"
+                        style={{ ...S.input, width: 68, padding: "5px 6px", fontSize: 11, textAlign: "center" }}
                         value={versement[p] || ""} onChange={e => setVersement(v => ({ ...v, [p]: e.target.value }))} />
                       <button onClick={() => handleVersement(p)} disabled={saving} style={{ ...S.btnDark, padding: "5px 8px", fontSize: 11, borderRadius: 8 }}>+</button>
                       <button onClick={() => handleSettle(p)} style={{ padding: "5px 8px", borderRadius: 8, border: "1.5px solid #2E7D32", background: "#E8F5E9", color: "#2E7D32", fontSize: 11, cursor: "pointer", fontWeight: 700, width: "100%" }}>
@@ -1422,15 +1462,27 @@ function Balance({ events, expenses, contributions, user, reload, isMobile, addT
             })}
           </div>
 
+          {/* Résumé en langage naturel */}
+          {transactions.length > 0 && (
+            <div style={{ background: "#FFF8E1", borderRadius: 12, padding: "14px 18px", marginBottom: 16, border: "1px solid #FFE082" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#E65100", marginBottom: 8 }}>💬 En résumé</div>
+              {transactions.map((t, i) => (
+                <div key={i} style={{ fontSize: 13, color: "#555", marginBottom: 4 }}>
+                  <strong>{t.from}</strong> doit rembourser <strong>{fmt(t.amount, sym)}</strong> à <strong>{t.to}</strong>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #eee", overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
             <div style={{ padding: "14px 18px", borderBottom: "1px solid #f0f0f0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ fontSize: 14, fontWeight: 700 }}>Remboursements à effectuer</div>
               <span style={{ background: transactions.length > 0 ? "#FFF8E1" : "#E8F5E9", color: transactions.length > 0 ? "#F57F17" : "#2E7D32", fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>
-                {transactions.length > 0 ? `${transactions.length} en attente` : "✓ Tout soldé"}
+                {transactions.length > 0 ? `${transactions.length} en attente` : participants.every(p => isExactlySettled(computeNetBalance(evExp, evContribMap, p))) ? "✓ Tout soldé exactement" : "≈ Tout soldé (écarts < 1)"}
               </span>
             </div>
             {transactions.length === 0 ? (
-              <EmptyState icon="🎉" title="Tout est soldé !" subtitle="Aucun remboursement à effectuer." />
+              <EmptyState icon="🎉" title="Aucun remboursement nécessaire" subtitle="Tous les soldes sont équilibrés." />
             ) : (
               transactions.map((t, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 18px", borderBottom: i < transactions.length - 1 ? "1px solid #f5f5f5" : "none" }}>
@@ -1441,7 +1493,7 @@ function Balance({ events, expenses, contributions, user, reload, isMobile, addT
                     <span style={{ fontWeight: 700 }}><Truncate text={t.to} max={12} /></span>
                   </div>
                   <Avatar name={t.to} size={30} />
-                  <div style={{ fontSize: 16, fontWeight: 700, fontFamily: "'Playfair Display', serif", flexShrink: 0 }}>{t.amount.toFixed(2)} {sym}</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, fontFamily: "'Playfair Display', serif", flexShrink: 0 }}>{fmt(t.amount, sym)}</div>
                 </div>
               ))
             )}
@@ -1457,21 +1509,36 @@ function Analytics({ events, expenses, contributions, isMobile }) {
   const [sel, setSel] = useState(events[0]?.id || "");
   const ev = events.find(e => e.id === sel);
   const evExp = expenses.filter(e => e.event_id === sel);
+  // Lire la devise directement depuis l'événement sélectionné
   const sym = currencySymbol(ev?.currency);
   const budget = evExp.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
   const participants = (ev?.event_participants || []).map(p => p.name);
   const evContribMap = {};
   (contributions[sel] || []).forEach(c => { evContribMap[c.participant] = c.amount; });
-  const byCategory = Object.keys(CATEGORIES).map(cat => ({ cat, total: evExp.filter(e => e.category === cat).reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0) })).filter(c => c.total > 0);
+  const byCategory = Object.keys(CATEGORIES).map(cat => ({
+    cat, total: evExp.filter(e => e.category === cat).reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0)
+  })).filter(c => c.total > 0);
+
+  // Vérifier si tous les événements ont la même devise (pour avertir sinon)
+  const allCurrencies = [...new Set(events.map(e => e.currency))];
+  const mixedCurrencies = allCurrencies.length > 1;
 
   return (
     <div>
       <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 4 }}>Analyses</h2>
       <p style={{ color: "#888", fontSize: 12, marginBottom: 16 }}>Statistiques détaillées par événement</p>
+
+      {mixedCurrencies && (
+        <div style={{ background: "#FFF8E1", border: "1px solid #FFE082", borderRadius: 12, padding: "11px 16px", marginBottom: 16, fontSize: 13, color: "#E65100" }}>
+          ⚠️ Vos événements utilisent des devises différentes ({allCurrencies.map(currencySymbol).join(", ")}). Les analyses sont affichées séparément par événement — aucune consolidation n'est effectuée.
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
         {events.map(ev => (
           <button key={ev.id} onClick={() => setSel(ev.id)} style={{ padding: "7px 14px", borderRadius: 20, border: `1.5px solid ${sel === ev.id ? "#0F0F0F" : "#e0e0e0"}`, background: sel === ev.id ? "#0F0F0F" : "#fff", color: sel === ev.id ? "#fff" : "#555", fontSize: 12, cursor: "pointer", fontWeight: sel === ev.id ? 700 : 400, transition: "all 0.15s" }}>
             {ev.status === "closed" ? "🔒 " : ""}<Truncate text={ev.name} max={20} />
+            <span style={{ marginLeft: 4, opacity: 0.6, fontSize: 10 }}>({currencySymbol(ev.currency)})</span>
           </button>
         ))}
       </div>
@@ -1481,10 +1548,10 @@ function Analytics({ events, expenses, contributions, isMobile }) {
       ) : (
         <>
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 14, marginBottom: 20 }}>
-            <StatCard label="Budget collectif" value={`${budget.toFixed(2)} ${sym}`} sub={`${evExp.length} charges enregistrées`} accent="#0F0F0F" />
-            <StatCard label="Participants" value={participants.length} sub={`Part moy. ${participants.length > 0 ? (budget / participants.length).toFixed(2) : 0} ${sym}/p.`} accent="#1565C0" />
+            <StatCard label="Budget collectif" value={fmt(budget, sym)} sub={`${evExp.length} charge${evExp.length > 1 ? "s" : ""} enregistrées`} accent="#0F0F0F" />
+            <StatCard label="Participants" value={participants.length} sub={`Part moy. ${fmt(participants.length > 0 ? budget / participants.length : 0, sym)}/p.`} accent="#1565C0" />
             <div style={{ gridColumn: isMobile ? "1 / -1" : "auto" }}>
-              <StatCard label="Statut" value={ev.status === "closed" ? "Bouclé 🔒" : "Ouvert"} sub={`Date : ${ev.date}`} accent={ev.status === "closed" ? "#999" : "#2E7D32"} />
+              <StatCard label="Statut" value={ev.status === "closed" ? "Bouclé 🔒" : "Ouvert"} sub={`Date : ${ev.date} · Devise : ${sym}`} accent={ev.status === "closed" ? "#999" : "#2E7D32"} />
             </div>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
@@ -1496,7 +1563,7 @@ function Analytics({ events, expenses, contributions, isMobile }) {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                       <span style={{ fontSize: 12 }}>{c.cat}</span>
-                      <span style={{ fontSize: 12, fontWeight: 700 }}>{c.total.toFixed(2)} ({budget > 0 ? ((c.total / budget) * 100).toFixed(0) : 0}%)</span>
+                      <span style={{ fontSize: 12, fontWeight: 700 }}>{fmt(c.total, sym)} ({budget > 0 ? ((c.total / budget) * 100).toFixed(0) : 0}%)</span>
                     </div>
                     <div style={{ background: "#f0f0f0", borderRadius: 6, height: 7, overflow: "hidden" }}>
                       <div style={{ background: CATEGORIES[c.cat].accent, borderRadius: 6, height: 7, width: `${budget > 0 ? (c.total / budget) * 100 : 0}%`, transition: "width 0.5s ease" }} />
@@ -1511,17 +1578,21 @@ function Analytics({ events, expenses, contributions, isMobile }) {
                 const owed = computeOwed(evExp, p);
                 const paid = evContribMap[p] || 0;
                 const pct = owed > 0 ? Math.min((paid / owed) * 100, 100) : 100;
-                const settled = isSettled(paid - owed);
+                const net = paid - owed;
+                const settled = isSettled(net);
+                const status = settleStatus(net);
                 return (
                   <div key={p} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
                     <Avatar name={p} size={28} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                         <span style={{ fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p}</span>
-                        <span style={{ fontSize: 11, color: settled ? "#2E7D32" : "#F57F17", fontWeight: 700, flexShrink: 0 }}>{settled ? "✓" : `${paid.toFixed(2)}/${owed.toFixed(2)}`}</span>
+                        <span style={{ fontSize: 11, color: status.color, fontWeight: 700, flexShrink: 0 }}>
+                          {settled ? "✓ Soldé" : `${fmt(paid, sym)} / ${fmt(owed, sym)}`}
+                        </span>
                       </div>
                       <div style={{ background: "#f0f0f0", borderRadius: 6, height: 6, overflow: "hidden" }}>
-                        <div style={{ background: settled ? "#2E7D32" : "#F57F17", borderRadius: 6, height: 6, width: `${pct}%`, transition: "width 0.4s ease" }} />
+                        <div style={{ background: status.color, borderRadius: 6, height: 6, width: `${pct}%`, transition: "width 0.4s ease" }} />
                       </div>
                     </div>
                   </div>
@@ -1829,6 +1900,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [guestEmail, setGuestEmail] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [authMode, setAuthMode] = useState(null); // null | "login" | "register" | "guest"
   const [active, setActive] = useState("dashboard");
   const [events, setEvents] = useState([]);
   const [expenses, setExpenses] = useState([]);
@@ -1884,7 +1956,31 @@ export default function App() {
   };
 
   if (loading) return <Spinner />;
-  if (!user && !guestEmail) return <AuthScreen onAuth={setUser} onGuestAuth={setGuestEmail} />;
+
+  // Afficher la landing page si pas connecté et pas invité
+  if (!user && !guestEmail) {
+    return (
+      <>
+        <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+        <ToastContainer toasts={toasts} removeToast={removeToast} />
+        {authMode ? (
+          <AuthScreen
+            initialMode={authMode}
+            onAuth={(u) => { setAuthMode(null); setUser(u); }}
+            onGuestAuth={(email) => { setAuthMode(null); setGuestEmail(email); }}
+            onClose={() => setAuthMode(null)}
+          />
+        ) : (
+          <LandingPage
+            onSignUp={() => setAuthMode("register")}
+            onSignIn={() => setAuthMode("login")}
+            onGuest={() => setAuthMode("guest")}
+          />
+        )}
+      </>
+    );
+  }
+
   if (guestEmail) return <GuestView guestEmail={guestEmail} onSignOut={() => setGuestEmail(null)} isMobile={isMobile} addToast={addToast} />;
 
   const unreadCount = notifications.filter(n => !n.is_read).length;
