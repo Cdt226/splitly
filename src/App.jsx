@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   supabase, signUp, signIn, signOut, getSession,
   fetchEvents, createEvent, updateEventStatus, deleteEvent,
@@ -7,10 +7,10 @@ import {
   fetchContributions, upsertContribution,
   fetchHistory, invalidateHistory,
   fetchNotifications, markAllNotificationsRead, deleteNotification,
-  fetchInvitations, sendInvitation, removeInvitation, updateInvitationRole, acceptInvitation,
+  fetchInvitations, sendInvitation, removeInvitation, updateInvitationRole,
   submitPendingAction, fetchAllPendingActions, approvePendingAction, rejectPendingAction,
-  sendGuestCode, verifyGuestCode, fetchGuestEvents, fetchGuestEventDetails,
-  subscribeToNotifications, subscribeToPendingActions, unsubscribe,
+  sendGuestCode, verifyGuestCode,
+  subscribeToNotifications, unsubscribe,
   exportPDF,
 } from "./supabase.js";
 
@@ -32,6 +32,38 @@ function useIsMobile() {
     return () => window.removeEventListener("resize", h);
   }, []);
   return isMobile;
+}
+
+// ─── TOAST SYSTEM ─────────────────────────────────────────────
+function ToastContainer({ toasts, removeToast }) {
+  return (
+    <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 2000, display: "flex", flexDirection: "column", gap: 10, maxWidth: 320 }}>
+      {toasts.map(t => (
+        <div key={t.id} style={{
+          background: t.type === "success" ? "#2E7D32" : t.type === "error" ? "#C62828" : t.type === "warning" ? "#F57F17" : "#0F0F0F",
+          color: "#fff", borderRadius: 12, padding: "12px 16px", fontSize: 13, fontFamily: "sans-serif",
+          display: "flex", alignItems: "center", gap: 10, boxShadow: "0 4px 20px rgba(0,0,0,0.2)",
+          animation: "slideIn 0.2s ease",
+        }}>
+          <span style={{ fontSize: 16 }}>{t.type === "success" ? "✓" : t.type === "error" ? "✕" : t.type === "warning" ? "⚠️" : "ℹ"}</span>
+          <span style={{ flex: 1 }}>{t.message}</span>
+          <button onClick={() => removeToast(t.id)} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.7)", cursor: "pointer", fontSize: 16, padding: 0 }}>×</button>
+        </div>
+      ))}
+      <style>{`@keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }`}</style>
+    </div>
+  );
+}
+
+function useToast() {
+  const [toasts, setToasts] = useState([]);
+  const addToast = useCallback((message, type = "success") => {
+    const id = Math.random().toString(36).slice(2);
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
+  }, []);
+  const removeToast = useCallback((id) => setToasts(prev => prev.filter(t => t.id !== id)), []);
+  return { toasts, addToast, removeToast };
 }
 
 // ─── LOGIQUE MÉTIER ───────────────────────────────────────────
@@ -73,31 +105,62 @@ function computeTransactions(expenses, contributions, participants) {
   return txns;
 }
 
-// ─── UI HELPERS ───────────────────────────────────────────────
+// ─── UI COMPONENTS ────────────────────────────────────────────
 function Avatar({ name = "?", size = 32 }) {
   const colors = ["#2E7D32", "#1565C0", "#F57F17", "#6A1B9A", "#C62828", "#00695C", "#AD1457"];
   return (
-    <div style={{ width: size, height: size, borderRadius: "50%", background: colors[name.charCodeAt(0) % colors.length], color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.38, fontWeight: 700, flexShrink: 0 }}>
+    <div style={{ width: size, height: size, borderRadius: "50%", background: colors[name.charCodeAt(0) % colors.length], color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.4, fontWeight: 700, flexShrink: 0, userSelect: "none" }}>
       {name[0].toUpperCase()}
     </div>
   );
 }
 
 function Badge({ label, color, accent }) {
-  return <span style={{ background: color, color: accent, padding: "2px 8px", borderRadius: 20, fontSize: 11, fontWeight: 600, border: `1px solid ${accent}22`, whiteSpace: "nowrap" }}>{label}</span>;
+  return <span style={{ background: color, color: accent, padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 600, border: `1px solid ${accent}22`, whiteSpace: "nowrap", display: "inline-block" }}>{label}</span>;
 }
 
 function AvatarStack({ names = [], size = 24 }) {
-  const show = names.slice(0, 5);
-  const rest = names.length - 5;
+  const show = names.slice(0, 4);
+  const rest = names.length - 4;
   return (
     <div style={{ display: "flex", alignItems: "center" }}>
       {show.map((n, i) => (
-        <div key={n} style={{ marginLeft: i > 0 ? -8 : 0, border: "2px solid #fff", borderRadius: "50%" }} title={n}>
+        <div key={n} style={{ marginLeft: i > 0 ? -8 : 0, border: "2px solid #fff", borderRadius: "50%", flexShrink: 0 }} title={n}>
           <Avatar name={n} size={size} />
         </div>
       ))}
-      {rest > 0 && <span style={{ marginLeft: 6, fontSize: 11, color: "#aaa" }}>+{rest}</span>}
+      {rest > 0 && (
+        <div style={{ marginLeft: 4, width: size, height: size, borderRadius: "50%", background: "#e5e5e5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.35, fontWeight: 700, color: "#888", border: "2px solid #fff" }}>
+          +{rest}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Truncate({ text, max = 30 }) {
+  if (!text) return null;
+  const truncated = text.length > max ? text.slice(0, max) + "…" : text;
+  return <span title={text}>{truncated}</span>;
+}
+
+function EmptyState({ icon, title, subtitle, action }) {
+  return (
+    <div style={{ textAlign: "center", padding: "48px 24px" }}>
+      <div style={{ fontSize: 48, marginBottom: 16 }}>{icon}</div>
+      <div style={{ fontSize: 16, fontWeight: 700, color: "#333", marginBottom: 8 }}>{title}</div>
+      <div style={{ fontSize: 13, color: "#aaa", marginBottom: action ? 20 : 0, maxWidth: 280, margin: "0 auto" }}>{subtitle}</div>
+      {action && <div style={{ marginTop: 20 }}>{action}</div>}
+    </div>
+  );
+}
+
+function Chip({ label, onRemove, color = "#0F0F0F" }) {
+  return (
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: color, color: "#fff", borderRadius: 20, padding: "4px 12px", fontSize: 13, maxWidth: 160 }}>
+      <Avatar name={label} size={18} />
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+      {onRemove && <button onClick={onRemove} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.7)", cursor: "pointer", fontSize: 14, padding: 0, lineHeight: 1, flexShrink: 0 }}>×</button>}
     </div>
   );
 }
@@ -111,26 +174,21 @@ function ParticipantInput({ participants, onChange }) {
     if (participants.map(p => p.toLowerCase()).includes(name.toLowerCase())) { setError("Déjà dans la liste."); return; }
     onChange([...participants, name]); setInput(""); setError("");
   };
-  const remove = (name) => onChange(participants.filter(p => p !== name));
   return (
     <div>
       <label style={S.label}>Participants (min. 2)</label>
-      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-        <input style={{ ...S.input, flex: 1 }} placeholder="Prénom + Entrée" value={input}
+      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+        <input style={{ ...S.input, flex: 1 }} placeholder="Tapez un prénom puis +" value={input}
           onChange={e => { setInput(e.target.value); setError(""); }}
           onKeyDown={e => e.key === "Enter" && add()} />
-        <button onClick={add} style={{ ...S.btnDark, padding: "9px 14px", borderRadius: 8, flexShrink: 0 }}>+</button>
+        <button onClick={add} style={{ ...S.btnDark, padding: "9px 16px", borderRadius: 8, flexShrink: 0 }}>+</button>
       </div>
-      {error && <div style={{ fontSize: 12, color: "#C62828", marginBottom: 6 }}>{error}</div>}
+      {error && <div style={{ fontSize: 12, color: "#C62828", marginBottom: 8 }}>⚠️ {error}</div>}
+      {participants.length === 0 && <div style={{ fontSize: 12, color: "#aaa", padding: "10px 0" }}>Aucun participant ajouté</div>}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-        {participants.map(p => (
-          <div key={p} style={{ display: "flex", alignItems: "center", gap: 6, background: "#0F0F0F", color: "#fff", borderRadius: 20, padding: "4px 12px", fontSize: 13 }}>
-            <Avatar name={p} size={18} />{p}
-            <button onClick={() => remove(p)} style={{ background: "none", border: "none", color: "#aaa", cursor: "pointer", fontSize: 14, padding: 0 }}>×</button>
-          </div>
-        ))}
+        {participants.map(p => <Chip key={p} label={p} onRemove={() => onChange(participants.filter(x => x !== p))} />)}
       </div>
-      {participants.length > 0 && participants.length < 2 && <div style={{ fontSize: 12, color: "#F57F17", marginTop: 6 }}>⚠️ Minimum 2 participants</div>}
+      {participants.length > 0 && participants.length < 2 && <div style={{ fontSize: 12, color: "#F57F17", marginTop: 8 }}>⚠️ Minimum 2 participants requis</div>}
     </div>
   );
 }
@@ -138,14 +196,22 @@ function ParticipantInput({ participants, onChange }) {
 function ParticipantToggle({ people, selected, onChange, label }) {
   return (
     <div>
-      <label style={S.label}>{label}</label>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <label style={S.label}>{label}</label>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => onChange([...people])} style={{ fontSize: 11, color: "#1565C0", background: "none", border: "none", cursor: "pointer", fontWeight: 600 }}>Tous</button>
+          <button onClick={() => onChange([])} style={{ fontSize: 11, color: "#C62828", background: "none", border: "none", cursor: "pointer", fontWeight: 600 }}>Aucun</button>
+        </div>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
         {people.map(p => {
           const sel = selected.includes(p);
           return (
             <button key={p} onClick={() => onChange(sel ? selected.filter(x => x !== p) : [...selected, p])}
-              style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 12px", borderRadius: 20, border: `1.5px solid ${sel ? "#0F0F0F" : "#ddd"}`, background: sel ? "#0F0F0F" : "#fff", color: sel ? "#fff" : "#555", cursor: "pointer", fontSize: 12.5, fontWeight: 500 }}>
-              <Avatar name={p} size={18} />{p}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 12px", borderRadius: 20, border: `1.5px solid ${sel ? "#0F0F0F" : "#e0e0e0"}`, background: sel ? "#0F0F0F" : "#fff", color: sel ? "#fff" : "#555", cursor: "pointer", fontSize: 12.5, fontWeight: 500, transition: "all 0.15s" }}>
+              <Avatar name={p} size={18} />
+              <span style={{ maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p}</span>
+              {sel && <span style={{ fontSize: 10, opacity: 0.7 }}>✓</span>}
             </button>
           );
         })}
@@ -154,13 +220,13 @@ function ParticipantToggle({ people, selected, onChange, label }) {
   );
 }
 
-function Modal({ title, onClose, children }) {
+function Modal({ title, onClose, children, size = 500 }) {
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
-      <div style={{ background: "#fff", borderRadius: 16, padding: 24, width: "100%", maxWidth: 500, maxHeight: "90vh", overflow: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <div style={{ fontSize: 16, fontWeight: 700 }}>{title}</div>
-          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: "#aaa" }}>×</button>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ background: "#fff", borderRadius: 18, padding: 28, width: "100%", maxWidth: size, maxHeight: "90vh", overflow: "auto", boxShadow: "0 24px 80px rgba(0,0,0,0.25)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 22 }}>
+          <div style={{ fontSize: 17, fontWeight: 700 }}>{title}</div>
+          <button onClick={onClose} style={{ background: "#f5f5f5", border: "none", borderRadius: "50%", width: 32, height: 32, cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center", color: "#666" }}>×</button>
         </div>
         {children}
       </div>
@@ -170,33 +236,45 @@ function Modal({ title, onClose, children }) {
 
 function ConfirmModal({ message, warnings = [], onConfirm, onCancel }) {
   return (
-    <Modal title="Confirmer" onClose={onCancel}>
-      <p style={{ fontSize: 14, marginBottom: 12 }}>{message}</p>
-      {warnings.map((w, i) => <div key={i} style={{ background: "#FFF8E1", border: "1px solid #F57F17", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#F57F17", marginBottom: 8 }}>⚠️ {w}</div>)}
-      <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-        <button onClick={onConfirm} style={S.btnDark}>Confirmer</button>
-        <button onClick={onCancel} style={S.btnGhost}>Annuler</button>
+    <Modal title="Confirmer l'action" onClose={onCancel}>
+      <p style={{ fontSize: 14, color: "#444", marginBottom: 14, lineHeight: 1.5 }}>{message}</p>
+      {warnings.map((w, i) => <div key={i} style={{ background: "#FFF8E1", border: "1px solid #F57F17", borderRadius: 8, padding: "9px 14px", fontSize: 12, color: "#E65100", marginBottom: 8 }}>⚠️ {w}</div>)}
+      <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
+        <button onClick={onConfirm} style={{ ...S.btnDark, flex: 1, justifyContent: "center", display: "flex" }}>Confirmer</button>
+        <button onClick={onCancel} style={{ ...S.btnGhost, flex: 1, justifyContent: "center", display: "flex" }}>Annuler</button>
       </div>
     </Modal>
   );
 }
 
-function Spinner() {
-  return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#f4f4f4" }}>
-      <div style={{ width: 36, height: 36, border: "3px solid #eee", borderTop: "3px solid #0F0F0F", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+function Spinner({ fullscreen = true }) {
+  const content = (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+      <div style={{ width: 40, height: 40, border: "3px solid #eee", borderTop: "3px solid #0F0F0F", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+      <div style={{ fontSize: 13, color: "#aaa" }}>Chargement...</div>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  );
+  if (!fullscreen) return content;
+  return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#f4f4f4" }}>{content}</div>;
+}
+
+function StatCard({ label, value, sub, color = "#f8f8f8", accent }) {
+  return (
+    <div style={{ background: color, borderRadius: 14, padding: "18px 20px", border: "1px solid #eee", borderLeft: accent ? `4px solid ${accent}` : undefined }}>
+      <div style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: 0.9, marginBottom: 6, fontWeight: 600 }}>{label}</div>
+      <div style={{ fontSize: 24, fontWeight: 700, fontFamily: "'Playfair Display', serif", letterSpacing: -0.5, marginBottom: 4 }}>{value}</div>
+      {sub && <div style={{ fontSize: 11, color: "#aaa" }}>{sub}</div>}
     </div>
   );
 }
 
 // ─── AUTH SCREEN ──────────────────────────────────────────────
 function AuthScreen({ onAuth, onGuestAuth }) {
-  const [mode, setMode] = useState("login"); // login | register | guest | guest_verify | confirm
+  const [mode, setMode] = useState("login");
   const [form, setForm] = useState({ email: "", password: "", name: "", code: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [guestCode, setGuestCode] = useState("");
 
   const handleAdmin = async () => {
     setLoading(true); setError("");
@@ -215,23 +293,9 @@ function AuthScreen({ onAuth, onGuestAuth }) {
   const handleGuestRequest = async () => {
     if (!form.email) { setError("Entrez votre email."); return; }
     setLoading(true); setError("");
-    // Vérifier que cet email a bien une invitation
-
-const { data: invites } = await supabase
-  .from('invitations')
-  .select('*')
-  .eq('email', form.email);
-if (!invites || invites.length === 0) { 
-  setError("Aucune invitation trouvée pour cet email."); 
-  setLoading(false); 
-  return; 
-}
-
-    // Générer et envoyer le code (pour l'instant on l'affiche en alert pour test)
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    await supabase.from('guest_codes').upsert({ email: form.email, code }, { onConflict: 'email' });
-    setGuestCode(code); // À remplacer par vrai email en production
-    alert(`[MODE TEST] Votre code d'accès est : ${code}\nEn production, il sera envoyé par email.`);
+    const { data: invites } = await supabase.from('invitations').select('*').eq('email', form.email);
+    if (!invites || invites.length === 0) { setError("Aucune invitation trouvée pour cet email."); setLoading(false); return; }
+    await sendGuestCode(form.email, null);
     setMode("guest_verify");
     setLoading(false);
   };
@@ -239,53 +303,55 @@ if (!invites || invites.length === 0) {
   const handleGuestVerify = async () => {
     setLoading(true); setError("");
     const { valid } = await verifyGuestCode(form.email, form.code);
-    if (!valid) { setError("Code incorrect."); setLoading(false); return; }
-    // Accepter les invitations de cet email
+    if (!valid) { setError("Code incorrect. Vérifiez et réessayez."); setLoading(false); return; }
     await supabase.from('invitations').update({ status: 'accepted' }).eq('email', form.email).eq('status', 'pending');
     onGuestAuth(form.email);
     setLoading(false);
   };
 
   if (mode === "confirm") return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "#f4f4f4", padding: 16 }}>
-      <div style={{ background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: 380, textAlign: "center" }}>
-        <div style={{ fontSize: 40, marginBottom: 16 }}>📧</div>
-        <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 10 }}>Vérifiez votre email</div>
-        <p style={{ color: "#888", fontSize: 14 }}>Lien envoyé à <strong>{form.email}</strong>.</p>
-        <button onClick={() => setMode("login")} style={{ ...S.btnDark, marginTop: 20, width: "100%" }}>Se connecter</button>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "linear-gradient(135deg, #f8f8f8 0%, #efefef 100%)", padding: 16 }}>
+      <div style={{ background: "#fff", borderRadius: 20, padding: 40, width: "100%", maxWidth: 380, textAlign: "center", boxShadow: "0 8px 40px rgba(0,0,0,0.1)" }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>📧</div>
+        <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 10, fontFamily: "'Playfair Display', serif" }}>Vérifiez votre email</div>
+        <p style={{ color: "#888", fontSize: 14, lineHeight: 1.6 }}>Un lien de confirmation a été envoyé à <strong>{form.email}</strong>.</p>
+        <button onClick={() => setMode("login")} style={{ ...S.btnDark, marginTop: 24, width: "100%", justifyContent: "center", display: "flex" }}>Se connecter</button>
       </div>
     </div>
   );
 
+  const isGuest = mode === "guest" || mode === "guest_verify";
+
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "#f4f4f4", padding: 16 }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "linear-gradient(135deg, #f8f8f8 0%, #efefef 100%)", padding: 16 }}>
       <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-      <div style={{ background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: 400, boxShadow: "0 4px 30px rgba(0,0,0,0.08)" }}>
-        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 28, fontWeight: 700, marginBottom: 4 }}>SplitLy</div>
-        <div style={{ color: "#888", fontSize: 13, marginBottom: 24 }}>Gestion de dépenses partagées</div>
+      <div style={{ background: "#fff", borderRadius: 20, padding: 36, width: "100%", maxWidth: 400, boxShadow: "0 8px 40px rgba(0,0,0,0.1)" }}>
+        {/* Logo */}
+        <div style={{ textAlign: "center", marginBottom: 28 }}>
+          <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 32, fontWeight: 700, letterSpacing: -1 }}>SplitLy</div>
+          <div style={{ color: "#aaa", fontSize: 13, marginTop: 4 }}>Gestion de dépenses partagées</div>
+        </div>
 
-        {/* Sélecteur de mode */}
-        {(mode === "login" || mode === "register" || mode === "guest" || mode === "guest_verify") && (
-          <div style={{ display: "flex", background: "#f5f5f5", borderRadius: 10, padding: 4, marginBottom: 24, gap: 4 }}>
-            <button onClick={() => { setMode("login"); setError(""); }} style={{ flex: 1, padding: "8px", borderRadius: 8, border: "none", background: (mode === "login" || mode === "register") ? "#0F0F0F" : "transparent", color: (mode === "login" || mode === "register") ? "#fff" : "#666", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-              Admin
-            </button>
-            <button onClick={() => { setMode("guest"); setError(""); }} style={{ flex: 1, padding: "8px", borderRadius: 8, border: "none", background: (mode === "guest" || mode === "guest_verify") ? "#0F0F0F" : "transparent", color: (mode === "guest" || mode === "guest_verify") ? "#fff" : "#666", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-              Invité
-            </button>
-          </div>
-        )}
+        {/* Tab switcher */}
+        <div style={{ display: "flex", background: "#f5f5f5", borderRadius: 12, padding: 4, marginBottom: 24, gap: 4 }}>
+          <button onClick={() => { setMode("login"); setError(""); }} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", background: !isGuest ? "#0F0F0F" : "transparent", color: !isGuest ? "#fff" : "#666", fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "all 0.2s" }}>
+            🔑 Admin
+          </button>
+          <button onClick={() => { setMode("guest"); setError(""); }} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", background: isGuest ? "#0F0F0F" : "transparent", color: isGuest ? "#fff" : "#666", fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "all 0.2s" }}>
+            👤 Invité
+          </button>
+        </div>
 
-        {/* Formulaire Admin */}
-        {(mode === "login" || mode === "register") && (
+        {/* Admin forms */}
+        {!isGuest && (
           <>
             {mode === "register" && (
-              <div style={{ marginBottom: 12 }}>
+              <div style={{ marginBottom: 14 }}>
                 <label style={S.label}>Nom complet</label>
                 <input style={S.input} placeholder="Alice Martin" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
               </div>
             )}
-            <div style={{ marginBottom: 12 }}>
+            <div style={{ marginBottom: 14 }}>
               <label style={S.label}>Email</label>
               <input style={S.input} type="email" placeholder="alice@mail.com" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
             </div>
@@ -295,11 +361,11 @@ if (!invites || invites.length === 0) {
                 onChange={e => setForm({ ...form, password: e.target.value })}
                 onKeyDown={e => e.key === "Enter" && handleAdmin()} />
             </div>
-            {error && <div style={{ background: "#fff5f5", border: "1px solid #ffcdd2", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#C62828", marginBottom: 14 }}>{error}</div>}
-            <button onClick={handleAdmin} disabled={loading} style={{ ...S.btnDark, width: "100%", display: "flex", justifyContent: "center", opacity: loading ? 0.7 : 1 }}>
-              {loading ? "..." : mode === "login" ? "Se connecter" : "Créer le compte"}
+            {error && <div style={{ background: "#fff5f5", border: "1px solid #ffcdd2", borderRadius: 10, padding: "10px 14px", fontSize: 12, color: "#C62828", marginBottom: 14 }}>⚠️ {error}</div>}
+            <button onClick={handleAdmin} disabled={loading} style={{ ...S.btnDark, width: "100%", justifyContent: "center", display: "flex", opacity: loading ? 0.7 : 1 }}>
+              {loading ? "Connexion..." : mode === "login" ? "Se connecter" : "Créer le compte"}
             </button>
-            <div style={{ textAlign: "center", marginTop: 14, fontSize: 13, color: "#888" }}>
+            <div style={{ textAlign: "center", marginTop: 16, fontSize: 13, color: "#aaa" }}>
               {mode === "login" ? "Pas de compte ? " : "Déjà un compte ? "}
               <button onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); }}
                 style={{ background: "none", border: "none", color: "#0F0F0F", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>
@@ -309,11 +375,11 @@ if (!invites || invites.length === 0) {
           </>
         )}
 
-        {/* Formulaire Invité - étape 1 */}
+        {/* Guest step 1 */}
         {mode === "guest" && (
           <>
-            <div style={{ background: "#E3F2FD", borderRadius: 10, padding: "12px 14px", marginBottom: 20, fontSize: 13, color: "#1565C0" }}>
-              Entrez votre email pour recevoir un code d'accès.
+            <div style={{ background: "#E3F2FD", borderRadius: 10, padding: "12px 16px", marginBottom: 20, fontSize: 13, color: "#1565C0", lineHeight: 1.5 }}>
+              Entrez votre email pour recevoir un code d'accès à usage unique.
             </div>
             <div style={{ marginBottom: 20 }}>
               <label style={S.label}>Votre email</label>
@@ -321,31 +387,31 @@ if (!invites || invites.length === 0) {
                 onChange={e => setForm({ ...form, email: e.target.value })}
                 onKeyDown={e => e.key === "Enter" && handleGuestRequest()} />
             </div>
-            {error && <div style={{ background: "#fff5f5", border: "1px solid #ffcdd2", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#C62828", marginBottom: 14 }}>{error}</div>}
-            <button onClick={handleGuestRequest} disabled={loading} style={{ ...S.btnDark, width: "100%", display: "flex", justifyContent: "center", opacity: loading ? 0.7 : 1 }}>
-              {loading ? "..." : "Recevoir le code"}
+            {error && <div style={{ background: "#fff5f5", border: "1px solid #ffcdd2", borderRadius: 10, padding: "10px 14px", fontSize: 12, color: "#C62828", marginBottom: 14 }}>⚠️ {error}</div>}
+            <button onClick={handleGuestRequest} disabled={loading} style={{ ...S.btnDark, width: "100%", justifyContent: "center", display: "flex", opacity: loading ? 0.7 : 1 }}>
+              {loading ? "Envoi..." : "Recevoir le code →"}
             </button>
           </>
         )}
 
-        {/* Formulaire Invité - étape 2 */}
+        {/* Guest step 2 */}
         {mode === "guest_verify" && (
           <>
-            <div style={{ background: "#E8F5E9", borderRadius: 10, padding: "12px 14px", marginBottom: 20, fontSize: 13, color: "#2E7D32" }}>
-              Code envoyé à <strong>{form.email}</strong>. Entrez-le ci-dessous.
+            <div style={{ background: "#E8F5E9", borderRadius: 10, padding: "12px 16px", marginBottom: 20, fontSize: 13, color: "#2E7D32", lineHeight: 1.5 }}>
+              Code envoyé à <strong>{form.email}</strong>. Vérifiez votre boîte mail.
             </div>
             <div style={{ marginBottom: 20 }}>
               <label style={S.label}>Code d'accès (6 chiffres)</label>
-              <input style={{ ...S.input, fontSize: 20, letterSpacing: 6, textAlign: "center" }} placeholder="000000"
-                maxLength={6} value={form.code}
-                onChange={e => setForm({ ...form, code: e.target.value })}
+              <input style={{ ...S.input, fontSize: 24, letterSpacing: 8, textAlign: "center", fontWeight: 700 }}
+                placeholder="000000" maxLength={6} value={form.code}
+                onChange={e => setForm({ ...form, code: e.target.value.replace(/\D/g, "") })}
                 onKeyDown={e => e.key === "Enter" && handleGuestVerify()} />
             </div>
-            {error && <div style={{ background: "#fff5f5", border: "1px solid #ffcdd2", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#C62828", marginBottom: 14 }}>{error}</div>}
-            <button onClick={handleGuestVerify} disabled={loading} style={{ ...S.btnDark, width: "100%", display: "flex", justifyContent: "center", opacity: loading ? 0.7 : 1 }}>
-              {loading ? "..." : "Accéder"}
+            {error && <div style={{ background: "#fff5f5", border: "1px solid #ffcdd2", borderRadius: 10, padding: "10px 14px", fontSize: 12, color: "#C62828", marginBottom: 14 }}>⚠️ {error}</div>}
+            <button onClick={handleGuestVerify} disabled={loading} style={{ ...S.btnDark, width: "100%", justifyContent: "center", display: "flex", opacity: loading ? 0.7 : 1 }}>
+              {loading ? "Vérification..." : "Accéder →"}
             </button>
-            <button onClick={() => setMode("guest")} style={{ ...S.btnGhost, width: "100%", marginTop: 8, display: "flex", justifyContent: "center" }}>Retour</button>
+            <button onClick={() => { setMode("guest"); setError(""); }} style={{ ...S.btnGhost, width: "100%", justifyContent: "center", display: "flex", marginTop: 8 }}>← Retour</button>
           </>
         )}
       </div>
@@ -354,13 +420,13 @@ if (!invites || invites.length === 0) {
 }
 
 // ─── GUEST VIEW ───────────────────────────────────────────────
-function GuestView({ guestEmail, onSignOut, isMobile }) {
+function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
   const [events, setEvents] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [contributions, setContributions] = useState({});
   const [active, setActive] = useState("events");
   const [loading, setLoading] = useState(true);
-  const [pendingForm, setPendingForm] = useState(null);
+  const [pendingForm, setPendingForm] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const loadGuest = useCallback(async () => {
@@ -386,63 +452,70 @@ function GuestView({ guestEmail, onSignOut, isMobile }) {
   const handleRequestAction = async (actionType, actionData, eventId) => {
     setSaving(true);
     await submitPendingAction({ eventId, guestEmail, actionType, actionData });
-    setSaving(false); setPendingForm(null);
-    alert("Votre demande a été envoyée à l'admin. Elle sera exécutée dès approbation.");
+    setSaving(false); setPendingForm(false);
+    addToast("Demande envoyée à l'admin. Elle sera exécutée dès approbation.", "info");
   };
 
   if (loading) return <Spinner />;
 
-  const navItems = [{ key: "events", icon: "◉", label: "Événements" }, { key: "expenses", icon: "◫", label: "Charges" }, { key: "balance", icon: "⊜", label: "Répartition" }];
+  const navItems = [
+    { key: "events", icon: "◉", label: "Événements" },
+    { key: "expenses", icon: "◫", label: "Charges" },
+    { key: "balance", icon: "⊜", label: "Répartition" },
+  ];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh", background: "#f4f4f4" }}>
       <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-      {/* Header */}
-      <div style={{ background: "#0F0F0F", padding: "12px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, color: "#fff" }}>SplitLy</div>
+      <div style={{ background: "#0F0F0F", padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 100 }}>
+        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, color: "#fff", cursor: "pointer" }} onClick={() => setActive("events")}>SplitLy</div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <span style={{ background: "#1565C0", color: "#fff", fontSize: 11, padding: "3px 10px", borderRadius: 20, fontWeight: 600 }}>Invité</span>
-          <span style={{ color: "#aaa", fontSize: 12 }}>{guestEmail}</span>
-          <button onClick={onSignOut} style={{ background: "none", border: "1px solid #333", color: "#aaa", fontSize: 11, padding: "4px 10px", borderRadius: 6, cursor: "pointer" }}>Quitter</button>
+          <span style={{ background: "#1565C0", color: "#fff", fontSize: 11, padding: "3px 10px", borderRadius: 20, fontWeight: 600 }}>👤 Invité</span>
+          {!isMobile && <span style={{ color: "#666", fontSize: 12 }}>{guestEmail}</span>}
+          <button onClick={onSignOut} style={{ background: "none", border: "1px solid #333", color: "#aaa", fontSize: 11, padding: "5px 12px", borderRadius: 8, cursor: "pointer" }}>Quitter</button>
         </div>
       </div>
 
-      {/* Nav */}
-      <div style={{ background: "#fff", borderBottom: "1px solid #eee", display: "flex", gap: 0 }}>
+      <div style={{ background: "#fff", borderBottom: "1px solid #eee", display: "flex", overflowX: "auto", position: "sticky", top: 56, zIndex: 99 }}>
         {navItems.map(n => (
-          <button key={n.key} onClick={() => setActive(n.key)} style={{ padding: "12px 20px", border: "none", background: "none", fontSize: 13, fontWeight: active === n.key ? 700 : 400, color: active === n.key ? "#0F0F0F" : "#888", cursor: "pointer", borderBottom: active === n.key ? "2px solid #0F0F0F" : "2px solid transparent" }}>
+          <button key={n.key} onClick={() => setActive(n.key)} style={{ padding: "14px 20px", border: "none", background: "none", fontSize: 13, fontWeight: active === n.key ? 700 : 400, color: active === n.key ? "#0F0F0F" : "#888", cursor: "pointer", borderBottom: active === n.key ? "2px solid #0F0F0F" : "2px solid transparent", whiteSpace: "nowrap", transition: "all 0.15s" }}>
             {n.icon} {n.label}
           </button>
         ))}
       </div>
 
-      <main style={{ flex: 1, padding: isMobile ? "20px 16px" : "28px 32px", maxWidth: 900, width: "100%", margin: "0 auto" }}>
-        {/* Bandeau lecture seule */}
-        <div style={{ background: "#E3F2FD", border: "1px solid #90CAF9", borderRadius: 10, padding: "10px 16px", marginBottom: 20, fontSize: 13, color: "#1565C0" }}>
-          👁 Vous êtes en mode invité. Vous pouvez consulter les données. Pour ajouter une charge, soumettez une demande à l'admin.
+      <main style={{ flex: 1, padding: isMobile ? "20px 16px 32px" : "28px 32px", maxWidth: 860, width: "100%", margin: "0 auto", boxSizing: "border-box" }}>
+        <div style={{ background: "#E3F2FD", border: "1px solid #90CAF9", borderRadius: 12, padding: "11px 16px", marginBottom: 20, fontSize: 13, color: "#1565C0" }}>
+          👁 Mode consultation. Pour ajouter une charge, soumettez une demande à l'admin.
         </div>
 
         {active === "events" && (
           <div>
             <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700, marginBottom: 16 }}>Événements partagés</h2>
-            {events.length === 0 && <div style={{ color: "#bbb", fontSize: 14 }}>Aucun événement partagé avec vous.</div>}
-            {events.map(ev => {
-              const participants = (ev.event_participants || []).map(p => p.name);
-              const evTotal = expenses.filter(e => e.event_id === ev.id).reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
-              return (
-                <div key={ev.id} style={{ background: "#fff", borderRadius: 14, padding: "16px 20px", border: "1px solid #eee", marginBottom: 12 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <div style={{ fontSize: 24 }}>{ev.status === "closed" ? "🔒" : "🎊"}</div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 15, fontWeight: 700 }}>{ev.name}</div>
-                      <div style={{ fontSize: 12, color: "#888" }}>{ev.date} · {participants.length} participants · {currencySymbol(ev.currency)}</div>
-                      <AvatarStack names={participants} size={22} />
+            {events.length === 0 ? (
+              <EmptyState icon="🎊" title="Aucun événement" subtitle="Aucun événement n'a encore été partagé avec vous." />
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {events.map(ev => {
+                  const participants = (ev.event_participants || []).map(p => p.name);
+                  const evTotal = expenses.filter(e => e.event_id === ev.id).reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
+                  return (
+                    <div key={ev.id} style={{ background: "#fff", borderRadius: 14, padding: "16px 20px", border: "1px solid #eee", display: "flex", alignItems: "center", gap: 14 }}>
+                      <div style={{ fontSize: 28, flexShrink: 0 }}>{ev.status === "closed" ? "🔒" : "🎊"}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.name}</div>
+                        <div style={{ fontSize: 12, color: "#888", marginBottom: 8 }}>📅 {ev.date} · {currencySymbol(ev.currency)}</div>
+                        <AvatarStack names={participants} size={22} />
+                      </div>
+                      <div style={{ textAlign: "right", flexShrink: 0 }}>
+                        <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Playfair Display', serif" }}>{evTotal.toFixed(2)} {currencySymbol(ev.currency)}</div>
+                        <div style={{ fontSize: 11, color: "#aaa" }}>budget collectif</div>
+                      </div>
                     </div>
-                    <div style={{ fontSize: 17, fontWeight: 700, fontFamily: "'Playfair Display', serif" }}>{evTotal.toFixed(2)} {currencySymbol(ev.currency)}</div>
-                  </div>
-                </div>
-              );
-            })}
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -450,40 +523,42 @@ function GuestView({ guestEmail, onSignOut, isMobile }) {
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
               <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700 }}>Charges</h2>
-              <button onClick={() => setPendingForm("expense")} style={S.btnDark}>+ Demander ajout</button>
+              <button onClick={() => setPendingForm(!pendingForm)} style={S.btnDark}>+ Demander ajout</button>
             </div>
-
-            {pendingForm === "expense" && (
-              <GuestExpenseForm events={events} onSubmit={handleRequestAction} onCancel={() => setPendingForm(null)} saving={saving} />
+            {pendingForm && (
+              <GuestExpenseForm events={events} onSubmit={handleRequestAction} onCancel={() => setPendingForm(false)} saving={saving} />
             )}
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {expenses.length === 0 && <div style={{ color: "#bbb", fontSize: 14 }}>Aucune charge.</div>}
-              {expenses.map(ex => {
-                const cat = CATEGORIES[ex.category];
-                const ev = events.find(e => e.id === ex.event_id);
-                const t = ex.qty * (ex.unit_price ?? 0);
-                const inc = ex.included || [];
-                const share = inc.length > 0 ? t / inc.length : 0;
-                return (
-                  <div key={ex.id} style={{ background: "#fff", borderRadius: 12, padding: "14px 16px", border: "1px solid #eee" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ fontSize: 18 }}>{cat?.icon}</span>
-                        <div>
-                          <div style={{ fontSize: 13, fontWeight: 700 }}>{ex.detail}</div>
-                          <div style={{ fontSize: 11, color: "#aaa" }}>{ev?.name} · par {ex.paid_by}</div>
+            {expenses.length === 0 ? (
+              <EmptyState icon="🧾" title="Aucune charge" subtitle="Aucune dépense n'a encore été enregistrée." />
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {expenses.map(ex => {
+                  const cat = CATEGORIES[ex.category];
+                  const ev = events.find(e => e.id === ex.event_id);
+                  const t = ex.qty * (ex.unit_price ?? 0);
+                  const inc = ex.included || [];
+                  const share = inc.length > 0 ? t / inc.length : 0;
+                  return (
+                    <div key={ex.id} style={{ background: "#fff", borderRadius: 12, padding: "14px 18px", border: "1px solid #eee" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                          <span style={{ fontSize: 22, flexShrink: 0 }}>{cat?.icon}</span>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ex.detail}</div>
+                            <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>{ev?.name} · par {ex.paid_by}</div>
+                            {cat && <div style={{ marginTop: 4 }}><Badge label={ex.sub_category} color={cat.color} accent={cat.accent} /></div>}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: "right", flexShrink: 0 }}>
+                          <div style={{ fontSize: 16, fontWeight: 700 }}>{t.toFixed(2)}</div>
+                          <div style={{ fontSize: 11, color: "#2E7D32", fontWeight: 600 }}>{share.toFixed(2)}/p.</div>
                         </div>
                       </div>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ fontSize: 15, fontWeight: 700 }}>{t.toFixed(2)}</div>
-                        <div style={{ fontSize: 11, color: "#2E7D32" }}>{share.toFixed(2)}/p.</div>
-                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -508,8 +583,8 @@ function GuestExpenseForm({ events, onSubmit, onCancel, saving }) {
   const total = (Number(form.qty) || 0) * (Number(form.unit) || 0);
 
   return (
-    <div style={{ ...S.card, marginBottom: 16, border: "1.5px solid #1565C0" }}>
-      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 14, color: "#1565C0" }}>Demande d'ajout de charge</div>
+    <div style={{ ...S.card, border: "1.5px solid #1565C0", marginBottom: 16 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 14, color: "#1565C0" }}>📝 Demande d'ajout de charge</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
         <div><label style={S.label}>Événement</label>
           <select style={S.input} value={form.eventId} onChange={e => handleEventChange(e.target.value)}>
@@ -536,7 +611,7 @@ function GuestExpenseForm({ events, onSubmit, onCancel, saving }) {
           </select>
         </div>
       </div>
-      <div style={{ marginBottom: 12 }}><label style={S.label}>Détail</label><input style={S.input} placeholder="Ex: Vin rouge..." value={form.detail} onChange={e => setForm({ ...form, detail: e.target.value })} /></div>
+      <div style={{ marginBottom: 12 }}><label style={S.label}>Détail</label><input style={S.input} placeholder="Ex: Vin rouge, Salade César..." value={form.detail} onChange={e => setForm({ ...form, detail: e.target.value })} /></div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 14 }}>
         <div><label style={S.label}>Quantité</label><input type="number" min="1" style={S.input} value={form.qty} onChange={e => setForm({ ...form, qty: e.target.value })} /></div>
         <div><label style={S.label}>Prix unitaire</label><input type="number" min="0" step="0.01" style={S.input} value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })} /></div>
@@ -544,7 +619,10 @@ function GuestExpenseForm({ events, onSubmit, onCancel, saving }) {
       </div>
       {currentEvent && <div style={{ marginBottom: 14 }}><ParticipantToggle people={participants} selected={form.included} onChange={p => setForm({ ...form, included: p })} label="Qui partage ?" /></div>}
       <div style={{ display: "flex", gap: 8 }}>
-        <button onClick={() => onSubmit("add_expense", { ...form, qty: Number(form.qty), unit: Number(form.unit) }, form.eventId)} disabled={saving || !form.eventId || !form.detail || total === 0} style={S.btnDark}>{saving ? "..." : "Soumettre la demande"}</button>
+        <button onClick={() => onSubmit("add_expense", { ...form, qty: Number(form.qty), unit: Number(form.unit) }, form.eventId)}
+          disabled={saving || !form.eventId || !form.detail || total === 0} style={{ ...S.btnDark, opacity: (!form.eventId || !form.detail || total === 0) ? 0.5 : 1 }}>
+          {saving ? "Envoi..." : "Soumettre"}
+        </button>
         <button onClick={onCancel} style={S.btnGhost}>Annuler</button>
       </div>
     </div>
@@ -563,45 +641,53 @@ function GuestBalance({ events, expenses, contributions }) {
   return (
     <div>
       <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700, marginBottom: 16 }}>Répartition</h2>
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-        {events.map(ev => <button key={ev.id} onClick={() => setSel(ev.id)} style={{ padding: "6px 14px", borderRadius: 20, border: `1.5px solid ${sel === ev.id ? "#0F0F0F" : "#ddd"}`, background: sel === ev.id ? "#0F0F0F" : "#fff", color: sel === ev.id ? "#fff" : "#555", fontSize: 12, cursor: "pointer" }}>{ev.name}</button>)}
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10, marginBottom: 16 }}>
+      {events.length > 1 && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+          {events.map(ev => <button key={ev.id} onClick={() => setSel(ev.id)} style={{ padding: "6px 14px", borderRadius: 20, border: `1.5px solid ${sel === ev.id ? "#0F0F0F" : "#ddd"}`, background: sel === ev.id ? "#0F0F0F" : "#fff", color: sel === ev.id ? "#fff" : "#555", fontSize: 12, cursor: "pointer" }}>{ev.name}</button>)}
+        </div>
+      )}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 10, marginBottom: 16 }}>
         {participants.map(p => {
           const owed = computeOwed(evExp, p);
           const contrib = evContribMap[p] || 0;
           const net = contrib - owed;
           const settled = isSettled(net);
           return (
-            <div key={p} style={{ background: "#fff", borderRadius: 12, padding: "14px 12px", border: `1.5px solid ${settled ? "#c8e6c9" : "#eee"}`, textAlign: "center" }}>
-              <Avatar name={p} size={32} />
-              <div style={{ marginTop: 7, fontSize: 13, fontWeight: 700 }}>{p}</div>
+            <div key={p} style={{ background: "#fff", borderRadius: 14, padding: "16px 12px", border: `2px solid ${settled ? "#c8e6c9" : "#eee"}`, textAlign: "center" }}>
+              <Avatar name={p} size={36} />
+              <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p}</div>
               <div style={{ fontSize: 10, color: "#aaa", marginTop: 3 }}>Doit: {owed.toFixed(2)}</div>
-              <div style={{ marginTop: 5, fontSize: 13, fontWeight: 700, color: settled ? "#2E7D32" : net > 0 ? "#1565C0" : "#C62828" }}>
-                {settled ? "✓ Soldé" : net > 0 ? `+${net.toFixed(2)}` : `${net.toFixed(2)} ${sym}`}
+              <div style={{ marginTop: 5, fontSize: 14, fontWeight: 700, color: settled ? "#2E7D32" : net > 0 ? "#1565C0" : "#C62828" }}>
+                {settled ? "✓ Soldé" : `${net > 0 ? "+" : ""}${net.toFixed(2)} ${sym}`}
               </div>
             </div>
           );
         })}
       </div>
       <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #eee", overflow: "hidden" }}>
-        <div style={{ padding: "12px 16px", borderBottom: "1px solid #f0f0f0", fontSize: 13, fontWeight: 700 }}>Remboursements ({transactions.length})</div>
-        {transactions.length === 0 && <div style={{ padding: 20, textAlign: "center", color: "#bbb", fontSize: 13 }}>✓ Tout est soldé !</div>}
-        {transactions.map((t, i) => (
-          <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 16px", borderBottom: i < transactions.length - 1 ? "1px solid #f5f5f5" : "none" }}>
-            <Avatar name={t.from} size={26} />
-            <div style={{ flex: 1, fontSize: 13 }}><span style={{ fontWeight: 600 }}>{t.from}</span> → <span style={{ fontWeight: 600 }}>{t.to}</span></div>
-            <Avatar name={t.to} size={26} />
-            <div style={{ fontSize: 14, fontWeight: 700 }}>{t.amount.toFixed(2)} {sym}</div>
-          </div>
-        ))}
+        <div style={{ padding: "14px 18px", borderBottom: "1px solid #f0f0f0", fontSize: 14, fontWeight: 700 }}>Remboursements ({transactions.length})</div>
+        {transactions.length === 0 ? <EmptyState icon="✅" title="Tout est soldé !" subtitle="Aucun remboursement à effectuer." /> : (
+          transactions.map((t, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", borderBottom: i < transactions.length - 1 ? "1px solid #f5f5f5" : "none" }}>
+              <Avatar name={t.from} size={28} />
+              <div style={{ flex: 1, fontSize: 13, minWidth: 0 }}>
+                <span style={{ fontWeight: 600 }}><Truncate text={t.from} max={12} /></span>
+                <span style={{ color: "#aaa" }}> → </span>
+                <span style={{ fontWeight: 600 }}><Truncate text={t.to} max={12} /></span>
+              </div>
+              <Avatar name={t.to} size={28} />
+              <div style={{ fontSize: 15, fontWeight: 700, flexShrink: 0 }}>{t.amount.toFixed(2)} {sym}</div>
+            </div>
+          ))
+        )}
       </div>
     </div>
   );
 }
 
-// ─── ADMIN SIDEBAR ────────────────────────────────────────────
+// ─── SIDEBAR ──────────────────────────────────────────────────
 function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut, isMobile, menuOpen, setMenuOpen }) {
+  const totalBadge = unreadCount + pendingCount;
   const nav = [
     { key: "dashboard",     icon: "◈", label: "Tableau de bord" },
     { key: "events",        icon: "◉", label: "Événements" },
@@ -610,85 +696,77 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
     { key: "analytics",     icon: "◐", label: "Analyses" },
     { key: "history",       icon: "◷", label: "Historique" },
     { key: "invite",        icon: "◎", label: "Inviter" },
-    { key: "notifications", icon: "◬", label: "Notifications", badge: unreadCount + pendingCount },
+    { key: "notifications", icon: "◬", label: "Notifications", badge: totalBadge },
   ];
 
-  if (isMobile) {
-    return (
-      <>
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, height: 56, background: "#0F0F0F", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", zIndex: 200 }}>
-          <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, color: "#fff" }}>SplitLy</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            {(unreadCount + pendingCount) > 0 && <span style={{ background: "#C62828", color: "#fff", borderRadius: 10, fontSize: 10, fontWeight: 700, padding: "2px 7px" }}>{unreadCount + pendingCount}</span>}
-            <button onClick={() => setMenuOpen(!menuOpen)} style={{ background: "none", border: "none", color: "#fff", fontSize: 22, cursor: "pointer" }}>☰</button>
-          </div>
-        </div>
-        {menuOpen && (
-          <div style={{ position: "fixed", inset: 0, zIndex: 300 }}>
-            <div onClick={() => setMenuOpen(false)} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)" }} />
-            <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 260, background: "#0F0F0F", display: "flex", flexDirection: "column", padding: "24px 0" }}>
-              <div style={{ padding: "0 20px 20px", borderBottom: "1px solid #1e1e1e" }}>
-                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, color: "#fff" }}>SplitLy</div>
-              </div>
-              <div style={{ flex: 1, overflow: "auto", padding: "12px 8px" }}>
-                {nav.map(n => (
-                  <button key={n.key} onClick={() => { setActive(n.key); setMenuOpen(false); }}
-                    style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", borderRadius: 8, border: "none", cursor: "pointer", background: active === n.key ? "#1a1a1a" : "transparent", color: active === n.key ? "#fff" : "#666", fontSize: 14, fontWeight: active === n.key ? 600 : 400, textAlign: "left", width: "100%" }}>
-                    <span style={{ fontSize: 16 }}>{n.icon}</span>
-                    <span style={{ flex: 1 }}>{n.label}</span>
-                    {n.badge > 0 && <span style={{ background: "#C62828", color: "#fff", borderRadius: 10, fontSize: 10, fontWeight: 700, padding: "1px 6px" }}>{n.badge}</span>}
-                  </button>
-                ))}
-              </div>
-              <div style={{ padding: "16px", borderTop: "1px solid #1e1e1e" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                  <Avatar name={user?.user_metadata?.full_name?.[0] || user?.email?.[0] || "U"} size={28} />
-                  <div style={{ color: "#fff", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user?.user_metadata?.full_name || user?.email}</div>
-                </div>
-                <button onClick={onSignOut} style={{ width: "100%", padding: "7px", borderRadius: 8, border: "1px solid #2a2a2a", background: "transparent", color: "#666", fontSize: 12, cursor: "pointer" }}>Déconnexion</button>
-              </div>
-            </div>
-          </div>
-        )}
-        <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, height: 60, background: "#0F0F0F", display: "flex", alignItems: "center", justifyContent: "space-around", zIndex: 200, borderTop: "1px solid #1e1e1e" }}>
-          {nav.slice(0, 5).map(n => (
-            <button key={n.key} onClick={() => setActive(n.key)} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, background: "none", border: "none", cursor: "pointer", color: active === n.key ? "#fff" : "#555", padding: "6px 8px", position: "relative" }}>
-              <span style={{ fontSize: 18 }}>{n.icon}</span>
-              <span style={{ fontSize: 9 }}>{n.label.split(" ")[0]}</span>
-              {n.badge > 0 && <span style={{ position: "absolute", top: 2, right: 2, background: "#C62828", color: "#fff", borderRadius: 10, fontSize: 9, fontWeight: 700, padding: "0 4px" }}>{n.badge}</span>}
-            </button>
-          ))}
-        </div>
-      </>
-    );
-  }
+  const NavButton = ({ n }) => (
+    <button onClick={() => { setActive(n.key); if (isMobile) setMenuOpen(false); }}
+      style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, border: "none", cursor: "pointer", background: active === n.key ? "#1a1a1a" : "transparent", color: active === n.key ? "#fff" : "#777", fontSize: 13, fontWeight: active === n.key ? 600 : 400, textAlign: "left", width: "100%", transition: "all 0.15s" }}>
+      <span style={{ fontSize: 15, opacity: active === n.key ? 1 : 0.6, flexShrink: 0 }}>{n.icon}</span>
+      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.label}</span>
+      {n.badge > 0 && <span style={{ background: "#C62828", color: "#fff", borderRadius: 10, fontSize: 10, fontWeight: 700, padding: "2px 7px", flexShrink: 0 }}>{n.badge}</span>}
+    </button>
+  );
 
-  return (
-    <aside style={{ width: 220, background: "#0F0F0F", display: "flex", flexDirection: "column", padding: "28px 0", flexShrink: 0 }}>
-      <div style={{ padding: "0 22px 24px", borderBottom: "1px solid #1e1e1e" }}>
-        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, color: "#fff" }}>SplitLy</div>
-        <div style={{ fontSize: 11, color: "#555", marginTop: 3 }}>Gestion de dépenses</div>
+  const UserFooter = () => (
+    <div style={{ padding: "14px 16px", borderTop: "1px solid #1e1e1e" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <Avatar name={user?.user_metadata?.full_name?.[0] || user?.email?.[0] || "U"} size={30} />
+        <div style={{ overflow: "hidden", flex: 1 }}>
+          <div style={{ color: "#fff", fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user?.user_metadata?.full_name || user?.email}</div>
+          <div style={{ color: "#F57F17", fontSize: 10, marginTop: 1 }}>✦ Admin</div>
+        </div>
       </div>
-      <div style={{ padding: "16px 10px 0", flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
-        {nav.map(n => (
-          <button key={n.key} onClick={() => setActive(n.key)}
-            style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 8, border: "none", cursor: "pointer", background: active === n.key ? "#1a1a1a" : "transparent", color: active === n.key ? "#fff" : "#666", fontSize: 13, fontWeight: active === n.key ? 600 : 400, textAlign: "left" }}>
-            <span style={{ fontSize: 14, opacity: active === n.key ? 1 : 0.5 }}>{n.icon}</span>
-            <span style={{ flex: 1 }}>{n.label}</span>
-            {n.badge > 0 && <span style={{ background: "#C62828", color: "#fff", borderRadius: 10, fontSize: 10, fontWeight: 700, padding: "1px 6px" }}>{n.badge}</span>}
+      <button onClick={onSignOut} style={{ width: "100%", padding: "7px", borderRadius: 8, border: "1px solid #2a2a2a", background: "transparent", color: "#666", fontSize: 11, cursor: "pointer", transition: "all 0.15s" }}>Déconnexion</button>
+    </div>
+  );
+
+  if (isMobile) return (
+    <>
+      <div style={{ position: "fixed", top: 0, left: 0, right: 0, height: 56, background: "#0F0F0F", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", zIndex: 200, boxShadow: "0 2px 10px rgba(0,0,0,0.3)" }}>
+        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, color: "#fff", cursor: "pointer" }} onClick={() => setActive("dashboard")}>SplitLy</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {totalBadge > 0 && <span style={{ background: "#C62828", color: "#fff", borderRadius: 10, fontSize: 10, fontWeight: 700, padding: "2px 7px" }}>{totalBadge}</span>}
+          <button onClick={() => setMenuOpen(!menuOpen)} style={{ background: "none", border: "none", color: "#fff", fontSize: 22, cursor: "pointer", padding: 4 }}>☰</button>
+        </div>
+      </div>
+      {menuOpen && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 300 }}>
+          <div onClick={() => setMenuOpen(false)} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.6)" }} />
+          <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 270, background: "#0F0F0F", display: "flex", flexDirection: "column" }}>
+            <div style={{ padding: "20px 20px 16px", borderBottom: "1px solid #1e1e1e", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, color: "#fff", cursor: "pointer" }} onClick={() => { setActive("dashboard"); setMenuOpen(false); }}>SplitLy</div>
+              <button onClick={() => setMenuOpen(false)} style={{ background: "#1a1a1a", border: "none", color: "#aaa", width: 30, height: 30, borderRadius: "50%", cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+            </div>
+            <div style={{ flex: 1, overflow: "auto", padding: "12px 8px" }}>
+              {nav.map(n => <NavButton key={n.key} n={n} />)}
+            </div>
+            <UserFooter />
+          </div>
+        </div>
+      )}
+      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, height: 62, background: "#0F0F0F", display: "flex", alignItems: "center", justifyContent: "space-around", zIndex: 200, borderTop: "1px solid #1e1e1e" }}>
+        {nav.slice(0, 5).map(n => (
+          <button key={n.key} onClick={() => setActive(n.key)} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, background: "none", border: "none", cursor: "pointer", color: active === n.key ? "#fff" : "#555", padding: "6px 4px", position: "relative", flex: 1 }}>
+            <span style={{ fontSize: 19 }}>{n.icon}</span>
+            <span style={{ fontSize: 9, fontWeight: active === n.key ? 700 : 400 }}>{n.label.split(" ")[0]}</span>
+            {n.badge > 0 && <span style={{ position: "absolute", top: 2, right: 8, background: "#C62828", color: "#fff", borderRadius: 10, fontSize: 9, fontWeight: 700, padding: "0 4px" }}>{n.badge}</span>}
           </button>
         ))}
       </div>
-      <div style={{ padding: "14px", borderTop: "1px solid #1e1e1e" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-          <Avatar name={user?.user_metadata?.full_name?.[0] || user?.email?.[0] || "U"} size={28} />
-          <div style={{ overflow: "hidden" }}>
-            <div style={{ color: "#fff", fontSize: 11, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user?.user_metadata?.full_name || user?.email}</div>
-            <div style={{ color: "#F57F17", fontSize: 10 }}>Admin</div>
-          </div>
-        </div>
-        <button onClick={onSignOut} style={{ width: "100%", padding: "6px", borderRadius: 8, border: "1px solid #2a2a2a", background: "transparent", color: "#666", fontSize: 11, cursor: "pointer" }}>Déconnexion</button>
+    </>
+  );
+
+  return (
+    <aside style={{ width: 224, background: "#0F0F0F", display: "flex", flexDirection: "column", flexShrink: 0, position: "sticky", top: 0, height: "100vh", overflow: "hidden" }}>
+      <div style={{ padding: "24px 20px 20px", borderBottom: "1px solid #1e1e1e" }}>
+        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, color: "#fff", cursor: "pointer", letterSpacing: -0.5 }} onClick={() => setActive("dashboard")}>SplitLy</div>
+        <div style={{ fontSize: 11, color: "#555", marginTop: 3 }}>Gestion de dépenses</div>
       </div>
+      <div style={{ padding: "14px 8px 0", flex: 1, display: "flex", flexDirection: "column", gap: 2, overflow: "auto" }}>
+        {nav.map(n => <NavButton key={n.key} n={n} />)}
+      </div>
+      <UserFooter />
     </aside>
   );
 }
@@ -696,92 +774,108 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
 // ─── DASHBOARD ────────────────────────────────────────────────
 function Dashboard({ events, expenses, user, isMobile }) {
   const name = user?.user_metadata?.full_name?.split(" ")[0] || "vous";
+  const grandTotal = expenses.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
+  const openEvents = events.filter(e => e.status === "open").length;
   const byCategory = Object.keys(CATEGORIES).map(cat => ({
     cat, total: expenses.filter(e => e.category === cat).reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0),
   })).filter(c => c.total > 0);
-  const grandTotal = expenses.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 6 }}>Bonjour, {name} 👋</h2>
-      <p style={{ color: "#888", fontSize: 13, marginBottom: 20 }}>Résumé de tous vos événements.</p>
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 12, marginBottom: 20 }}>
-        {[
-          { label: "Budget total collectif", value: `${grandTotal.toFixed(2)} €`, sub: `${expenses.length} charges · tous événements` },
-          { label: "Événements", value: events.length, sub: `${events.filter(e => e.status === "open").length} ouvert(s) · ${events.filter(e => e.status === "closed").length} bouclé(s)` },
-          { label: "Participants uniques", value: [...new Set(events.flatMap(e => (e.event_participants || []).map(p => p.name)))].length, sub: "sur tous les événements" },
-        ].map((c, idx) => (
-          <div key={c.label} style={{ background: "#f8f8f8", borderRadius: 12, padding: 16, border: "1px solid #eee", gridColumn: isMobile && idx === 2 ? "1 / -1" : "auto" }}>
-            <div style={{ fontSize: 10, color: "#888", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.8 }}>{c.label}</div>
-            <div style={{ fontSize: isMobile ? 22 : 26, fontWeight: 700, fontFamily: "'Playfair Display', serif" }}>{c.value}</div>
-            <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>{c.sub}</div>
-          </div>
-        ))}
+      <div style={{ marginBottom: 24 }}>
+        <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 24 : 28, fontWeight: 700, marginBottom: 4 }}>Bonjour, {name} 👋</h2>
+        <p style={{ color: "#888", fontSize: 13 }}>Voici l'état de vos dépenses partagées.</p>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14 }}>
-        <div style={{ background: "#f8f8f8", borderRadius: 14, padding: 16, border: "1px solid #eee" }}>
-          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 14 }}>Par catégorie (tous événements)</div>
-          {byCategory.length === 0 && <div style={{ color: "#ccc", fontSize: 13 }}>Aucune charge</div>}
-          {byCategory.map(c => (
-            <div key={c.cat} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-              <span style={{ fontSize: 16 }}>{CATEGORIES[c.cat].icon}</span>
-              <div style={{ flex: 1 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                  <span style={{ fontSize: 12 }}>{c.cat}</span>
-                  <span style={{ fontSize: 12, fontWeight: 700 }}>{c.total.toFixed(2)} €</span>
-                </div>
-                <div style={{ background: "#e5e5e5", borderRadius: 4, height: 5 }}>
-                  <div style={{ background: CATEGORIES[c.cat].accent, borderRadius: 4, height: 5, width: `${grandTotal > 0 ? (c.total / grandTotal) * 100 : 0}%` }} />
-                </div>
-              </div>
-            </div>
-          ))}
+
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 14, marginBottom: 24 }}>
+        <StatCard label="Budget collectif total" value={`${grandTotal.toFixed(2)} €`} sub={`${expenses.length} charge${expenses.length > 1 ? "s" : ""}`} accent="#0F0F0F" />
+        <StatCard label="Événements" value={events.length} sub={`${openEvents} ouvert · ${events.length - openEvents} bouclé`} accent="#2E7D32" />
+        <div style={{ gridColumn: isMobile ? "1 / -1" : "auto" }}>
+          <StatCard label="Participants uniques" value={[...new Set(events.flatMap(e => (e.event_participants || []).map(p => p.name)))].length} sub="sur tous les événements" accent="#1565C0" />
         </div>
-        <div style={{ background: "#f8f8f8", borderRadius: 14, padding: 16, border: "1px solid #eee" }}>
-          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 14 }}>Événements récents</div>
-          {events.length === 0 && <div style={{ color: "#ccc", fontSize: 13 }}>Aucun événement</div>}
-          {events.slice(0, 5).map(ev => {
-            const evTotal = expenses.filter(e => e.event_id === ev.id).reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
-            const participants = (ev.event_participants || []).map(p => p.name);
-            return (
-              <div key={ev.id} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-                <div style={{ width: 34, height: 34, borderRadius: 9, background: "#fff", border: "1px solid #eee", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, flexShrink: 0 }}>{ev.status === "closed" ? "🔒" : "🎊"}</div>
+      </div>
+
+      {events.length === 0 ? (
+        <EmptyState icon="🎊" title="Aucun événement" subtitle="Créez votre premier événement pour commencer à gérer vos dépenses partagées." />
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: 20, border: "1px solid #eee" }}>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Dépenses par catégorie</div>
+            {byCategory.length === 0 ? <div style={{ color: "#ccc", fontSize: 13 }}>Aucune charge enregistrée</div> : byCategory.map(c => (
+              <div key={c.cat} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                <span style={{ fontSize: 18, flexShrink: 0 }}>{CATEGORIES[c.cat].icon}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.name}</div>
-                  <div style={{ fontSize: 11, color: "#aaa" }}>{ev.date} · {participants.length} p. · Budget collectif</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                    <span style={{ fontSize: 12 }}>{c.cat}</span>
+                    <span style={{ fontSize: 12, fontWeight: 700 }}>{c.total.toFixed(2)} € ({grandTotal > 0 ? ((c.total / grandTotal) * 100).toFixed(0) : 0}%)</span>
+                  </div>
+                  <div style={{ background: "#f0f0f0", borderRadius: 6, height: 6 }}>
+                    <div style={{ background: CATEGORIES[c.cat].accent, borderRadius: 6, height: 6, width: `${grandTotal > 0 ? (c.total / grandTotal) * 100 : 0}%`, transition: "width 0.5s" }} />
+                  </div>
                 </div>
-                <div style={{ fontSize: 13, fontWeight: 700, flexShrink: 0 }}>{evTotal.toFixed(2)} {currencySymbol(ev.currency)}</div>
               </div>
-            );
-          })}
+            ))}
+          </div>
+          <div style={{ background: "#fff", borderRadius: 16, padding: 20, border: "1px solid #eee" }}>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Événements récents</div>
+            {events.slice(0, 5).map((ev, i) => {
+              const evTotal = expenses.filter(e => e.event_id === ev.id).reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
+              const participants = (ev.event_participants || []).map(p => p.name);
+              return (
+                <div key={ev.id} style={{ display: "flex", alignItems: "center", gap: 12, paddingBottom: 12, marginBottom: 12, borderBottom: i < Math.min(events.length, 5) - 1 ? "1px solid #f5f5f5" : "none" }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 10, background: ev.status === "closed" ? "#f5f5f5" : "#f0faf4", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>{ev.status === "closed" ? "🔒" : "🎊"}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.name}</div>
+                    <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>{ev.date} · {participants.length} participant{participants.length > 1 ? "s" : ""}</div>
+                  </div>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700 }}>{evTotal.toFixed(2)} {currencySymbol(ev.currency)}</div>
+                    <div style={{ fontSize: 10, color: "#aaa" }}>collectif</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
 
 // ─── ÉVÉNEMENTS ───────────────────────────────────────────────
-function Events({ events, expenses, contributions, user, reload, isMobile }) {
+function Events({ events, expenses, contributions, user, reload, isMobile, addToast }) {
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState({ name: "", date: "", currency: "EUR €", participants: [] });
   const [loading, setLoading] = useState(false);
   const [confirm, setConfirm] = useState(null);
-  const [managingEv, setManagingEv] = useState(null); // événement dont on gère les participants
+  const [managingEv, setManagingEv] = useState(null);
   const [newParticipant, setNewParticipant] = useState("");
 
   const handleCreate = async () => {
     if (!form.name || !form.date || form.participants.length < 2) return;
     setLoading(true);
     const { error } = await createEvent(form, form.participants, user.id);
-    if (!error) { await reload(); setForm({ name: "", date: "", currency: "EUR €", participants: [] }); setShowNew(false); }
-    else alert("Erreur : " + error.message);
+    if (!error) {
+      await reload();
+      setForm({ name: "", date: "", currency: "EUR €", participants: [] });
+      setShowNew(false);
+      addToast("Événement créé avec succès !", "success");
+    } else {
+      addToast("Erreur lors de la création : " + error.message, "error");
+    }
     setLoading(false);
   };
 
   const handleDelete = (ev) => {
     setConfirm({
-      message: `Supprimer "${ev.name}" et toutes ses charges ?`,
-      onConfirm: async () => { await deleteEvent(ev.id); await reload(); setConfirm(null); },
+      message: `Supprimer définitivement "${ev.name}" et toutes ses charges ?`,
+      warnings: ["Cette action est irréversible."],
+      onConfirm: async () => {
+        await deleteEvent(ev.id);
+        await reload();
+        setConfirm(null);
+        addToast(`"${ev.name}" supprimé.`, "info");
+      },
       onCancel: () => setConfirm(null),
     });
   };
@@ -792,10 +886,16 @@ function Events({ events, expenses, contributions, user, reload, isMobile }) {
     const evContribMap = {};
     (contributions[ev.id] || []).forEach(c => { evContribMap[c.participant] = c.amount; });
     const allSettled = participants.every(p => isSettled(computeNetBalance(evExp, evContribMap, p)));
-    if (!allSettled) { alert("Tous les participants doivent solder avant de boucler."); return; }
+    if (!allSettled) { addToast("Tous les participants doivent solder avant de boucler.", "warning"); return; }
     setConfirm({
-      message: `Boucler "${ev.name}" ? L'historique sera effacé et aucune modification ne sera plus possible. Irréversible.`,
-      onConfirm: async () => { await updateEventStatus(ev.id, "closed"); await reload(); setConfirm(null); },
+      message: `Boucler "${ev.name}" ? L'historique sera effacé et aucune modification ne sera plus possible.`,
+      warnings: ["Action irréversible."],
+      onConfirm: async () => {
+        await updateEventStatus(ev.id, "closed");
+        await reload();
+        setConfirm(null);
+        addToast(`"${ev.name}" bouclé avec succès.`, "success");
+      },
       onCancel: () => setConfirm(null),
     });
   };
@@ -804,17 +904,22 @@ function Events({ events, expenses, contributions, user, reload, isMobile }) {
     const name = newParticipant.trim();
     if (!name) return;
     const existing = (ev.event_participants || []).map(p => p.name.toLowerCase());
-    if (existing.includes(name.toLowerCase())) { alert("Ce participant existe déjà."); return; }
+    if (existing.includes(name.toLowerCase())) { addToast("Ce participant existe déjà.", "warning"); return; }
     await addParticipant(ev.id, name);
-    await reload(); setNewParticipant("");
+    await reload();
+    setNewParticipant("");
+    addToast(`${name} ajouté à l'événement.`, "success");
+    setManagingEv(events.find(e => e.id === ev.id) || ev);
   };
 
   const handleRemoveParticipant = (ev, name) => {
     setConfirm({
-      message: `Retirer "${name}" de l'événement "${ev.name}" ? Ses contributions seront retirées et les calculs recalculés.`,
+      message: `Retirer "${name}" de "${ev.name}" ? Les calculs seront recalculés.`,
       onConfirm: async () => {
         await removeParticipant(ev.id, name);
-        await reload(); setConfirm(null);
+        await reload();
+        setConfirm(null);
+        addToast(`${name} retiré de l'événement.`, "info");
       },
       onCancel: () => setConfirm(null),
     });
@@ -826,12 +931,16 @@ function Events({ events, expenses, contributions, user, reload, isMobile }) {
       {managingEv && (
         <Modal title={`Participants — ${managingEv.name}`} onClose={() => { setManagingEv(null); setNewParticipant(""); }}>
           <div style={{ marginBottom: 16 }}>
-            {(managingEv.event_participants || []).map(p => (
-              <div key={p.name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid #f5f5f5" }}>
-                <Avatar name={p.name} size={28} />
-                <span style={{ flex: 1, fontSize: 14 }}>{p.name}</span>
+            {(managingEv.event_participants || []).length === 0 && <div style={{ color: "#bbb", fontSize: 13, padding: "12px 0" }}>Aucun participant</div>}
+            {(managingEv.event_participants || []).map((p, i) => (
+              <div key={p.name} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: "1px solid #f5f5f5" }}>
+                <Avatar name={p.name} size={30} />
+                <span style={{ flex: 1, fontSize: 14, fontWeight: 500 }}>{p.name}</span>
                 {managingEv.status === "open" && (
-                  <button onClick={() => { setManagingEv(null); handleRemoveParticipant(managingEv, p.name); }} style={{ padding: "3px 10px", borderRadius: 6, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>Retirer</button>
+                  <button onClick={() => { setManagingEv(null); handleRemoveParticipant(managingEv, p.name); }}
+                    style={{ padding: "4px 12px", borderRadius: 8, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>
+                    Retirer
+                  </button>
                 )}
               </div>
             ))}
@@ -843,7 +952,7 @@ function Events({ events, expenses, contributions, user, reload, isMobile }) {
                 <input style={{ ...S.input, flex: 1 }} placeholder="Prénom" value={newParticipant}
                   onChange={e => setNewParticipant(e.target.value)}
                   onKeyDown={e => e.key === "Enter" && handleAddParticipant(managingEv)} />
-                <button onClick={() => handleAddParticipant(managingEv)} style={{ ...S.btnDark, padding: "9px 14px" }}>+</button>
+                <button onClick={() => handleAddParticipant(managingEv)} style={{ ...S.btnDark, padding: "9px 16px" }}>+</button>
               </div>
             </div>
           )}
@@ -852,99 +961,114 @@ function Events({ events, expenses, contributions, user, reload, isMobile }) {
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <div>
-          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 20 : 24, fontWeight: 700, marginBottom: 2 }}>Événements</h2>
-          <p style={{ color: "#888", fontSize: 12 }}>{events.length} événement(s)</p>
+          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2 }}>Événements</h2>
+          <p style={{ color: "#888", fontSize: 12 }}>{events.length} événement{events.length > 1 ? "s" : ""}</p>
         </div>
-        <button onClick={() => setShowNew(!showNew)} style={S.btnDark}>+ Nouveau</button>
+        <button onClick={() => setShowNew(!showNew)} style={S.btnDark}>{showNew ? "× Fermer" : "+ Nouveau"}</button>
       </div>
 
       {showNew && (
-        <div style={S.card}>
+        <div style={{ ...S.card, marginBottom: 16 }}>
           <div style={S.sectionTitle}>Créer un événement</div>
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 14 }}>
-            <div><label style={S.label}>Nom</label><input style={S.input} placeholder="Soirée chez Marc" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+            <div><label style={S.label}>Nom de l'événement</label><input style={S.input} placeholder="Ex: Soirée chez Marc" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
             <div><label style={S.label}>Date</label><input type="date" style={S.input} value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
             <div style={{ gridColumn: isMobile ? "auto" : "1 / -1" }}>
               <label style={S.label}>Monnaie</label>
-              <select style={{ ...S.input, maxWidth: 200 }} value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value })}>
+              <select style={{ ...S.input, maxWidth: 220 }} value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value })}>
                 {CURRENCIES.map(c => <option key={c}>{c}</option>)}
               </select>
             </div>
           </div>
-          <div style={{ marginBottom: 16 }}>
+          <div style={{ marginBottom: 18 }}>
             <ParticipantInput participants={form.participants} onChange={p => setForm({ ...form, participants: p })} />
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={handleCreate} disabled={loading || form.participants.length < 2} style={{ ...S.btnDark, opacity: form.participants.length < 2 ? 0.5 : 1 }}>{loading ? "..." : "Créer"}</button>
+            <button onClick={handleCreate} disabled={loading || form.participants.length < 2}
+              style={{ ...S.btnDark, opacity: form.participants.length < 2 ? 0.5 : 1 }}>
+              {loading ? "Création..." : "Créer l'événement"}
+            </button>
             <button onClick={() => setShowNew(false)} style={S.btnGhost}>Annuler</button>
           </div>
         </div>
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {events.length === 0 && <div style={{ padding: 40, textAlign: "center", color: "#bbb", fontSize: 14 }}>Aucun événement. Créez-en un !</div>}
-        {events.map(ev => {
-          const participants = (ev.event_participants || []).map(p => p.name);
-          const evExp = expenses.filter(e => e.event_id === ev.id);
-          const evContribMap = {};
-          (contributions[ev.id] || []).forEach(c => { evContribMap[c.participant] = c.amount; });
-          const evTotal = evExp.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
-          const settledCount = participants.filter(p => isSettled(computeNetBalance(evExp, evContribMap, p))).length;
-          const allSettled = participants.length > 0 && settledCount === participants.length;
-          const progress = participants.length > 0 ? (settledCount / participants.length) * 100 : 0;
+      {events.length === 0 && !showNew ? (
+        <EmptyState icon="🎊" title="Aucun événement" subtitle="Créez votre premier événement pour commencer."
+          action={<button onClick={() => setShowNew(true)} style={S.btnDark}>+ Créer un événement</button>} />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {events.map(ev => {
+            const participants = (ev.event_participants || []).map(p => p.name);
+            const evExp = expenses.filter(e => e.event_id === ev.id);
+            const evContribMap = {};
+            (contributions[ev.id] || []).forEach(c => { evContribMap[c.participant] = c.amount; });
+            const evTotal = evExp.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
+            const settledCount = participants.filter(p => isSettled(computeNetBalance(evExp, evContribMap, p))).length;
+            const allSettled = participants.length > 0 && settledCount === participants.length;
+            const progress = participants.length > 0 ? (settledCount / participants.length) * 100 : 0;
 
-          return (
-            <div key={ev.id} style={{ background: "#fff", borderRadius: 14, padding: isMobile ? "14px 16px" : "16px 20px", border: "1px solid #eee" }}>
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-                <div style={{ width: 40, height: 40, borderRadius: 10, background: ev.status === "closed" ? "#f5f5f5" : "#f0faf4", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>{ev.status === "closed" ? "🔒" : "🎊"}</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
-                    <span style={{ fontSize: 14, fontWeight: 700 }}>{ev.name}</span>
-                    <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: ev.status === "closed" ? "#f0f0f0" : "#E8F5E9", color: ev.status === "closed" ? "#999" : "#2E7D32", fontWeight: 600 }}>
-                      {ev.status === "closed" ? "Bouclé" : "Ouvert"}
-                    </span>
+            return (
+              <div key={ev.id} style={{ background: "#fff", borderRadius: 16, padding: isMobile ? "16px" : "18px 22px", border: "1px solid #eee", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+                  <div style={{ width: 44, height: 44, borderRadius: 12, background: ev.status === "closed" ? "#f5f5f5" : allSettled ? "#E8F5E9" : "#f0faf4", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>
+                    {ev.status === "closed" ? "🔒" : "🎊"}
                   </div>
-                  <div style={{ fontSize: 11, color: "#888", marginBottom: 8 }}>📅 {ev.date} · {currencySymbol(ev.currency)} · Budget collectif : {evTotal.toFixed(2)}</div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                    <AvatarStack names={participants} size={22} />
-                    <button onClick={() => setManagingEv(ev)} style={{ fontSize: 11, color: "#1565C0", background: "none", border: "1px solid #90CAF9", borderRadius: 6, padding: "2px 8px", cursor: "pointer" }}>
-                      Gérer participants
-                    </button>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+                      <span style={{ fontSize: 15, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: isMobile ? 140 : 260 }}>{ev.name}</span>
+                      <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: ev.status === "closed" ? "#f0f0f0" : allSettled ? "#E8F5E9" : "#fff8e1", color: ev.status === "closed" ? "#999" : allSettled ? "#2E7D32" : "#F57F17", fontWeight: 700, flexShrink: 0 }}>
+                        {ev.status === "closed" ? "🔒 Bouclé" : allSettled ? "✓ Prêt à boucler" : "En cours"}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 11, color: "#999", marginBottom: 10 }}>📅 {ev.date} · {currencySymbol(ev.currency)} · {evExp.length} charge{evExp.length > 1 ? "s" : ""}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: ev.status === "open" ? 12 : 0 }}>
+                      <AvatarStack names={participants} size={24} />
+                      <button onClick={() => setManagingEv(ev)}
+                        style={{ fontSize: 11, color: "#1565C0", background: "#E3F2FD", border: "none", borderRadius: 8, padding: "3px 10px", cursor: "pointer", fontWeight: 600, flexShrink: 0 }}>
+                        👥 Gérer
+                      </button>
+                    </div>
+                    {ev.status === "open" && (
+                      <div>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                          <span style={{ fontSize: 11, color: "#aaa" }}>Progression vers bouclage</span>
+                          <span style={{ fontSize: 11, color: allSettled ? "#2E7D32" : "#F57F17", fontWeight: 700 }}>{settledCount}/{participants.length} soldés</span>
+                        </div>
+                        <div style={{ background: "#f0f0f0", borderRadius: 6, height: 6, overflow: "hidden" }}>
+                          <div style={{ background: allSettled ? "#2E7D32" : "#F57F17", borderRadius: 6, height: 6, width: `${progress}%`, transition: "width 0.4s ease" }} />
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  {/* Barre de progression vers bouclage */}
-                  {ev.status === "open" && (
-                    <div>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                        <span style={{ fontSize: 11, color: "#888" }}>Progression bouclage</span>
-                        <span style={{ fontSize: 11, color: allSettled ? "#2E7D32" : "#888", fontWeight: 600 }}>{settledCount}/{participants.length} soldés</span>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                    <div style={{ fontSize: 17, fontWeight: 700, fontFamily: "'Playfair Display', serif", marginBottom: 2 }}>{evTotal.toFixed(2)} {currencySymbol(ev.currency)}</div>
+                    <div style={{ fontSize: 10, color: "#aaa", marginBottom: 10 }}>budget collectif</div>
+                    {ev.status === "open" && (
+                      <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                        {allSettled && (
+                          <button onClick={() => handleClose(ev)} style={{ ...S.btnDark, padding: "5px 12px", fontSize: 11, background: "#2E7D32", borderRadius: 8 }}>
+                            🔒 Boucler
+                          </button>
+                        )}
+                        <button onClick={() => handleDelete(ev)} style={{ padding: "5px 12px", borderRadius: 8, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
+                          Supprimer
+                        </button>
                       </div>
-                      <div style={{ background: "#eee", borderRadius: 4, height: 6 }}>
-                        <div style={{ background: allSettled ? "#2E7D32" : "#F57F17", borderRadius: 4, height: 6, width: `${progress}%`, transition: "width 0.3s" }} />
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <div style={{ textAlign: "right", flexShrink: 0 }}>
-                  {ev.status === "open" && (
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                      {allSettled && (
-                        <button onClick={() => handleClose(ev)} style={{ ...S.btnDark, padding: "5px 12px", fontSize: 11, background: "#2E7D32" }}>🔒 Boucler</button>
-                      )}
-                      <button onClick={() => handleDelete(ev)} style={{ padding: "5px 10px", borderRadius: 7, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>Supprimer</button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
 // ─── CHARGES ──────────────────────────────────────────────────
-function Expenses({ events, expenses, user, reload, isMobile }) {
+function Expenses({ events, expenses, user, reload, isMobile, addToast }) {
   const [showForm, setShowForm] = useState(false);
   const [filterEvent, setFilterEvent] = useState("all");
   const [editingEx, setEditingEx] = useState(null);
@@ -965,22 +1089,35 @@ function Expenses({ events, expenses, user, reload, isMobile }) {
   const sharePerPerson = form.included.length > 0 ? total / form.included.length : 0;
 
   const handleSave = async () => {
-    if (!form.eventId || !form.category || !form.sub || !form.detail || !form.paidBy || form.included.length === 0 || total === 0) return;
+    if (!form.eventId || !form.category || !form.sub || !form.detail || !form.paidBy || form.included.length === 0 || total === 0) {
+      addToast("Veuillez remplir tous les champs.", "warning"); return;
+    }
     setSaving(true);
-    if (editingEx) await updateExpense(editingEx.id, { ...form, qty: Number(form.qty), unit: Number(form.unit) }, user.id, editingEx);
-    else await createExpense({ ...form, qty: Number(form.qty), unit: Number(form.unit) }, user.id);
+    if (editingEx) {
+      await updateExpense(editingEx.id, { ...form, qty: Number(form.qty), unit: Number(form.unit) }, user.id, editingEx);
+      addToast("Charge modifiée.", "success");
+    } else {
+      await createExpense({ ...form, qty: Number(form.qty), unit: Number(form.unit) }, user.id);
+      addToast("Charge ajoutée.", "success");
+    }
     await reload(); setForm(empty); setEditingEx(null); setShowForm(false); setSaving(false);
   };
 
   const startEdit = (ex) => {
     setForm({ eventId: ex.event_id, category: ex.category, sub: ex.sub_category || "", detail: ex.detail, qty: ex.qty, unit: ex.unit_price ?? 0, paidBy: ex.paid_by || "", included: [...(ex.included || [])] });
     setEditingEx(ex); setShowForm(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleDelete = (ex) => {
     setConfirm({
       message: `Supprimer la charge "${ex.detail}" ?`,
-      onConfirm: async () => { await deleteExpense(ex, user.id); await reload(); setConfirm(null); },
+      onConfirm: async () => {
+        await deleteExpense(ex, user.id);
+        await reload();
+        setConfirm(null);
+        addToast("Charge supprimée.", "info");
+      },
       onCancel: () => setConfirm(null),
     });
   };
@@ -990,23 +1127,31 @@ function Expenses({ events, expenses, user, reload, isMobile }) {
   return (
     <div>
       {confirm && <ConfirmModal {...confirm} />}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <div>
-          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 20 : 24, fontWeight: 700, marginBottom: 2 }}>Charges</h2>
-          <p style={{ color: "#888", fontSize: 12 }}>{expenses.length} dépense(s)</p>
+          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2 }}>Charges</h2>
+          <p style={{ color: "#888", fontSize: 12 }}>{expenses.length} dépense{expenses.length > 1 ? "s" : ""}</p>
         </div>
-        <button onClick={() => { setForm(empty); setEditingEx(null); setShowForm(!showForm); }} style={S.btnDark}>+ Ajouter</button>
+        <button onClick={() => { setForm(empty); setEditingEx(null); setShowForm(!showForm); }}
+          style={S.btnDark}>{showForm && !editingEx ? "× Fermer" : "+ Ajouter"}</button>
       </div>
-      <div style={{ marginBottom: 14 }}>
-        <select style={{ ...S.input, width: "auto" }} value={filterEvent} onChange={e => setFilterEvent(e.target.value)}>
-          <option value="all">Tous les événements</option>
-          {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
+
+      <div style={{ marginBottom: 16 }}>
+        <select style={{ ...S.input, width: "auto", maxWidth: "100%" }} value={filterEvent} onChange={e => setFilterEvent(e.target.value)}>
+          <option value="all">Tous les événements ({expenses.length})</option>
+          {events.map(ev => {
+            const count = expenses.filter(e => e.event_id === ev.id).length;
+            return <option key={ev.id} value={ev.id}>{ev.name} ({count})</option>;
+          })}
         </select>
       </div>
 
       {showForm && (
-        <div style={S.card}>
-          <div style={S.sectionTitle}>{editingEx ? "Modifier" : "Nouvelle charge"}</div>
+        <div style={{ ...S.card, marginBottom: 16, border: editingEx ? "1.5px solid #F57F17" : "1px solid #eee" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <div style={S.sectionTitle}>{editingEx ? "✏️ Modifier la charge" : "➕ Nouvelle charge"}</div>
+            {editingEx && <span style={{ fontSize: 11, color: "#F57F17", fontWeight: 600 }}>Mode édition</span>}
+          </div>
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
             <div><label style={S.label}>Événement</label>
               <select style={S.input} value={form.eventId} onChange={e => handleEventChange(e.target.value)} disabled={!!editingEx}>
@@ -1033,32 +1178,41 @@ function Expenses({ events, expenses, user, reload, isMobile }) {
               </select>
             </div>
           </div>
-          <div style={{ marginBottom: 12 }}><label style={S.label}>Détail</label><input style={S.input} placeholder="Ex: Vin rouge..." value={form.detail} onChange={e => setForm({ ...form, detail: e.target.value })} /></div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 14 }}>
+          <div style={{ marginBottom: 12 }}><label style={S.label}>Détail / Nature</label>
+            <input style={S.input} placeholder="Ex: Vin rouge Côtes du Rhône, Salade César..." value={form.detail} onChange={e => setForm({ ...form, detail: e.target.value })} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 16 }}>
             <div><label style={S.label}>Quantité</label><input type="number" min="1" style={S.input} value={form.qty} onChange={e => setForm({ ...form, qty: e.target.value })} /></div>
             <div><label style={S.label}>Prix unitaire</label><input type="number" min="0" step="0.01" style={S.input} value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })} /></div>
-            <div><label style={S.label}>Total</label><div style={{ ...S.input, background: "#f0faf4", color: "#2E7D32", fontWeight: 700, display: "flex", alignItems: "center" }}>{total.toFixed(2)}</div></div>
+            <div><label style={S.label}>Total auto</label>
+              <div style={{ ...S.input, background: total > 0 ? "#f0faf4" : "#f8f8f8", color: total > 0 ? "#2E7D32" : "#aaa", fontWeight: 700, display: "flex", alignItems: "center" }}>
+                {total.toFixed(2)} {currencySymbol(currentEvent?.currency)}
+              </div>
+            </div>
           </div>
           {currentEvent && (
-            <div style={{ marginBottom: 14, padding: 14, background: "#fafafa", borderRadius: 10, border: "1px solid #eee" }}>
-              <ParticipantToggle people={participants} selected={form.included} onChange={p => setForm({ ...form, included: p })} label="Qui partage ?" />
+            <div style={{ marginBottom: 16, padding: 16, background: "#fafafa", borderRadius: 12, border: "1px solid #f0f0f0" }}>
+              <ParticipantToggle people={participants} selected={form.included} onChange={p => setForm({ ...form, included: p })} label="Qui partage cette charge ?" />
               {form.included.length > 0 && total > 0 && (
-                <div style={{ marginTop: 10, padding: "7px 12px", background: "#E8F5E9", borderRadius: 8, fontSize: 12, color: "#2E7D32", fontWeight: 600 }}>
-                  ➗ {sharePerPerson.toFixed(2)} / personne · {form.included.length} inclus
+                <div style={{ marginTop: 12, padding: "10px 14px", background: "#E8F5E9", borderRadius: 10, fontSize: 13, color: "#2E7D32", fontWeight: 600 }}>
+                  ➗ {sharePerPerson.toFixed(2)} {currencySymbol(currentEvent?.currency)} / personne · {form.included.length} inclus
                 </div>
               )}
+              {form.included.length === 0 && <div style={{ marginTop: 8, fontSize: 12, color: "#C62828" }}>⚠️ Sélectionnez au moins une personne</div>}
             </div>
           )}
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={handleSave} disabled={saving} style={S.btnDark}>{saving ? "..." : editingEx ? "Enregistrer" : "Ajouter"}</button>
-            <button onClick={() => { setShowForm(false); setEditingEx(null); }} style={S.btnGhost}>Annuler</button>
+            <button onClick={handleSave} disabled={saving} style={S.btnDark}>{saving ? "Enregistrement..." : editingEx ? "Enregistrer les modifications" : "Ajouter la charge"}</button>
+            <button onClick={() => { setShowForm(false); setEditingEx(null); setForm(empty); }} style={S.btnGhost}>Annuler</button>
           </div>
         </div>
       )}
 
-      {isMobile ? (
+      {filtered.length === 0 ? (
+        <EmptyState icon="🧾" title="Aucune charge" subtitle={filterEvent === "all" ? "Aucune dépense enregistrée." : "Aucune dépense pour cet événement."}
+          action={<button onClick={() => setShowForm(true)} style={S.btnDark}>+ Ajouter une charge</button>} />
+      ) : isMobile ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {filtered.length === 0 && <div style={{ padding: 32, textAlign: "center", color: "#bbb", fontSize: 13 }}>Aucune charge</div>}
           {filtered.map(ex => {
             const cat = CATEGORIES[ex.category];
             const ev = events.find(e => e.id === ex.event_id);
@@ -1066,26 +1220,29 @@ function Expenses({ events, expenses, user, reload, isMobile }) {
             const inc = ex.included || [];
             const share = inc.length > 0 ? t / inc.length : 0;
             return (
-              <div key={ex.id} style={{ background: "#fff", borderRadius: 12, padding: "14px 16px", border: "1px solid #eee" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 18 }}>{cat?.icon}</span>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 700 }}>{ex.detail}</div>
-                      <div style={{ fontSize: 11, color: "#aaa" }}>{ev?.name} · par {ex.paid_by}</div>
+              <div key={ex.id} style={{ background: "#fff", borderRadius: 14, padding: "14px 16px", border: "1px solid #eee" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1 }}>
+                    <span style={{ fontSize: 22, flexShrink: 0 }}>{cat?.icon}</span>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ex.detail}</div>
+                      <div style={{ fontSize: 11, color: "#aaa", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev?.name} · par {ex.paid_by}</div>
                     </div>
                   </div>
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: 15, fontWeight: 700 }}>{t.toFixed(2)}</div>
-                    <div style={{ fontSize: 11, color: "#2E7D32" }}>{share.toFixed(2)}/p.</div>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                    <div style={{ fontSize: 16, fontWeight: 700 }}>{t.toFixed(2)}</div>
+                    <div style={{ fontSize: 11, color: "#2E7D32", fontWeight: 600 }}>{share.toFixed(2)}/p.</div>
                   </div>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  {cat && <Badge label={ex.sub_category} color={cat.color} accent={cat.accent} />}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    {cat && <Badge label={ex.sub_category} color={cat.color} accent={cat.accent} />}
+                    <AvatarStack names={inc} size={18} />
+                  </div>
                   {ev?.status === "open" && (
                     <div style={{ display: "flex", gap: 6 }}>
-                      <button onClick={() => startEdit(ex)} style={{ padding: "3px 8px", borderRadius: 6, border: "1.5px solid #ddd", background: "#fff", fontSize: 11, cursor: "pointer" }}>✏️</button>
-                      <button onClick={() => handleDelete(ex)} style={{ padding: "3px 8px", borderRadius: 6, border: "1.5px solid #ffcdd2", background: "#fff5f5", fontSize: 11, cursor: "pointer" }}>🗑️</button>
+                      <button onClick={() => startEdit(ex)} style={{ padding: "4px 10px", borderRadius: 8, border: "1.5px solid #e0e0e0", background: "#fff", fontSize: 12, cursor: "pointer" }}>✏️</button>
+                      <button onClick={() => handleDelete(ex)} style={{ padding: "4px 10px", borderRadius: 8, border: "1.5px solid #ffcdd2", background: "#fff5f5", fontSize: 12, cursor: "pointer" }}>🗑️</button>
                     </div>
                   )}
                 </div>
@@ -1094,17 +1251,16 @@ function Expenses({ events, expenses, user, reload, isMobile }) {
           })}
         </div>
       ) : (
-        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #eee", overflow: "auto" }}>
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #eee", overflow: "auto", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}>
             <thead>
-              <tr style={{ background: "#f8f8f8", borderBottom: "1px solid #eee" }}>
-                {["Catégorie", "Détail", "Événement", "Qté", "Unit.", "Total", "Part/p.", "Payé par", "Inclus", ""].map(h => (
-                  <th key={h} style={{ padding: "10px 10px", fontSize: 10, fontWeight: 700, color: "#888", textAlign: "left", textTransform: "uppercase", letterSpacing: 0.6 }}>{h}</th>
+              <tr style={{ background: "#f8f8f8", borderBottom: "1.5px solid #eee" }}>
+                {["Catégorie", "Détail", "Événement", "Qté", "Unitaire", "Total", "Part/p.", "Payé par", "Inclus", ""].map(h => (
+                  <th key={h} style={{ padding: "12px 12px", fontSize: 10, fontWeight: 700, color: "#999", textAlign: "left", textTransform: "uppercase", letterSpacing: 0.7, whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 && <tr><td colSpan={10} style={{ padding: 24, textAlign: "center", color: "#bbb", fontSize: 13 }}>Aucune charge</td></tr>}
               {filtered.map((ex, i) => {
                 const cat = CATEGORIES[ex.category];
                 const ev = events.find(e => e.id === ex.event_id);
@@ -1112,21 +1268,33 @@ function Expenses({ events, expenses, user, reload, isMobile }) {
                 const inc = ex.included || [];
                 const share = inc.length > 0 ? t / inc.length : 0;
                 return (
-                  <tr key={ex.id} style={{ borderBottom: i < filtered.length - 1 ? "1px solid #f5f5f5" : "none" }}>
-                    <td style={{ padding: "9px 10px" }}><div style={{ display: "flex", alignItems: "center", gap: 5 }}><span>{cat?.icon}</span>{cat && <Badge label={ex.sub_category} color={cat.color} accent={cat.accent} />}</div></td>
-                    <td style={{ padding: "9px 10px", fontSize: 12 }}>{ex.detail}</td>
-                    <td style={{ padding: "9px 10px", fontSize: 11, color: "#666" }}>{ev?.name}</td>
-                    <td style={{ padding: "9px 10px", fontSize: 12, textAlign: "center" }}>{ex.qty}</td>
-                    <td style={{ padding: "9px 10px", fontSize: 12 }}>{(ex.unit_price ?? 0).toFixed(2)}</td>
-                    <td style={{ padding: "9px 10px", fontSize: 12, fontWeight: 700 }}>{t.toFixed(2)}</td>
-                    <td style={{ padding: "9px 10px", fontSize: 11, color: "#2E7D32", fontWeight: 600 }}>{share.toFixed(2)}</td>
-                    <td style={{ padding: "9px 10px" }}><div style={{ display: "flex", alignItems: "center", gap: 4 }}><Avatar name={ex.paid_by || "?"} size={18} /><span style={{ fontSize: 11 }}>{ex.paid_by}</span></div></td>
-                    <td style={{ padding: "9px 10px" }}><AvatarStack names={inc} size={18} /></td>
-                    <td style={{ padding: "9px 10px" }}>
+                  <tr key={ex.id} style={{ borderBottom: i < filtered.length - 1 ? "1px solid #f5f5f5" : "none", transition: "background 0.1s" }}
+                    onMouseEnter={e => e.currentTarget.style.background = "#fafafa"}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    <td style={{ padding: "11px 12px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                        <span style={{ fontSize: 16 }}>{cat?.icon}</span>
+                        {cat && <Badge label={ex.sub_category} color={cat.color} accent={cat.accent} />}
+                      </div>
+                    </td>
+                    <td style={{ padding: "11px 12px", fontSize: 13, maxWidth: 180 }}><Truncate text={ex.detail} max={25} /></td>
+                    <td style={{ padding: "11px 12px", fontSize: 12, color: "#777", maxWidth: 140 }}><Truncate text={ev?.name} max={18} /></td>
+                    <td style={{ padding: "11px 12px", fontSize: 13, textAlign: "center" }}>{ex.qty}</td>
+                    <td style={{ padding: "11px 12px", fontSize: 13, whiteSpace: "nowrap" }}>{(ex.unit_price ?? 0).toFixed(2)}</td>
+                    <td style={{ padding: "11px 12px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>{t.toFixed(2)}</td>
+                    <td style={{ padding: "11px 12px", fontSize: 12, color: "#2E7D32", fontWeight: 700, whiteSpace: "nowrap" }}>{share.toFixed(2)}</td>
+                    <td style={{ padding: "11px 12px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <Avatar name={ex.paid_by || "?"} size={20} />
+                        <span style={{ fontSize: 12, maxWidth: 70, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ex.paid_by}</span>
+                      </div>
+                    </td>
+                    <td style={{ padding: "11px 12px" }}><AvatarStack names={inc} size={20} /></td>
+                    <td style={{ padding: "11px 12px" }}>
                       {ev?.status === "open" && (
                         <div style={{ display: "flex", gap: 4 }}>
-                          <button onClick={() => startEdit(ex)} style={{ padding: "3px 7px", borderRadius: 6, border: "1.5px solid #ddd", background: "#fff", fontSize: 11, cursor: "pointer" }}>✏️</button>
-                          <button onClick={() => handleDelete(ex)} style={{ padding: "3px 7px", borderRadius: 6, border: "1.5px solid #ffcdd2", background: "#fff5f5", fontSize: 11, cursor: "pointer" }}>🗑️</button>
+                          <button onClick={() => startEdit(ex)} style={{ padding: "4px 8px", borderRadius: 7, border: "1.5px solid #e0e0e0", background: "#fff", fontSize: 12, cursor: "pointer" }}>✏️</button>
+                          <button onClick={() => handleDelete(ex)} style={{ padding: "4px 8px", borderRadius: 7, border: "1.5px solid #ffcdd2", background: "#fff5f5", fontSize: 12, cursor: "pointer" }}>🗑️</button>
                         </div>
                       )}
                     </td>
@@ -1142,7 +1310,7 @@ function Expenses({ events, expenses, user, reload, isMobile }) {
 }
 
 // ─── RÉPARTITION ─────────────────────────────────────────────
-function Balance({ events, expenses, contributions, user, reload, isMobile }) {
+function Balance({ events, expenses, contributions, user, reload, isMobile, addToast }) {
   const [filterEvent, setFilterEvent] = useState(events[0]?.id || "");
   const [settleModal, setSettleModal] = useState(null);
   const [versement, setVersement] = useState({});
@@ -1161,7 +1329,7 @@ function Balance({ events, expenses, contributions, user, reload, isMobile }) {
     const current = evContribMap[person] || 0;
     let newAmount, message;
     if (net < -1) { newAmount = current + Math.abs(net); message = `Versement de ${Math.abs(net).toFixed(2)} ${sym} enregistré pour ${person}.`; }
-    else if (net > 1) { newAmount = owed; message = `Contribution de ${person} ajustée à ${owed.toFixed(2)} ${sym}.`; }
+    else if (net > 1) { newAmount = owed; message = `Contribution de ${person} ajustée à ${owed.toFixed(2)} ${sym}. L'excédent est annulé.`; }
     else return;
     setSettleModal({ person, newAmount, message });
   };
@@ -1170,16 +1338,21 @@ function Balance({ events, expenses, contributions, user, reload, isMobile }) {
     if (!settleModal) return;
     setSaving(true);
     await upsertContribution(filterEvent, settleModal.person, settleModal.newAmount, user.id);
-    await reload(); setSaving(false); setSettleModal(null);
+    await reload();
+    addToast(`${settleModal.person} soldé avec succès.`, "success");
+    setSaving(false); setSettleModal(null);
   };
 
   const handleVersement = async (person) => {
     const amount = parseFloat(versement[person] || 0);
-    if (!amount || amount <= 0) return;
+    if (!amount || amount <= 0) { addToast("Entrez un montant valide.", "warning"); return; }
     const current = evContribMap[person] || 0;
     setSaving(true);
     await upsertContribution(filterEvent, person, current + amount, user.id);
-    await reload(); setVersement(v => ({ ...v, [person]: "" })); setSaving(false);
+    await reload();
+    setVersement(v => ({ ...v, [person]: "" }));
+    addToast(`Versement de ${amount.toFixed(2)} ${sym} enregistré pour ${person}.`, "success");
+    setSaving(false);
   };
 
   const transactions = participants.length > 0 ? computeTransactions(evExp, evContribMap, participants) : [];
@@ -1187,72 +1360,94 @@ function Balance({ events, expenses, contributions, user, reload, isMobile }) {
   const handleExportPDF = () => {
     if (!ev) return;
     exportPDF(ev, evExp, evContribMap, participants);
+    addToast("PDF généré !", "success");
   };
 
   return (
     <div>
       {settleModal && (
         <Modal title={`Solder ${settleModal.person}`} onClose={() => setSettleModal(null)}>
-          <p style={{ fontSize: 14, marginBottom: 16 }}>{settleModal.message}</p>
+          <p style={{ fontSize: 14, color: "#444", marginBottom: 16, lineHeight: 1.5 }}>{settleModal.message}</p>
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={confirmSettle} disabled={saving} style={S.btnDark}>{saving ? "..." : "Confirmer"}</button>
-            <button onClick={() => setSettleModal(null)} style={S.btnGhost}>Annuler</button>
+            <button onClick={confirmSettle} disabled={saving} style={{ ...S.btnDark, flex: 1, justifyContent: "center", display: "flex" }}>{saving ? "..." : "✓ Confirmer"}</button>
+            <button onClick={() => setSettleModal(null)} style={{ ...S.btnGhost, flex: 1, justifyContent: "center", display: "flex" }}>Annuler</button>
           </div>
         </Modal>
       )}
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
         <div>
-          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 20 : 24, fontWeight: 700, marginBottom: 2 }}>Répartition</h2>
-          <p style={{ color: "#888", fontSize: 12 }}>Soldes en temps réel</p>
+          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2 }}>Répartition</h2>
+          <p style={{ color: "#888", fontSize: 12 }}>Soldes calculés en temps réel</p>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <select style={{ ...S.input, width: "auto" }} value={filterEvent} onChange={e => setFilterEvent(e.target.value)}>
             {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
           </select>
-          <button onClick={handleExportPDF} style={{ ...S.btnGhost, padding: "8px 14px", fontSize: 12 }}>📄 PDF</button>
+          <button onClick={handleExportPDF} style={{ ...S.btnGhost, padding: "8px 14px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>📄 PDF</button>
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : `repeat(${Math.min(Math.max(participants.length, 1), 4)}, 1fr)`, gap: 10, marginBottom: 16 }}>
-        {participants.map(p => {
-          const owed = computeOwed(evExp, p);
-          const contrib = evContribMap[p] || 0;
-          const net = contrib - owed;
-          const settled = isSettled(net);
-          return (
-            <div key={p} style={{ background: "#fff", borderRadius: 12, padding: "14px 12px", border: `1.5px solid ${settled ? "#c8e6c9" : "#eee"}`, textAlign: "center" }}>
-              <Avatar name={p} size={32} />
-              <div style={{ marginTop: 7, fontSize: 13, fontWeight: 700 }}>{p}</div>
-              <div style={{ fontSize: 10, color: "#aaa", marginTop: 3 }}>Doit: {owed.toFixed(2)} {sym}</div>
-              <div style={{ fontSize: 10, color: "#aaa" }}>Versé: {contrib.toFixed(2)} {sym}</div>
-              <div style={{ marginTop: 5, fontSize: 13, fontWeight: 700, color: settled ? "#2E7D32" : net > 0 ? "#1565C0" : "#C62828" }}>
-                {settled ? "✓ Soldé" : net > 0 ? `+${net.toFixed(2)} trop` : `${net.toFixed(2)} ${sym}`}
-              </div>
-              {!settled && ev?.status === "open" && (
-                <div style={{ marginTop: 8, display: "flex", gap: 4, justifyContent: "center", flexWrap: "wrap" }}>
-                  <input type="number" placeholder="Montant" style={{ ...S.input, width: 65, padding: "4px 6px", fontSize: 11 }} value={versement[p] || ""} onChange={e => setVersement(v => ({ ...v, [p]: e.target.value }))} />
-                  <button onClick={() => handleVersement(p)} disabled={saving} style={{ ...S.btnDark, padding: "4px 8px", fontSize: 11 }}>+</button>
-                  <button onClick={() => handleSettle(p)} style={{ padding: "4px 8px", borderRadius: 6, border: "1.5px solid #2E7D32", background: "#E8F5E9", color: "#2E7D32", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>Solder</button>
+      {participants.length === 0 ? (
+        <EmptyState icon="👥" title="Aucun participant" subtitle="Sélectionnez un événement avec des participants." />
+      ) : (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(Math.max(isMobile ? 2 : participants.length, 1), isMobile ? 2 : 4)}, 1fr)`, gap: 12, marginBottom: 20 }}>
+            {participants.map(p => {
+              const owed = computeOwed(evExp, p);
+              const contrib = evContribMap[p] || 0;
+              const net = contrib - owed;
+              const settled = isSettled(net);
+              return (
+                <div key={p} style={{ background: "#fff", borderRadius: 14, padding: "16px 12px", border: `2px solid ${settled ? "#c8e6c9" : Math.abs(net) > 10 ? "#ffcdd2" : "#eee"}`, textAlign: "center", transition: "border-color 0.2s" }}>
+                  <Avatar name={p} size={36} />
+                  <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p}</div>
+                  <div style={{ fontSize: 10, color: "#aaa", marginTop: 4 }}>Doit: {owed.toFixed(2)} {sym}</div>
+                  <div style={{ fontSize: 10, color: "#aaa" }}>Versé: {contrib.toFixed(2)} {sym}</div>
+                  <div style={{ marginTop: 6, fontSize: 14, fontWeight: 700, color: settled ? "#2E7D32" : net > 0 ? "#1565C0" : "#C62828" }}>
+                    {settled ? "✓ Soldé" : `${net > 0 ? "+" : ""}${net.toFixed(2)} ${sym}`}
+                  </div>
+                  {!settled && ev?.status === "open" && (
+                    <div style={{ marginTop: 10, display: "flex", gap: 4, justifyContent: "center", flexWrap: "wrap" }}>
+                      <input type="number" placeholder="Montant" style={{ ...S.input, width: 68, padding: "5px 6px", fontSize: 11, textAlign: "center" }}
+                        value={versement[p] || ""} onChange={e => setVersement(v => ({ ...v, [p]: e.target.value }))} />
+                      <button onClick={() => handleVersement(p)} disabled={saving} style={{ ...S.btnDark, padding: "5px 8px", fontSize: 11, borderRadius: 8 }}>+</button>
+                      <button onClick={() => handleSettle(p)} style={{ padding: "5px 8px", borderRadius: 8, border: "1.5px solid #2E7D32", background: "#E8F5E9", color: "#2E7D32", fontSize: 11, cursor: "pointer", fontWeight: 700, width: "100%" }}>
+                        Solder
+                      </button>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #eee", overflow: "hidden" }}>
-        <div style={{ padding: "12px 16px", borderBottom: "1px solid #f0f0f0", fontSize: 13, fontWeight: 700 }}>Remboursements ({transactions.length})</div>
-        {transactions.length === 0 && <div style={{ padding: 20, textAlign: "center", color: "#bbb", fontSize: 13 }}>✓ Tout est soldé !</div>}
-        {transactions.map((t, i) => (
-          <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderBottom: i < transactions.length - 1 ? "1px solid #f5f5f5" : "none" }}>
-            <Avatar name={t.from} size={26} />
-            <div style={{ flex: 1, fontSize: 13 }}><span style={{ fontWeight: 600 }}>{t.from}</span> → <span style={{ fontWeight: 600 }}>{t.to}</span></div>
-            <Avatar name={t.to} size={26} />
-            <div style={{ fontSize: 14, fontWeight: 700 }}>{t.amount.toFixed(2)} {sym}</div>
+              );
+            })}
           </div>
-        ))}
-      </div>
+
+          <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #eee", overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
+            <div style={{ padding: "14px 18px", borderBottom: "1px solid #f0f0f0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>Remboursements à effectuer</div>
+              <span style={{ background: transactions.length > 0 ? "#FFF8E1" : "#E8F5E9", color: transactions.length > 0 ? "#F57F17" : "#2E7D32", fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20 }}>
+                {transactions.length > 0 ? `${transactions.length} en attente` : "✓ Tout soldé"}
+              </span>
+            </div>
+            {transactions.length === 0 ? (
+              <EmptyState icon="🎉" title="Tout est soldé !" subtitle="Aucun remboursement à effectuer." />
+            ) : (
+              transactions.map((t, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 18px", borderBottom: i < transactions.length - 1 ? "1px solid #f5f5f5" : "none" }}>
+                  <Avatar name={t.from} size={30} />
+                  <div style={{ flex: 1, fontSize: 13, minWidth: 0 }}>
+                    <span style={{ fontWeight: 700 }}><Truncate text={t.from} max={12} /></span>
+                    <span style={{ color: "#aaa", margin: "0 6px" }}>→</span>
+                    <span style={{ fontWeight: 700 }}><Truncate text={t.to} max={12} /></span>
+                  </div>
+                  <Avatar name={t.to} size={30} />
+                  <div style={{ fontSize: 16, fontWeight: 700, fontFamily: "'Playfair Display', serif", flexShrink: 0 }}>{t.amount.toFixed(2)} {sym}</div>
+                </div>
+              ))
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -1271,62 +1466,63 @@ function Analytics({ events, expenses, contributions, isMobile }) {
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 20 : 24, fontWeight: 700, marginBottom: 4 }}>Analyses</h2>
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+      <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 4 }}>Analyses</h2>
+      <p style={{ color: "#888", fontSize: 12, marginBottom: 16 }}>Statistiques détaillées par événement</p>
+      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
         {events.map(ev => (
-          <button key={ev.id} onClick={() => setSel(ev.id)} style={{ padding: "6px 12px", borderRadius: 20, border: `1.5px solid ${sel === ev.id ? "#0F0F0F" : "#ddd"}`, background: sel === ev.id ? "#0F0F0F" : "#fff", color: sel === ev.id ? "#fff" : "#555", fontSize: 12, cursor: "pointer" }}>
-            {ev.name}
+          <button key={ev.id} onClick={() => setSel(ev.id)} style={{ padding: "7px 14px", borderRadius: 20, border: `1.5px solid ${sel === ev.id ? "#0F0F0F" : "#e0e0e0"}`, background: sel === ev.id ? "#0F0F0F" : "#fff", color: sel === ev.id ? "#fff" : "#555", fontSize: 12, cursor: "pointer", fontWeight: sel === ev.id ? 700 : 400, transition: "all 0.15s" }}>
+            {ev.status === "closed" ? "🔒 " : ""}<Truncate text={ev.name} max={20} />
           </button>
         ))}
       </div>
-      {ev && (
+
+      {!ev ? (
+        <EmptyState icon="📊" title="Sélectionnez un événement" subtitle="Choisissez un événement pour voir ses statistiques." />
+      ) : (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 10, marginBottom: 16 }}>
-            {[
-              { label: "Budget collectif", value: `${budget.toFixed(2)} ${sym}`, sub: `${evExp.length} charges · total groupe` },
-              { label: "Participants", value: participants.length, sub: `Part moy. ${participants.length > 0 ? (budget / participants.length).toFixed(2) : 0} ${sym}/p.` },
-              { label: "Statut", value: ev.status === "closed" ? "Bouclé 🔒" : "Ouvert", sub: ev.date },
-            ].map((c, idx) => (
-              <div key={c.label} style={{ background: "#f8f8f8", borderRadius: 12, padding: 14, border: "1px solid #eee", gridColumn: isMobile && idx === 2 ? "1 / -1" : "auto" }}>
-                <div style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 4 }}>{c.label}</div>
-                <div style={{ fontSize: 20, fontWeight: 700, fontFamily: "'Playfair Display', serif" }}>{c.value}</div>
-                <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>{c.sub}</div>
-              </div>
-            ))}
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 14, marginBottom: 20 }}>
+            <StatCard label="Budget collectif" value={`${budget.toFixed(2)} ${sym}`} sub={`${evExp.length} charges enregistrées`} accent="#0F0F0F" />
+            <StatCard label="Participants" value={participants.length} sub={`Part moy. ${participants.length > 0 ? (budget / participants.length).toFixed(2) : 0} ${sym}/p.`} accent="#1565C0" />
+            <div style={{ gridColumn: isMobile ? "1 / -1" : "auto" }}>
+              <StatCard label="Statut" value={ev.status === "closed" ? "Bouclé 🔒" : "Ouvert"} sub={`Date : ${ev.date}`} accent={ev.status === "closed" ? "#999" : "#2E7D32"} />
+            </div>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14 }}>
-            <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #eee", padding: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Par catégorie</div>
-              {byCategory.length === 0 && <div style={{ color: "#ccc", fontSize: 13 }}>Aucune charge</div>}
-              {byCategory.map(c => (
-                <div key={c.cat} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                  <span style={{ fontSize: 16 }}>{CATEGORIES[c.cat].icon}</span>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
+            <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #eee", padding: 20 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Répartition par catégorie</div>
+              {byCategory.length === 0 ? <EmptyState icon="🧾" title="Aucune charge" subtitle="" /> : byCategory.map(c => (
+                <div key={c.cat} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                  <span style={{ fontSize: 18, flexShrink: 0 }}>{CATEGORIES[c.cat].icon}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                       <span style={{ fontSize: 12 }}>{c.cat}</span>
                       <span style={{ fontSize: 12, fontWeight: 700 }}>{c.total.toFixed(2)} ({budget > 0 ? ((c.total / budget) * 100).toFixed(0) : 0}%)</span>
                     </div>
-                    <div style={{ background: "#eee", borderRadius: 4, height: 5 }}>
-                      <div style={{ background: CATEGORIES[c.cat].accent, borderRadius: 4, height: 5, width: `${budget > 0 ? (c.total / budget) * 100 : 0}%` }} />
+                    <div style={{ background: "#f0f0f0", borderRadius: 6, height: 7, overflow: "hidden" }}>
+                      <div style={{ background: CATEGORIES[c.cat].accent, borderRadius: 6, height: 7, width: `${budget > 0 ? (c.total / budget) * 100 : 0}%`, transition: "width 0.5s ease" }} />
                     </div>
                   </div>
                 </div>
               ))}
             </div>
-            <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #eee", padding: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Part due par participant</div>
-              {participants.map(p => {
+            <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #eee", padding: 20 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Part due par participant</div>
+              {participants.length === 0 ? <EmptyState icon="👥" title="Aucun participant" subtitle="" /> : participants.map(p => {
                 const owed = computeOwed(evExp, p);
                 const paid = evContribMap[p] || 0;
+                const pct = owed > 0 ? Math.min((paid / owed) * 100, 100) : 100;
+                const settled = isSettled(paid - owed);
                 return (
-                  <div key={p} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                    <Avatar name={p} size={26} />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 2 }}>{p}</div>
-                      <div style={{ fontSize: 10, color: "#aaa" }}>Part due: {owed.toFixed(2)} · Versé: {paid.toFixed(2)} {sym}</div>
-                    </div>
-                    <div style={{ width: 60, background: "#eee", borderRadius: 4, height: 5 }}>
-                      <div style={{ background: "#2E7D32", borderRadius: 4, height: 5, width: `${owed > 0 ? Math.min((paid / owed) * 100, 100) : 100}%` }} />
+                  <div key={p} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+                    <Avatar name={p} size={28} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p}</span>
+                        <span style={{ fontSize: 11, color: settled ? "#2E7D32" : "#F57F17", fontWeight: 700, flexShrink: 0 }}>{settled ? "✓" : `${paid.toFixed(2)}/${owed.toFixed(2)}`}</span>
+                      </div>
+                      <div style={{ background: "#f0f0f0", borderRadius: 6, height: 6, overflow: "hidden" }}>
+                        <div style={{ background: settled ? "#2E7D32" : "#F57F17", borderRadius: 6, height: 6, width: `${pct}%`, transition: "width 0.4s ease" }} />
+                      </div>
                     </div>
                   </div>
                 );
@@ -1340,7 +1536,7 @@ function Analytics({ events, expenses, contributions, isMobile }) {
 }
 
 // ─── HISTORIQUE ───────────────────────────────────────────────
-function History({ events, history, user, reload, isMobile }) {
+function History({ events, history, user, reload, isMobile, addToast }) {
   const [filterEvent, setFilterEvent] = useState("all");
   const [confirm, setConfirm] = useState(null);
   const filtered = filterEvent === "all" ? history : history.filter(h => h.event_id === filterEvent);
@@ -1348,9 +1544,14 @@ function History({ events, history, user, reload, isMobile }) {
   const handleRollback = (entry) => {
     const later = history.filter(h => h.event_id === entry.event_id && h.created_at >= entry.created_at && !h.invalidated);
     setConfirm({
-      message: `Invalider "${entry.action}" ?`,
-      warnings: later.length > 1 ? [`${later.length - 1} modification(s) ultérieure(s) également invalidées.`] : [],
-      onConfirm: async () => { await invalidateHistory(entry.id, entry.event_id); await reload(); setConfirm(null); },
+      message: `Invalider "${entry.action}" du ${new Date(entry.created_at).toLocaleString("fr-FR")} ?`,
+      warnings: later.length > 1 ? [`${later.length - 1} modification(s) ultérieure(s) seront également invalidées.`] : [],
+      onConfirm: async () => {
+        await invalidateHistory(entry.id, entry.event_id);
+        await reload();
+        setConfirm(null);
+        addToast("Modification invalidée. État restauré.", "info");
+      },
       onCancel: () => setConfirm(null),
     });
   };
@@ -1360,41 +1561,49 @@ function History({ events, history, user, reload, isMobile }) {
       {confirm && <ConfirmModal {...confirm} />}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <div>
-          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 20 : 24, fontWeight: 700, marginBottom: 2 }}>Historique</h2>
-          <p style={{ color: "#888", fontSize: 12 }}>Modifications · Rollback disponible</p>
+          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2 }}>Historique</h2>
+          <p style={{ color: "#888", fontSize: 12 }}>Toutes les modifications · Rollback disponible</p>
         </div>
         <select style={{ ...S.input, width: "auto" }} value={filterEvent} onChange={e => setFilterEvent(e.target.value)}>
-          <option value="all">Tous</option>
+          <option value="all">Tous les événements</option>
           {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
         </select>
       </div>
-      <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #eee", overflow: "hidden" }}>
-        {filtered.length === 0 && <div style={{ padding: 24, textAlign: "center", color: "#bbb", fontSize: 13 }}>Aucune modification</div>}
-        {[...filtered].reverse().map((h, i) => {
-          const ev = events.find(e => e.id === h.event_id);
-          const color = h.invalidated ? "#ccc" : h.action.includes("supprim") ? "#C62828" : h.action.includes("ajout") || h.action.includes("créé") ? "#2E7D32" : "#1565C0";
-          return (
-            <div key={h.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 16px", borderBottom: i < filtered.length - 1 ? "1px solid #f5f5f5" : "none", opacity: h.invalidated ? 0.4 : 1 }}>
-              <div style={{ width: 8, height: 8, borderRadius: "50%", background: color, flexShrink: 0 }} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {h.action} {h.invalidated && <span style={{ fontSize: 10, color: "#aaa", fontWeight: 400 }}>(invalidé)</span>}
+
+      {filtered.length === 0 ? (
+        <EmptyState icon="📋" title="Aucune modification" subtitle="L'historique des modifications apparaîtra ici." />
+      ) : (
+        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #eee", overflow: "hidden" }}>
+          {[...filtered].reverse().map((h, i) => {
+            const ev = events.find(e => e.id === h.event_id);
+            const color = h.invalidated ? "#ddd" : h.action.includes("supprim") ? "#C62828" : h.action.includes("ajout") || h.action.includes("créé") ? "#2E7D32" : "#1565C0";
+            return (
+              <div key={h.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 18px", borderBottom: i < filtered.length - 1 ? "1px solid #f5f5f5" : "none", opacity: h.invalidated ? 0.4 : 1, transition: "opacity 0.2s" }}>
+                <div style={{ width: 10, height: 10, borderRadius: "50%", background: color, flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {h.action} {h.invalidated && <span style={{ fontSize: 10, color: "#aaa", fontWeight: 400 }}>(invalidé)</span>}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>
+                    {ev?.name || "–"} · {new Date(h.created_at).toLocaleString("fr-FR")}
+                  </div>
                 </div>
-                <div style={{ fontSize: 11, color: "#aaa" }}>{ev?.name || "–"} · {new Date(h.created_at).toLocaleString("fr-FR")}</div>
+                {!h.invalidated && ev?.status === "open" && (
+                  <button onClick={() => handleRollback(h)} style={{ padding: "5px 12px", borderRadius: 8, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 11, cursor: "pointer", fontWeight: 700, flexShrink: 0, whiteSpace: "nowrap" }}>
+                    ↩ Invalider
+                  </button>
+                )}
               </div>
-              {!h.invalidated && ev?.status === "open" && (
-                <button onClick={() => handleRollback(h)} style={{ padding: "4px 10px", borderRadius: 6, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 11, cursor: "pointer", fontWeight: 600, flexShrink: 0 }}>↩ Invalider</button>
-              )}
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
 // ─── INVITATIONS ──────────────────────────────────────────────
-function Invite({ events, user, isMobile }) {
+function Invite({ events, user, isMobile, addToast }) {
   const [email, setEmail] = useState("");
   const [selectedEvents, setSelectedEvents] = useState([]);
   const [role, setRole] = useState("read");
@@ -1413,92 +1622,114 @@ function Invite({ events, user, isMobile }) {
   useEffect(() => { if (events.length > 0) loadInvites(); }, [events]);
 
   const handleSend = async () => {
-    if (!email || selectedEvents.length === 0) return;
+    if (!email) { addToast("Entrez un email.", "warning"); return; }
+    if (selectedEvents.length === 0) { addToast("Sélectionnez au moins un événement.", "warning"); return; }
     setSaving(true);
     for (const evId of selectedEvents) await sendInvitation({ eventId: evId, email, role, invitedBy: user.id });
     setEmail(""); setSelectedEvents([]); setRole("read");
-    await loadInvites(); setSaving(false);
+    await loadInvites();
+    setSaving(false);
+    addToast(`Invitation envoyée à ${email}.`, "success");
   };
 
   const handleRemove = async (inv) => {
     await removeInvitation(inv.event_id, inv.email);
     await loadInvites();
+    addToast("Accès retiré.", "info");
   };
 
   const handleToggleRole = async (inv) => {
     const newRole = inv.role === "read" ? "edit" : "read";
     await updateInvitationRole(inv.event_id, inv.email, newRole);
     await loadInvites();
+    addToast(`Rôle de ${inv.email} mis à jour.`, "success");
   };
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 20 : 24, fontWeight: 700, marginBottom: 4 }}>Invitations</h2>
-      <p style={{ color: "#888", fontSize: 12, marginBottom: 20 }}>Gérez l'accès de vos invités</p>
+      <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 4 }}>Invitations</h2>
+      <p style={{ color: "#888", fontSize: 12, marginBottom: 20 }}>Gérez l'accès de vos invités aux événements</p>
+
       <div style={S.card}>
-        <div style={S.sectionTitle}>Inviter quelqu'un</div>
-        <div style={{ background: "#E8F5E9", borderRadius: 8, padding: "10px 14px", marginBottom: 14, fontSize: 12, color: "#2E7D32" }}>
-          📧 L'invité recevra un code d'accès par email. Il pourra se connecter depuis la page d'accueil en mode "Invité".
+        <div style={S.sectionTitle}>✉️ Inviter quelqu'un</div>
+        <div style={{ background: "#E8F5E9", borderRadius: 10, padding: "11px 16px", marginBottom: 16, fontSize: 13, color: "#2E7D32" }}>
+          L'invité recevra un code d'accès par email pour se connecter en mode invité.
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 14 }}>
           <div><label style={S.label}>Email de l'invité</label><input style={S.input} type="email" placeholder="ami@example.com" value={email} onChange={e => setEmail(e.target.value)} /></div>
-          <div><label style={S.label}>Niveau d'accès initial</label>
+          <div><label style={S.label}>Niveau d'accès</label>
             <select style={S.input} value={role} onChange={e => setRole(e.target.value)}>
-              <option value="read">Lecture seule</option>
-              <option value="edit">Peut soumettre des charges</option>
+              <option value="read">👁 Lecture seule</option>
+              <option value="edit">✏️ Peut soumettre des charges</option>
             </select>
           </div>
         </div>
-        <div style={{ marginBottom: 14 }}>
+        <div style={{ marginBottom: 16 }}>
           <label style={S.label}>Événements accessibles</label>
-          {events.map(ev => (
-            <label key={ev.id} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, marginTop: 8 }}>
-              <input type="checkbox" checked={selectedEvents.includes(ev.id)} onChange={() => setSelectedEvents(s => s.includes(ev.id) ? s.filter(x => x !== ev.id) : [...s, ev.id])} />
-              {ev.name} <span style={{ color: "#aaa" }}>({ev.date})</span>
-            </label>
-          ))}
+          {events.length === 0 ? <div style={{ color: "#aaa", fontSize: 13, padding: "8px 0" }}>Aucun événement créé</div> : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+              {events.map(ev => (
+                <label key={ev.id} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontSize: 13, padding: "8px 12px", borderRadius: 10, background: selectedEvents.includes(ev.id) ? "#f0faf4" : "#fafafa", border: `1px solid ${selectedEvents.includes(ev.id) ? "#c8e6c9" : "#eee"}`, transition: "all 0.15s" }}>
+                  <input type="checkbox" checked={selectedEvents.includes(ev.id)} onChange={() => setSelectedEvents(s => s.includes(ev.id) ? s.filter(x => x !== ev.id) : [...s, ev.id])} />
+                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.name}</span>
+                  <span style={{ color: "#aaa", fontSize: 11, flexShrink: 0 }}>{ev.date}</span>
+                </label>
+              ))}
+            </div>
+          )}
         </div>
-        <button onClick={handleSend} disabled={saving} style={S.btnDark}>{saving ? "..." : "Envoyer l'invitation ✉️"}</button>
+        <button onClick={handleSend} disabled={saving} style={S.btnDark}>{saving ? "Envoi..." : "Envoyer l'invitation ✉️"}</button>
       </div>
 
-      <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #eee", overflow: "hidden" }}>
-        <div style={{ padding: "12px 16px", borderBottom: "1px solid #f0f0f0", fontSize: 13, fontWeight: 700 }}>Invités ({invitations.length})</div>
-        {invitations.length === 0 && <div style={{ padding: 20, color: "#bbb", fontSize: 13 }}>Aucune invitation</div>}
-        {invitations.map((inv, i) => (
-          <div key={inv.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 16px", borderBottom: i < invitations.length - 1 ? "1px solid #f5f5f5" : "none", flexWrap: "wrap" }}>
-            <Avatar name={inv.email[0]} size={30} />
-            <div style={{ flex: 1, minWidth: 100 }}>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{inv.email}</div>
-              <div style={{ fontSize: 11, color: "#aaa" }}>{inv.eventName}</div>
+      <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #eee", overflow: "hidden" }}>
+        <div style={{ padding: "14px 18px", borderBottom: "1px solid #f0f0f0", fontSize: 14, fontWeight: 700 }}>
+          Invités ({invitations.length})
+        </div>
+        {invitations.length === 0 ? (
+          <EmptyState icon="👥" title="Aucun invité" subtitle="Invitez des personnes à consulter vos événements." />
+        ) : (
+          invitations.map((inv, i) => (
+            <div key={inv.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", borderBottom: i < invitations.length - 1 ? "1px solid #f5f5f5" : "none", flexWrap: "wrap", gap: 10 }}>
+              <Avatar name={inv.email[0]} size={32} />
+              <div style={{ flex: 1, minWidth: 120 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{inv.email}</div>
+                <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}><Truncate text={inv.eventName} max={25} /></div>
+              </div>
+              <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: inv.status === "accepted" ? "#E8F5E9" : "#FFF8E1", color: inv.status === "accepted" ? "#2E7D32" : "#F57F17", flexShrink: 0 }}>
+                {inv.status === "accepted" ? "✓ Accepté" : "⏳ En attente"}
+              </span>
+              <button onClick={() => handleToggleRole(inv)} style={{ padding: "4px 10px", borderRadius: 8, border: `1.5px solid ${inv.role === "edit" ? "#90CAF9" : "#e0e0e0"}`, background: inv.role === "edit" ? "#E3F2FD" : "#fff", color: inv.role === "edit" ? "#1565C0" : "#666", fontSize: 11, cursor: "pointer", fontWeight: 600, flexShrink: 0 }}>
+                {inv.role === "edit" ? "✏️ Éditeur" : "👁 Lecture"}
+              </button>
+              <button onClick={() => handleRemove(inv)} style={{ padding: "4px 10px", borderRadius: 8, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 11, cursor: "pointer", fontWeight: 700, flexShrink: 0 }}>
+                Retirer
+              </button>
             </div>
-            <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 8px", borderRadius: 20, background: inv.status === "accepted" ? "#E8F5E9" : "#FFF8E1", color: inv.status === "accepted" ? "#2E7D32" : "#F57F17" }}>
-              {inv.status === "accepted" ? "Accepté" : "En attente"}
-            </span>
-            <button onClick={() => handleToggleRole(inv)} style={{ padding: "3px 8px", borderRadius: 6, border: `1.5px solid ${inv.role === "edit" ? "#1565C0" : "#ddd"}`, background: inv.role === "edit" ? "#E3F2FD" : "#fff", color: inv.role === "edit" ? "#1565C0" : "#666", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
-              {inv.role === "edit" ? "✏️ Éditeur" : "👁 Lecture"}
-            </button>
-            <button onClick={() => handleRemove(inv)} style={{ padding: "3px 8px", borderRadius: 6, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 11, cursor: "pointer" }}>Retirer</button>
-          </div>
-        ))}
+          ))
+        )}
       </div>
     </div>
   );
 }
 
-// ─── NOTIFICATIONS + DEMANDES EN ATTENTE ──────────────────────
-function NotificationsPage({ notifications, events, expenses, pendingActions, user, onMarkAll, onDismiss, reload, isMobile }) {
+// ─── NOTIFICATIONS ────────────────────────────────────────────
+function NotificationsPage({ notifications, events, expenses, pendingActions, user, onMarkAll, onDismiss, reload, isMobile, addToast }) {
   const [saving, setSaving] = useState(null);
 
   const handleApprove = async (action) => {
     setSaving(action.id);
     await approvePendingAction(action.id, user.id, action);
-    await reload(); setSaving(null);
+    await reload();
+    setSaving(null);
+    addToast("Action approuvée et exécutée.", "success");
   };
 
   const handleReject = async (action) => {
     setSaving(action.id);
     await rejectPendingAction(action.id, user.id);
-    await reload(); setSaving(null);
+    await reload();
+    setSaving(null);
+    addToast("Demande refusée.", "info");
   };
 
   const typeColor = (t) => ({ success: "#2E7D32", warning: "#F57F17", info: "#1565C0", request: "#6A1B9A" }[t] || "#888");
@@ -1508,43 +1739,47 @@ function NotificationsPage({ notifications, events, expenses, pendingActions, us
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <div>
-          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 20 : 24, fontWeight: 700, marginBottom: 2 }}>Notifications</h2>
-          <p style={{ color: "#888", fontSize: 12 }}>{notifications.filter(n => !n.is_read).length} non lue(s) · {pendingActions.length} demande(s) en attente</p>
+          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2 }}>Notifications</h2>
+          <p style={{ color: "#888", fontSize: 12 }}>{notifications.filter(n => !n.is_read).length} non lue(s) · {pendingActions.length} demande(s)</p>
         </div>
-        <button onClick={onMarkAll} style={S.btnGhost}>Tout lu</button>
+        <button onClick={onMarkAll} style={S.btnGhost}>Tout marquer lu</button>
       </div>
 
-      {/* Demandes en attente des invités */}
       {pendingActions.length > 0 && (
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#6A1B9A", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 }}>Demandes en attente d'approbation</div>
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#6A1B9A", textTransform: "uppercase", letterSpacing: 0.9, marginBottom: 12 }}>
+            ⏳ Demandes en attente d'approbation ({pendingActions.length})
+          </div>
           {pendingActions.map(action => {
             const ev = events.find(e => e.id === action.event_id);
             const data = action.action_data;
+            const total = ((data?.qty || 0) * (data?.unit || 0)).toFixed(2);
             return (
-              <div key={action.id} style={{ background: "#F3E5F5", borderRadius: 12, padding: "14px 16px", border: "1px solid #ce93d8", marginBottom: 10 }}>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-                  <div style={{ fontSize: 20 }}>📝</div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "#6A1B9A", marginBottom: 4 }}>
+              <div key={action.id} style={{ background: "#F3E5F5", borderRadius: 14, padding: "16px 18px", border: "1.5px solid #ce93d8", marginBottom: 12 }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 12 }}>
+                  <div style={{ fontSize: 24, flexShrink: 0 }}>📝</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#6A1B9A", marginBottom: 6 }}>
                       {action.guest_email} demande d'ajouter une charge
                     </div>
                     <div style={{ fontSize: 12, color: "#555", marginBottom: 4 }}>
-                      Événement : <strong>{ev?.name}</strong> · {data?.detail} · {((data?.qty || 0) * (data?.unit || 0)).toFixed(2)} {currencySymbol(ev?.currency)}
+                      <strong>{ev?.name}</strong> · {data?.detail} · <strong>{total} {currencySymbol(ev?.currency)}</strong>
                     </div>
                     <div style={{ fontSize: 11, color: "#888" }}>
                       Payé par : {data?.paidBy} · Inclus : {(data?.included || []).join(", ")}
                     </div>
-                    <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>
-                      Demandé le {new Date(action.created_at).toLocaleString("fr-FR")}
+                    <div style={{ fontSize: 10, color: "#aaa", marginTop: 4 }}>
+                      {new Date(action.created_at).toLocaleString("fr-FR")}
                     </div>
                   </div>
                 </div>
-                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                  <button onClick={() => handleApprove(action)} disabled={saving === action.id} style={{ ...S.btnDark, padding: "6px 14px", fontSize: 12, background: "#2E7D32" }}>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => handleApprove(action)} disabled={saving === action.id}
+                    style={{ ...S.btnDark, background: "#2E7D32", padding: "7px 16px", fontSize: 12, flex: 1, justifyContent: "center", display: "flex" }}>
                     {saving === action.id ? "..." : "✓ Approuver"}
                   </button>
-                  <button onClick={() => handleReject(action)} disabled={saving === action.id} style={{ padding: "6px 14px", borderRadius: 8, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>
+                  <button onClick={() => handleReject(action)} disabled={saving === action.id}
+                    style={{ padding: "7px 16px", borderRadius: 10, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 12, cursor: "pointer", fontWeight: 700, flex: 1 }}>
                     ✕ Refuser
                   </button>
                 </div>
@@ -1554,35 +1789,37 @@ function NotificationsPage({ notifications, events, expenses, pendingActions, us
         </div>
       )}
 
-      {/* Notifications système */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {notifications.length === 0 && pendingActions.length === 0 && <div style={{ padding: 24, textAlign: "center", color: "#bbb", fontSize: 13 }}>Aucune notification</div>}
-        {notifications.map(n => {
-          const ev = events.find(e => e.id === n.event_id);
-          return (
-            <div key={n.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 14px", borderRadius: 12, background: n.is_read ? "#fafafa" : typeBg(n.type), border: `1px solid ${n.is_read ? "#eee" : typeColor(n.type) + "33"}` }}>
-              <div style={{ width: 8, height: 8, borderRadius: "50%", background: n.is_read ? "#ddd" : typeColor(n.type), marginTop: 5, flexShrink: 0 }} />
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, color: n.is_read ? "#888" : "#333" }}>{n.message}</div>
-                {ev && <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>{ev.name} · {new Date(n.created_at).toLocaleString("fr-FR")}</div>}
+      {notifications.length === 0 && pendingActions.length === 0 ? (
+        <EmptyState icon="🔔" title="Aucune notification" subtitle="Vous êtes à jour ! Les notifications apparaîtront ici." />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {notifications.map(n => {
+            const ev = events.find(e => e.id === n.event_id);
+            return (
+              <div key={n.id} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "13px 16px", borderRadius: 14, background: n.is_read ? "#fafafa" : typeBg(n.type), border: `1px solid ${n.is_read ? "#eee" : typeColor(n.type) + "44"}`, transition: "all 0.15s" }}>
+                <div style={{ width: 10, height: 10, borderRadius: "50%", background: n.is_read ? "#e0e0e0" : typeColor(n.type), marginTop: 4, flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, color: n.is_read ? "#999" : "#333", lineHeight: 1.4 }}>{n.message}</div>
+                  {ev && <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>{ev.name} · {new Date(n.created_at).toLocaleString("fr-FR")}</div>}
+                </div>
+                <button onClick={() => onDismiss(n.id)} style={{ background: "none", border: "none", color: "#ccc", cursor: "pointer", fontSize: 18, padding: 0, flexShrink: 0, lineHeight: 1 }}>×</button>
               </div>
-              <button onClick={() => onDismiss(n.id)} style={{ background: "none", border: "none", color: "#ccc", cursor: "pointer", fontSize: 18, padding: 0 }}>×</button>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
 // ─── STYLES ───────────────────────────────────────────────────
 const S = {
-  label: { display: "block", fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: 0.7, marginBottom: 5 },
-  input: { width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e5e5e5", fontSize: 13, outline: "none", background: "#fff", boxSizing: "border-box", color: "#333" },
-  btnDark: { background: "#0F0F0F", color: "#fff", border: "none", borderRadius: 10, padding: "10px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer" },
-  btnGhost: { background: "transparent", color: "#666", border: "1.5px solid #e5e5e5", borderRadius: 10, padding: "10px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer" },
-  card: { background: "#f8f8f8", borderRadius: 14, padding: 18, border: "1px solid #eee", marginBottom: 16 },
-  sectionTitle: { fontSize: 14, fontWeight: 700, marginBottom: 14 },
+  label: { display: "block", fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 },
+  input: { width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #e5e5e5", fontSize: 13, outline: "none", background: "#fff", boxSizing: "border-box", color: "#333", transition: "border-color 0.15s", fontFamily: "inherit" },
+  btnDark: { background: "#0F0F0F", color: "#fff", border: "none", borderRadius: 10, padding: "10px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", transition: "opacity 0.15s" },
+  btnGhost: { background: "transparent", color: "#555", border: "1.5px solid #e0e0e0", borderRadius: 10, padding: "10px 20px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
+  card: { background: "#f9f9f9", borderRadius: 16, padding: 20, border: "1px solid #eee", marginBottom: 16 },
+  sectionTitle: { fontSize: 15, fontWeight: 700, marginBottom: 16 },
 };
 
 // ─── APP RACINE ───────────────────────────────────────────────
@@ -1599,6 +1836,7 @@ export default function App() {
   const [history, setHistory] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [pendingActions, setPendingActions] = useState([]);
+  const { toasts, addToast, removeToast } = useToast();
 
   useEffect(() => {
     getSession().then(s => { setUser(s?.user || null); setLoading(false); });
@@ -1616,16 +1854,13 @@ export default function App() {
       const { data: exData } = await fetchExpenses(ev.id);
       if (exData) allExp.push(...exData);
       const { data: cData } = await fetchContributions(ev.id);
-      if (cData) { allContrib[ev.id] = []; cData.forEach(c => { if (!allContrib[ev.id]) allContrib[ev.id] = []; allContrib[ev.id].push(c); }); }
+      if (cData) { allContrib[ev.id] = cData; }
       const { data: hData } = await fetchHistory(ev.id);
       if (hData) allHist.push(...hData);
     }
-    setExpenses(allExp);
-    setContributions(allContrib);
-    setHistory(allHist);
+    setExpenses(allExp); setContributions(allContrib); setHistory(allHist);
     const { data: nData } = await fetchNotifications(user.id);
     if (nData) setNotifications(nData);
-    // Charger les actions en attente
     if (evData.length > 0) {
       const { data: paData } = await fetchAllPendingActions(evData.map(e => e.id));
       if (paData) setPendingActions(paData);
@@ -1650,40 +1885,43 @@ export default function App() {
 
   if (loading) return <Spinner />;
   if (!user && !guestEmail) return <AuthScreen onAuth={setUser} onGuestAuth={setGuestEmail} />;
-  if (guestEmail) return <GuestView guestEmail={guestEmail} onSignOut={() => setGuestEmail(null)} isMobile={isMobile} />;
+  if (guestEmail) return <GuestView guestEmail={guestEmail} onSignOut={() => setGuestEmail(null)} isMobile={isMobile} addToast={addToast} />;
 
   const unreadCount = notifications.filter(n => !n.is_read).length;
   const pendingCount = pendingActions.length;
 
-  // Convertir contributions pour les composants
-  const contribForComponents = {};
+  // Normaliser contributions
+  const contribNorm = {};
   Object.entries(contributions).forEach(([evId, arr]) => {
-    contribForComponents[evId] = Array.isArray(arr) ? arr : [];
+    contribNorm[evId] = Array.isArray(arr) ? arr : [];
   });
 
-  const props = { events, expenses, contributions: contribForComponents, user, reload: loadAll, isMobile };
+  const sharedProps = { events, expenses, contributions: contribNorm, user, reload: loadAll, isMobile, addToast };
 
   const pages = {
-    dashboard:     <Dashboard {...props} />,
-    events:        <Events {...props} />,
-    expenses:      <Expenses {...props} />,
-    balance:       <Balance {...props} />,
-    analytics:     <Analytics {...props} />,
-    history:       <History events={events} history={history} user={user} reload={loadAll} isMobile={isMobile} />,
-    invite:        <Invite events={events} user={user} isMobile={isMobile} />,
+    dashboard:     <Dashboard {...sharedProps} />,
+    events:        <Events {...sharedProps} />,
+    expenses:      <Expenses {...sharedProps} />,
+    balance:       <Balance {...sharedProps} />,
+    analytics:     <Analytics {...sharedProps} />,
+    history:       <History events={events} history={history} user={user} reload={loadAll} isMobile={isMobile} addToast={addToast} />,
+    invite:        <Invite events={events} user={user} isMobile={isMobile} addToast={addToast} />,
     notifications: <NotificationsPage notifications={notifications} events={events} expenses={expenses}
-                     pendingActions={pendingActions} user={user} reload={loadAll} isMobile={isMobile}
-                     onMarkAll={async () => { await markAllNotificationsRead(user.id); await loadAll(); }}
+                     pendingActions={pendingActions} user={user} reload={loadAll} isMobile={isMobile} addToast={addToast}
+                     onMarkAll={async () => { await markAllNotificationsRead(user.id); await loadAll(); addToast("Toutes les notifications marquées comme lues.", "info"); }}
                      onDismiss={async (id) => { await deleteNotification(id); await loadAll(); }} />,
   };
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: "#f4f4f4" }}>
+    <div style={{ display: "flex", minHeight: "100vh", background: "#f2f2f2", fontFamily: "'DM Sans', sans-serif" }}>
       <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
       <Sidebar active={active} setActive={setActive} unreadCount={unreadCount} pendingCount={pendingCount}
         user={user} onSignOut={handleSignOut} isMobile={isMobile} menuOpen={menuOpen} setMenuOpen={setMenuOpen} />
-      <main style={{ flex: 1, overflow: "auto", padding: isMobile ? "72px 16px 80px" : "28px 32px", maxWidth: "100%" }}>
-        {pages[active]}
+      <main style={{ flex: 1, overflow: "auto", padding: isMobile ? "72px 16px 80px" : "28px 36px", maxWidth: "100%", boxSizing: "border-box" }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+          {pages[active]}
+        </div>
       </main>
     </div>
   );
