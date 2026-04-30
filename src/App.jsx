@@ -1150,12 +1150,13 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
 }
 
 // ─── CHARGES ──────────────────────────────────────────────────
-function Expenses({ events, expenses, user, reload, isMobile, addToast }) {
+function Expenses({ events, expenses, contributions, user, reload, isMobile, addToast, t }) {
   const [showForm, setShowForm] = useState(false);
   const [filterEvent, setFilterEvent] = useState("all");
   const [editingEx, setEditingEx] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [unpaid, setUnpaid] = useState(false); // Charge non encore réglée
   const empty = { eventId: "", category: "", sub: "", detail: "", qty: 1, unit: "", paidBy: "", included: [] };
   const [form, setForm] = useState(empty);
 
@@ -1171,8 +1172,11 @@ function Expenses({ events, expenses, user, reload, isMobile, addToast }) {
   const sharePerPerson = form.included.length > 0 ? total / form.included.length : 0;
 
   const handleSave = async () => {
-    if (!form.eventId || !form.category || !form.sub || !form.detail || !form.paidBy || form.included.length === 0) {
+    if (!form.eventId || !form.category || !form.sub || !form.detail || form.included.length === 0) {
       addToast(t("toast_fill_all"), "warning"); return;
+    }
+    if (!unpaid && !form.paidBy) {
+      addToast("Sélectionnez un payeur ou cochez 'Charge non réglée'.", "warning"); return;
     }
     const amountError = validateAmount(form.qty, form.unit);
     if (amountError) { addToast(amountError, "warning"); return; }
@@ -1182,47 +1186,59 @@ function Expenses({ events, expenses, user, reload, isMobile, addToast }) {
     const totalAmount = qty * unit;
 
     if (editingEx) {
-      // Modification : ajuster la contribution du payeur
-      // Retirer l'ancienne contribution automatique, ajouter la nouvelle
+      // Modification : ajuster la contribution du payeur seulement si la charge était réglée
       const oldTotal = editingEx.qty * (editingEx.unit_price ?? 0);
       const oldPayer = editingEx.paid_by;
       const newPayer = form.paidBy;
+      const wasUnpaid = editingEx.is_unpaid || false;
 
-      // Récupérer les contributions actuelles
-      const evContribs = contributions[form.eventId] || [];
-      const getContrib = (name) => (evContribs.find(c => c.participant === name)?.amount || 0);
-
-      if (oldPayer === newPayer) {
-        // Même payeur — ajuster le delta
-        const current = getContrib(newPayer);
-        const newAmount = Math.max(0, current - oldTotal + totalAmount);
-        await upsertContribution(form.eventId, newPayer, newAmount, user.id);
-      } else {
-        // Payeur différent — retirer l'ancien, créditer le nouveau
-        const oldCurrent = getContrib(oldPayer);
-        await upsertContribution(form.eventId, oldPayer, Math.max(0, oldCurrent - oldTotal), user.id);
-        const newCurrent = getContrib(newPayer);
-        await upsertContribution(form.eventId, newPayer, newCurrent + totalAmount, user.id);
+      if (!wasUnpaid && !unpaid) {
+        // Les deux versions sont réglées — ajuster le delta
+        const evContribs = contributions[form.eventId] || [];
+        const getContrib = (name) => (evContribs.find(c => c.participant === name)?.amount || 0);
+        if (oldPayer === newPayer) {
+          const current = getContrib(newPayer);
+          await upsertContribution(form.eventId, newPayer, Math.max(0, current - oldTotal + totalAmount), user.id);
+        } else {
+          const oldCurrent = getContrib(oldPayer);
+          await upsertContribution(form.eventId, oldPayer, Math.max(0, oldCurrent - oldTotal), user.id);
+          const newCurrent = getContrib(newPayer);
+          await upsertContribution(form.eventId, newPayer, newCurrent + totalAmount, user.id);
+        }
+      } else if (wasUnpaid && !unpaid) {
+        // Charge qui était non réglée, maintenant réglée → créditer le payeur
+        const evContribs = contributions[form.eventId] || [];
+        const currentContrib = evContribs.find(c => c.participant === newPayer)?.amount || 0;
+        await upsertContribution(form.eventId, newPayer, currentContrib + totalAmount, user.id);
+      } else if (!wasUnpaid && unpaid) {
+        // Charge qui était réglée, maintenant non réglée → décréditer l'ancien payeur
+        const evContribs = contributions[form.eventId] || [];
+        const currentContrib = evContribs.find(c => c.participant === oldPayer)?.amount || 0;
+        await upsertContribution(form.eventId, oldPayer, Math.max(0, currentContrib - oldTotal), user.id);
       }
+      // Si wasUnpaid && unpaid → rien à faire
 
-      await updateExpense(editingEx.id, { ...form, qty, unit }, user.id, editingEx);
+      await updateExpense(editingEx.id, { ...form, qty, unit, is_unpaid: unpaid }, user.id, editingEx);
       addToast(t("toast_expense_edited"), "success");
     } else {
-      // Nouvelle charge — créditer automatiquement le payeur
-      await createExpense({ ...form, qty, unit }, user.id);
+      // Nouvelle charge
+      await createExpense({ ...form, qty, unit, is_unpaid: unpaid }, user.id);
 
-      // Récupérer la contribution actuelle du payeur et l'incrémenter
-      const evContribs = contributions[form.eventId] || [];
-      const currentContrib = evContribs.find(c => c.participant === form.paidBy)?.amount || 0;
-      await upsertContribution(form.eventId, form.paidBy, currentContrib + totalAmount, user.id);
+      // Créditer le payeur seulement si la charge est réglée
+      if (!unpaid) {
+        const evContribs = contributions[form.eventId] || [];
+        const currentContrib = evContribs.find(c => c.participant === form.paidBy)?.amount || 0;
+        await upsertContribution(form.eventId, form.paidBy, currentContrib + totalAmount, user.id);
+      }
 
       addToast(t("toast_expense_added"), "success");
     }
-    await reload(); setForm(empty); setEditingEx(null); setShowForm(false); setSaving(false);
+    await reload(); setForm(empty); setEditingEx(null); setShowForm(false); setUnpaid(false); setSaving(false);
   };
 
   const startEdit = (ex) => {
     setForm({ eventId: ex.event_id, category: ex.category, sub: ex.sub_category || "", detail: ex.detail, qty: ex.qty, unit: ex.unit_price ?? 0, paidBy: ex.paid_by || "", included: [...(ex.included || [])] });
+    setUnpaid(ex.is_unpaid || false);
     setEditingEx(ex); setShowForm(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -1231,12 +1247,13 @@ function Expenses({ events, expenses, user, reload, isMobile, addToast }) {
     setConfirm({
       message: `Supprimer la charge "${ex.detail}" ?`,
       onConfirm: async () => {
-        // Décrémenter la contribution du payeur
-        const evContribs = contributions[ex.event_id] || [];
-        const currentContrib = evContribs.find(c => c.participant === ex.paid_by)?.amount || 0;
-        const totalAmount = ex.qty * (ex.unit_price ?? 0);
-        await upsertContribution(ex.event_id, ex.paid_by, Math.max(0, currentContrib - totalAmount), user.id);
-
+        // Décrémenter la contribution du payeur seulement si la charge était réglée
+        if (!ex.is_unpaid && ex.paid_by) {
+          const evContribs = contributions[ex.event_id] || [];
+          const currentContrib = evContribs.find(c => c.participant === ex.paid_by)?.amount || 0;
+          const totalAmount = ex.qty * (ex.unit_price ?? 0);
+          await upsertContribution(ex.event_id, ex.paid_by, Math.max(0, currentContrib - totalAmount), user.id);
+        }
         await deleteExpense(ex, user.id);
         await reload();
         setConfirm(null);
@@ -1283,12 +1300,34 @@ function Expenses({ events, expenses, user, reload, isMobile, addToast }) {
                 {events.filter(e => e.status === "open").map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
               </select>
             </div>
-            <div><label style={S.label}>Payé par</label>
-              <select style={S.input} value={form.paidBy} onChange={e => setForm({ ...form, paidBy: e.target.value })} disabled={!currentEvent}>
+            <div>
+              <label style={S.label}>Payé par</label>
+              <select style={{ ...S.input, opacity: unpaid ? 0.5 : 1 }} value={form.paidBy} onChange={e => setForm({ ...form, paidBy: e.target.value })} disabled={!currentEvent || unpaid}>
                 <option value="">Sélectionner...</option>
                 {participants.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
             </div>
+          </div>
+
+          {/* Toggle charge non réglée */}
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer", padding: "12px 16px", borderRadius: 12, background: unpaid ? "#FFF8E1" : "#fafafa", border: `1.5px solid ${unpaid ? "#F57F17" : "#eee"}`, transition: "all 0.2s" }}>
+              <div style={{ position: "relative", width: 40, height: 22, flexShrink: 0 }} onClick={() => { setUnpaid(!unpaid); if (!unpaid) setForm(f => ({ ...f, paidBy: "" })); }}>
+                <div style={{ position: "absolute", inset: 0, background: unpaid ? "#F57F17" : "#ddd", borderRadius: 11, transition: "background 0.2s" }} />
+                <div style={{ position: "absolute", top: 3, left: unpaid ? 21 : 3, width: 16, height: 16, background: "#fff", borderRadius: "50%", boxShadow: "0 1px 3px rgba(0,0,0,0.2)", transition: "left 0.2s" }} />
+              </div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: unpaid ? "#E65100" : "#333" }}>
+                  ⏳ Charge non encore réglée
+                </div>
+                <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>
+                  {unpaid ? "Aucune contribution ne sera créditée. À mettre à jour quand quelqu'un paie." : "Décochez si personne n'a encore payé cette charge."}
+                </div>
+              </div>
+            </label>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
             <div><label style={S.label}>Catégorie</label>
               <select style={S.input} value={form.category} onChange={e => setForm({ ...form, category: e.target.value, sub: "" })}>
                 <option value="">Sélectionner...</option>
@@ -1351,7 +1390,9 @@ function Expenses({ events, expenses, user, reload, isMobile, addToast }) {
                     <span style={{ fontSize: 22, flexShrink: 0 }}>{cat?.icon}</span>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ex.detail}</div>
-                      <div style={{ fontSize: 11, color: "#aaa", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev?.name} · par {ex.paid_by}</div>
+                      <div style={{ fontSize: 11, color: "#aaa", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {ev?.name} · {ex.is_unpaid ? <span style={{ color: "#F57F17", fontWeight: 600 }}>⏳ Non réglée</span> : `par ${ex.paid_by}`}
+                      </div>
                     </div>
                   </div>
                   <div style={{ textAlign: "right", flexShrink: 0 }}>
@@ -1360,8 +1401,9 @@ function Expenses({ events, expenses, user, reload, isMobile, addToast }) {
                   </div>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     {cat && <Badge label={ex.sub_category} color={cat.color} accent={cat.accent} />}
+                    {ex.is_unpaid && <Badge label="⏳ Non réglée" color="#FFF8E1" accent="#F57F17" />}
                     <AvatarStack names={inc} size={18} />
                   </div>
                   {ev?.status === "open" && (
@@ -1410,10 +1452,14 @@ function Expenses({ events, expenses, user, reload, isMobile, addToast }) {
                     <td style={{ padding: "11px 12px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>{fmt(t, evSym)}</td>
                     <td style={{ padding: "11px 12px", fontSize: 12, color: "#2E7D32", fontWeight: 700, whiteSpace: "nowrap" }}>{fmt(share, evSym)}</td>
                     <td style={{ padding: "11px 12px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <Avatar name={ex.paid_by || "?"} size={20} />
-                        <span style={{ fontSize: 12, maxWidth: 70, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ex.paid_by}</span>
-                      </div>
+                      {ex.is_unpaid ? (
+                        <span style={{ background: "#FFF8E1", color: "#F57F17", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 8 }}>⏳ Non réglée</span>
+                      ) : (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <Avatar name={ex.paid_by || "?"} size={20} />
+                          <span style={{ fontSize: 12, maxWidth: 70, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ex.paid_by}</span>
+                        </div>
+                      )}
                     </td>
                     <td style={{ padding: "11px 12px" }}><AvatarStack names={inc} size={20} /></td>
                     <td style={{ padding: "11px 12px" }}>

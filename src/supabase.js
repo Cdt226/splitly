@@ -204,7 +204,9 @@ export async function createExpense(expense, userId) {
   const { data, error } = await supabase.from('expenses').insert({
     event_id: expense.eventId, category: expense.category, sub_category: expense.sub,
     detail: expense.detail, qty: expense.qty, unit_price: expense.unit,
-    paid_by: expense.paidBy, included: expense.included, created_by: userId,
+    paid_by: expense.is_unpaid ? null : expense.paidBy,
+    included: expense.included, created_by: userId,
+    is_unpaid: expense.is_unpaid || false,
   }).select().single();
   if (!error) await addHistory({ eventId: expense.eventId, action: 'Charge ajoutée', actorId: userId, before: null, after: data });
   return { data, error };
@@ -213,8 +215,10 @@ export async function createExpense(expense, userId) {
 export async function updateExpense(expenseId, updates, userId, before) {
   const { data, error } = await supabase.from('expenses').update({
     category: updates.category, sub_category: updates.sub, detail: updates.detail,
-    qty: updates.qty, unit_price: updates.unit, paid_by: updates.paidBy,
+    qty: updates.qty, unit_price: updates.unit,
+    paid_by: updates.is_unpaid ? null : updates.paidBy,
     included: updates.included, version: (before.version || 1) + 1,
+    is_unpaid: updates.is_unpaid || false,
   }).eq('id', expenseId).select().single();
   if (!error) await addHistory({ eventId: before.event_id, action: 'Charge modifiée', actorId: userId, before, after: data });
   return { data, error };
