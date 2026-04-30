@@ -96,7 +96,8 @@ const isSettled = (net) => Math.abs(net) <= 1;
 const isExactlySettled = (net) => Math.abs(net) < 0.01;
 
 // Statut solde lisible
-function settleStatus(net) {
+function settleStatus(net, hasCharges) {
+  if (!hasCharges) return { label: "—", color: "#aaa", bg: "#f5f5f5" };
   if (isExactlySettled(net)) return { label: "✓ Soldé", color: "#2E7D32", bg: "#E8F5E9" };
   if (isSettled(net)) return { label: "≈ Quasi soldé", color: "#2E7D32", bg: "#E8F5E9" };
   if (net > 0) return { label: `+${fmt(net)} à recevoir`, color: "#1565C0", bg: "#E3F2FD" };
@@ -689,8 +690,8 @@ function GuestBalance({ events, expenses, contributions }) {
               <Avatar name={p} size={36} />
               <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p}</div>
               <div style={{ fontSize: 10, color: "#aaa", marginTop: 3 }}>Doit: {fmt(owed, sym)}</div>
-              <div style={{ marginTop: 6, padding: "4px 6px", borderRadius: 8, background: settleStatus(net).bg, fontSize: 12, fontWeight: 700, color: settleStatus(net).color }}>
-                {settleStatus(net).label}
+              <div style={{ marginTop: 6, padding: "4px 6px", borderRadius: 8, background: settleStatus(net, owed > 0).bg, fontSize: 12, fontWeight: 700, color: settleStatus(net, owed > 0).color }}>
+                {settleStatus(net, owed > 0).label}
               </div>
             </div>
           );
@@ -820,7 +821,7 @@ function Dashboard({ events, expenses, user, isMobile }) {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 14, marginBottom: 24 }}>
-        <StatCard label="Budget collectif total" value={`${grandTotal.toFixed(2)} €`} sub={`${expenses.length} charge${expenses.length > 1 ? "s" : ""}`} accent="#0F0F0F" />
+        <StatCard label="Budget total" value={`${fmt(grandTotal)}`} sub={`${expenses.length} charge${expenses.length > 1 ? "s" : ""} · tous événements`} accent="#0F0F0F" />
         <StatCard label="Événements" value={events.length} sub={`${openEvents} ouvert · ${events.length - openEvents} bouclé`} accent="#2E7D32" />
         <div style={{ gridColumn: isMobile ? "1 / -1" : "auto" }}>
           <StatCard label="Participants uniques" value={[...new Set(events.flatMap(e => (e.event_participants || []).map(p => p.name)))].length} sub="sur tous les événements" accent="#1565C0" />
@@ -1436,17 +1437,18 @@ function Balance({ events, expenses, contributions, user, reload, isMobile, addT
               const contrib = evContribMap[p] || 0;
               const net = contrib - owed;
               const settled = isSettled(net);
-              const status = settleStatus(net);
+              const hasCharges = owed > 0;
+              const status = settleStatus(net, hasCharges);
               return (
-                <div key={p} style={{ background: "#fff", borderRadius: 14, padding: "16px 12px", border: `2px solid ${settled ? "#c8e6c9" : Math.abs(net) > 10 ? "#ffcdd2" : "#eee"}`, textAlign: "center", transition: "border-color 0.2s" }}>
+                <div key={p} style={{ background: "#fff", borderRadius: 14, padding: "16px 12px", border: `2px solid ${settled && hasCharges ? "#c8e6c9" : !hasCharges ? "#f0f0f0" : Math.abs(net) > 10 ? "#ffcdd2" : "#eee"}`, textAlign: "center", transition: "border-color 0.2s" }}>
                   <Avatar name={p} size={36} />
                   <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p}</div>
-                  <div style={{ fontSize: 10, color: "#aaa", marginTop: 4 }}>Doit: {fmt(owed, sym)}</div>
-                  <div style={{ fontSize: 10, color: "#aaa" }}>Versé: {fmt(contrib, sym)}</div>
+                  <div style={{ fontSize: 10, color: "#aaa", marginTop: 4 }}>{hasCharges ? `Doit: ${fmt(owed, sym)}` : "Aucune charge"}</div>
+                  <div style={{ fontSize: 10, color: "#aaa" }}>{hasCharges ? `Versé: ${fmt(contrib, sym)}` : ""}</div>
                   <div style={{ marginTop: 8, padding: "5px 8px", borderRadius: 8, background: status.bg, fontSize: 12, fontWeight: 700, color: status.color }}>
                     {status.label}
                   </div>
-                  {!settled && ev?.status === "open" && (
+                  {!settled && hasCharges && ev?.status === "open" && (
                     <div style={{ marginTop: 10, display: "flex", gap: 4, justifyContent: "center", flexWrap: "wrap" }}>
                       <input type="number" placeholder="Montant" min="0.01" step="0.01"
                         style={{ ...S.input, width: 68, padding: "5px 6px", fontSize: 11, textAlign: "center" }}
@@ -1580,7 +1582,7 @@ function Analytics({ events, expenses, contributions, isMobile }) {
                 const pct = owed > 0 ? Math.min((paid / owed) * 100, 100) : 100;
                 const net = paid - owed;
                 const settled = isSettled(net);
-                const status = settleStatus(net);
+                const status = settleStatus(net, owed > 0);
                 return (
                   <div key={p} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
                     <Avatar name={p} size={28} />
@@ -1618,10 +1620,55 @@ function History({ events, history, user, reload, isMobile, addToast }) {
       message: `Invalider "${entry.action}" du ${new Date(entry.created_at).toLocaleString("fr-FR")} ?`,
       warnings: later.length > 1 ? [`${later.length - 1} modification(s) ultérieure(s) seront également invalidées.`] : [],
       onConfirm: async () => {
-        await invalidateHistory(entry.id, entry.event_id);
-        await reload();
-        setConfirm(null);
-        addToast("Modification invalidée. État restauré.", "info");
+        try {
+          const before = entry.before_data;
+          const after = entry.after_data;
+
+          if (entry.action === "Charge modifiée" && before) {
+            const { error } = await supabase.from('expenses').update({
+              category: before.category, sub_category: before.sub_category,
+              detail: before.detail, qty: before.qty, unit_price: before.unit_price,
+              paid_by: before.paid_by, included: before.included, version: before.version,
+            }).eq('id', before.id);
+            if (error) throw new Error("Restauration impossible : " + error.message);
+
+          } else if (entry.action === "Charge supprimée" && before) {
+            const { error } = await supabase.from('expenses').insert({
+              id: before.id, event_id: before.event_id, category: before.category,
+              sub_category: before.sub_category, detail: before.detail, qty: before.qty,
+              unit_price: before.unit_price, paid_by: before.paid_by, included: before.included,
+              created_by: before.created_by,
+            });
+            if (error) throw new Error("Impossible de restaurer la charge : " + error.message);
+
+          } else if (entry.action === "Charge ajoutée" && after) {
+            const { error } = await supabase.from('expenses').delete().eq('id', after.id);
+            if (error) throw new Error("Impossible d'annuler l'ajout : " + error.message);
+
+          } else if (entry.action.startsWith("Contribution") && before) {
+            const person = before.participant;
+            if (person) {
+              if (!before.amount || before.amount === 0) {
+                await supabase.from('contributions').delete().eq('event_id', entry.event_id).eq('participant', person);
+              } else {
+                await supabase.from('contributions').upsert({ event_id: entry.event_id, participant: person, amount: before.amount }, { onConflict: 'event_id,participant' });
+              }
+            }
+          } else {
+            addToast("Ce type de modification ne peut pas être annulé automatiquement.", "warning");
+            setConfirm(null);
+            return;
+          }
+
+          await invalidateHistory(entry.id, entry.event_id);
+          await reload();
+          setConfirm(null);
+          addToast("✓ Rollback effectué — données restaurées.", "success");
+
+        } catch (err) {
+          setConfirm(null);
+          addToast("Rollback impossible : " + err.message, "error");
+        }
       },
       onCancel: () => setConfirm(null),
     });
