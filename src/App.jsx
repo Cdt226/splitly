@@ -114,8 +114,14 @@ function settleStatus(net, hasCharges) {
 
 // Validation montant
 function validateAmount(qty, unit) {
-  if (!qty || Number(qty) <= 0) return "La quantité doit être supérieure à 0.";
-  if (!unit || Number(unit) <= 0) return "Le prix unitaire doit être supérieur à 0.";
+  const q = Number(qty);
+  const u = Number(unit);
+  if (!qty || q <= 0) return "La quantité doit être supérieure à 0.";
+  if (!Number.isInteger(q)) return "La quantité doit être un nombre entier.";
+  if (q > 10000) return "La quantité ne peut pas dépasser 10 000.";
+  if (!unit || u <= 0) return "Le prix unitaire doit être supérieur à 0.";
+  if (u > 10000000) return "Le prix unitaire semble anormalement élevé (max 10 000 000).";
+  if (q * u > 50000000) return "Le montant total dépasse la limite autorisée.";
   return null;
 }
 
@@ -204,9 +210,12 @@ function Chip({ label, onRemove, color = "#0F0F0F" }) {
 function ParticipantInput({ participants, onChange }) {
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
+  const MAX = 30;
   const add = () => {
     const name = input.trim();
-    if (!name) return;
+    if (!name) { setError("Le prénom ne peut pas être vide."); return; }
+    if (name.length > 30) { setError("Maximum 30 caractères."); return; }
+    if (participants.length >= MAX) { setError(`Maximum ${MAX} participants.`); return; }
     if (participants.map(p => p.toLowerCase()).includes(name.toLowerCase())) { setError("Déjà dans la liste."); return; }
     onChange([...participants, name]); setInput(""); setError("");
   };
@@ -225,6 +234,8 @@ function ParticipantInput({ participants, onChange }) {
         {participants.map(p => <Chip key={p} label={p} onRemove={() => onChange(participants.filter(x => x !== p))} />)}
       </div>
       {participants.length > 0 && participants.length < 2 && <div style={{ fontSize: 12, color: "#F57F17", marginTop: 8 }}>⚠️ Minimum 2 participants requis</div>}
+      {participants.length >= MAX && <div style={{ fontSize: 12, color: "#C62828", marginTop: 8 }}>⚠️ Maximum {MAX} participants atteint</div>}
+      <div style={{ fontSize: 11, color: "#aaa", marginTop: 6 }}>{participants.length}/{MAX} participants</div>
     </div>
   );
 }
@@ -894,8 +905,17 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
   const [managingEv, setManagingEv] = useState(null);
   const [newParticipant, setNewParticipant] = useState("");
 
+  const MAX_PARTICIPANTS = 30;
+  const MAX_NAME_LENGTH = 50;
+  const MAX_PARTICIPANT_NAME = 30;
+
   const handleCreate = async () => {
-    if (!form.name || !form.date || form.participants.length < 2) return;
+    // Validations
+    if (!form.name.trim()) { addToast("Le nom de l'événement est obligatoire.", "warning"); return; }
+    if (form.name.trim().length > MAX_NAME_LENGTH) { addToast(`Le nom ne peut pas dépasser ${MAX_NAME_LENGTH} caractères.`, "warning"); return; }
+    if (!form.date) { addToast("La date est obligatoire.", "warning"); return; }
+    if (form.participants.length < 2) { addToast("Minimum 2 participants requis.", "warning"); return; }
+    if (form.participants.length > MAX_PARTICIPANTS) { addToast(`Maximum ${MAX_PARTICIPANTS} participants par événement.`, "warning"); return; }
     setLoading(true);
     const { error } = await createEvent(form, form.participants, user.id);
     if (!error) {
@@ -945,7 +965,10 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
 
   const handleAddParticipant = async (ev) => {
     const name = newParticipant.trim();
-    if (!name) return;
+    if (!name) { addToast("Le prénom ne peut pas être vide.", "warning"); return; }
+    if (name.length > MAX_PARTICIPANT_NAME) { addToast(`Le prénom ne peut pas dépasser ${MAX_PARTICIPANT_NAME} caractères.`, "warning"); return; }
+    const currentCount = (ev.event_participants || []).length;
+    if (currentCount >= MAX_PARTICIPANTS) { addToast(`Maximum ${MAX_PARTICIPANTS} participants par événement.`, "warning"); return; }
     const existing = (ev.event_participants || []).map(p => p.name.toLowerCase());
     if (existing.includes(name.toLowerCase())) { addToast("Ce participant existe déjà.", "warning"); return; }
     await addParticipant(ev.id, name);
@@ -990,13 +1013,25 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
           </div>
           {managingEv.status === "open" && (
             <div>
-              <label style={S.label}>Ajouter un participant</label>
-              <div style={{ display: "flex", gap: 8 }}>
-                <input style={{ ...S.input, flex: 1 }} placeholder="Prénom" value={newParticipant}
-                  onChange={e => setNewParticipant(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && handleAddParticipant(managingEv)} />
-                <button onClick={() => handleAddParticipant(managingEv)} style={{ ...S.btnDark, padding: "9px 16px" }}>+</button>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <label style={S.label}>Ajouter un participant</label>
+                <span style={{ fontSize: 11, color: (managingEv.event_participants || []).length >= 30 ? "#C62828" : "#aaa", fontWeight: 600 }}>
+                  {(managingEv.event_participants || []).length}/30 participants
+                </span>
               </div>
+              {(managingEv.event_participants || []).length >= 30 ? (
+                <div style={{ background: "#fff5f5", border: "1px solid #ffcdd2", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#C62828" }}>
+                  ⚠️ Maximum 30 participants atteint.
+                </div>
+              ) : (
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input style={{ ...S.input, flex: 1 }} placeholder="Prénom (max 30 caractères)" value={newParticipant}
+                    onChange={e => setNewParticipant(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && handleAddParticipant(managingEv)}
+                    maxLength={30} />
+                  <button onClick={() => handleAddParticipant(managingEv)} style={{ ...S.btnDark, padding: "9px 16px" }}>+</button>
+                </div>
+              )}
             </div>
           )}
         </Modal>
@@ -1014,7 +1049,7 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
         <div style={{ ...S.card, marginBottom: 16 }}>
           <div style={S.sectionTitle}>Créer un événement</div>
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 14 }}>
-            <div><label style={S.label}>Nom de l'événement</label><input style={S.input} placeholder="Ex: Soirée chez Marc" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+            <div><label style={S.label}>Nom de l'événement</label><input style={S.input} placeholder="Ex: Soirée chez Marc" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} maxLength={50} /></div>
             <div><label style={S.label}>Date</label><input type="date" style={S.input} value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
             <div style={{ gridColumn: isMobile ? "auto" : "1 / -1" }}>
               <label style={S.label}>Monnaie</label>
@@ -1227,7 +1262,7 @@ function Expenses({ events, expenses, user, reload, isMobile, addToast }) {
             <input style={S.input} placeholder="Ex: Vin rouge Côtes du Rhône, Salade César..." value={form.detail} onChange={e => setForm({ ...form, detail: e.target.value })} />
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 16 }}>
-            <div><label style={S.label}>Quantité</label><input type="number" min="1" style={S.input} value={form.qty} onChange={e => setForm({ ...form, qty: e.target.value })} /></div>
+            <div><label style={S.label}>Quantité</label><input type="number" min="1" max="10000" step="1" style={S.input} value={form.qty} onChange={e => setForm({ ...form, qty: Math.floor(Math.abs(Number(e.target.value))) || 1 })} /></div>
             <div><label style={S.label}>Prix unitaire</label><input type="number" min="0" step="0.01" style={S.input} value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })} /></div>
             <div><label style={S.label}>Total auto</label>
               <div style={{ ...S.input, background: total > 0 ? "#f0faf4" : "#f8f8f8", color: total > 0 ? "#2E7D32" : "#aaa", fontWeight: 700, display: "flex", alignItems: "center" }}>
@@ -1749,6 +1784,8 @@ function Invite({ events, user, isMobile, addToast }) {
 
   const handleSend = async () => {
     if (!email) { addToast("Entrez un email.", "warning"); return; }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) { addToast("Format d'email invalide.", "warning"); return; }
     if (selectedEvents.length === 0) { addToast("Sélectionnez au moins un événement.", "warning"); return; }
     setSaving(true);
     for (const evId of selectedEvents) await sendInvitation({ eventId: evId, email, role, invitedBy: user.id });
@@ -1844,10 +1881,18 @@ function NotificationsPage({ notifications, events, expenses, pendingActions, us
 
   const handleApprove = async (action) => {
     setSaving(action.id);
-    await approvePendingAction(action.id, user.id, action);
+    // S'assurer que la structure est correcte pour approvePendingAction
+    const { error } = await approvePendingAction(action.id, user.id, {
+      action_type: action.action_type,
+      action_data: action.action_data,
+    });
+    if (error) {
+      addToast("Erreur lors de l'approbation : " + error.message, "error");
+    } else {
+      addToast("Action approuvée et exécutée.", "success");
+    }
     await reload();
     setSaving(null);
-    addToast("Action approuvée et exécutée.", "success");
   };
 
   const handleReject = async (action) => {
