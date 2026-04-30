@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import LandingPage from "./LandingPage.jsx";
+import { useTranslation, LanguageSwitcher } from "./i18n.js";
 import {
   supabase, signUp, signIn, signOut, getSession,
   fetchEvents, createEvent, updateEventStatus, deleteEvent,
@@ -738,17 +739,17 @@ function GuestBalance({ events, expenses, contributions }) {
 }
 
 // ─── SIDEBAR ──────────────────────────────────────────────────
-function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut, isMobile, menuOpen, setMenuOpen }) {
+function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut, isMobile, menuOpen, setMenuOpen, t, lang, setLang }) {
   const totalBadge = unreadCount + pendingCount;
   const nav = [
-    { key: "dashboard",     icon: "◈", label: "Tableau de bord" },
-    { key: "events",        icon: "◉", label: "Événements" },
-    { key: "expenses",      icon: "◫", label: "Charges" },
-    { key: "balance",       icon: "⊜", label: "Répartition" },
-    { key: "analytics",     icon: "◐", label: "Analyses" },
-    { key: "history",       icon: "◷", label: "Historique" },
-    { key: "invite",        icon: "◎", label: "Inviter" },
-    { key: "notifications", icon: "◬", label: "Notifications", badge: totalBadge },
+    { key: "dashboard",     icon: "◈", label: t("nav_dashboard") },
+    { key: "events",        icon: "◉", label: t("nav_events") },
+    { key: "expenses",      icon: "◫", label: t("nav_expenses") },
+    { key: "balance",       icon: "⊜", label: t("nav_balance") },
+    { key: "analytics",     icon: "◐", label: t("nav_analytics") },
+    { key: "history",       icon: "◷", label: t("nav_history") },
+    { key: "invite",        icon: "◎", label: t("nav_invite") },
+    { key: "notifications", icon: "◬", label: t("nav_notifications"), badge: totalBadge },
   ];
 
   const NavButton = ({ n }) => (
@@ -762,6 +763,9 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
 
   const UserFooter = () => (
     <div style={{ padding: "14px 16px", borderTop: "1px solid #1e1e1e" }}>
+      <div style={{ marginBottom: 10 }}>
+        <LanguageSwitcher lang={lang} setLang={setLang} dark={true} />
+      </div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
         <Avatar name={user?.user_metadata?.full_name?.[0] || user?.email?.[0] || "U"} size={30} />
         <div style={{ overflow: "hidden", flex: 1 }}>
@@ -769,7 +773,7 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
           <div style={{ color: "#F57F17", fontSize: 10, marginTop: 1 }}>✦ Admin</div>
         </div>
       </div>
-      <button onClick={onSignOut} style={{ width: "100%", padding: "7px", borderRadius: 8, border: "1px solid #2a2a2a", background: "transparent", color: "#666", fontSize: 11, cursor: "pointer", transition: "all 0.15s" }}>Déconnexion</button>
+      <button onClick={onSignOut} style={{ width: "100%", padding: "7px", borderRadius: 8, border: "1px solid #2a2a2a", background: "transparent", color: "#666", fontSize: 11, cursor: "pointer", transition: "all 0.15s" }}>{t("nav_logout")}</button>
     </div>
   );
 
@@ -2009,6 +2013,7 @@ export default function App() {
   const [notifications, setNotifications] = useState([]);
   const [pendingActions, setPendingActions] = useState([]);
   const { toasts, addToast, removeToast } = useToast();
+  const { t, lang, setLang } = useTranslation();
 
   useEffect(() => {
     getSession().then(s => { setUser(s?.user || null); setLoading(false); });
@@ -2081,7 +2086,7 @@ export default function App() {
     );
   }
 
-  if (guestEmail) return <GuestView guestEmail={guestEmail} onSignOut={() => setGuestEmail(null)} isMobile={isMobile} addToast={addToast} />;
+  if (guestEmail) return <GuestView guestEmail={guestEmail} onSignOut={() => setGuestEmail(null)} isMobile={isMobile} addToast={addToast} t={t} />;
 
   const unreadCount = notifications.filter(n => !n.is_read).length;
   const pendingCount = pendingActions.length;
@@ -2092,7 +2097,7 @@ export default function App() {
     contribNorm[evId] = Array.isArray(arr) ? arr : [];
   });
 
-  const sharedProps = { events, expenses, contributions: contribNorm, user, reload: loadAll, isMobile, addToast };
+  const sharedProps = { events, expenses, contributions: contribNorm, user, reload: loadAll, isMobile, addToast, t };
 
   const pages = {
     dashboard:     <Dashboard {...sharedProps} />,
@@ -2100,11 +2105,11 @@ export default function App() {
     expenses:      <Expenses {...sharedProps} />,
     balance:       <Balance {...sharedProps} />,
     analytics:     <Analytics {...sharedProps} />,
-    history:       <History events={events} history={history} user={user} reload={loadAll} isMobile={isMobile} addToast={addToast} />,
-    invite:        <Invite events={events} user={user} isMobile={isMobile} addToast={addToast} />,
+    history:       <History events={events} history={history} user={user} reload={loadAll} isMobile={isMobile} addToast={addToast} t={t} />,
+    invite:        <Invite events={events} user={user} isMobile={isMobile} addToast={addToast} t={t} />,
     notifications: <NotificationsPage notifications={notifications} events={events} expenses={expenses}
-                     pendingActions={pendingActions} user={user} reload={loadAll} isMobile={isMobile} addToast={addToast}
-                     onMarkAll={async () => { await markAllNotificationsRead(user.id); await loadAll(); addToast("Toutes les notifications marquées comme lues.", "info"); }}
+                     pendingActions={pendingActions} user={user} reload={loadAll} isMobile={isMobile} addToast={addToast} t={t}
+                     onMarkAll={async () => { await markAllNotificationsRead(user.id); await loadAll(); addToast(t("notif_mark_all"), "info"); }}
                      onDismiss={async (id) => { await deleteNotification(id); await loadAll(); }} />,
   };
 
@@ -2113,7 +2118,8 @@ export default function App() {
       <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
       <ToastContainer toasts={toasts} removeToast={removeToast} />
       <Sidebar active={active} setActive={setActive} unreadCount={unreadCount} pendingCount={pendingCount}
-        user={user} onSignOut={handleSignOut} isMobile={isMobile} menuOpen={menuOpen} setMenuOpen={setMenuOpen} />
+        user={user} onSignOut={handleSignOut} isMobile={isMobile} menuOpen={menuOpen} setMenuOpen={setMenuOpen}
+        t={t} lang={lang} setLang={setLang} />
       <main style={{ flex: 1, overflow: "auto", padding: isMobile ? "72px 16px 80px" : "28px 36px", maxWidth: "100%", boxSizing: "border-box" }}>
         <div style={{ maxWidth: 1100, margin: "0 auto" }}>
           {pages[active]}

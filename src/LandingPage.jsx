@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation, LanguageSwitcher } from "./i18n.js";
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -14,6 +15,7 @@ export default function LandingPage({ onSignIn, onSignUp, onGuest }) {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const isMobile = useIsMobile();
+  const { t, lang, setLang } = useTranslation();
 
   useEffect(() => {
     const h = () => setScrolled(window.scrollY > 40);
@@ -87,21 +89,23 @@ export default function LandingPage({ onSignIn, onSignUp, onGuest }) {
           SplitLy
         </div>
 
-        {/* Desktop nav — uniquement si pas mobile */}
+        {/* Desktop nav */}
         {!isMobile && (
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <a href="#features" className="nav-link" style={{ fontSize: 14, color: scrolled ? "#555" : "rgba(255,255,255,0.8)", textDecoration: "none", padding: "8px 12px", borderRadius: 8, fontWeight: 500 }}>Fonctionnalités</a>
-            <a href="#how" className="nav-link" style={{ fontSize: 14, color: scrolled ? "#555" : "rgba(255,255,255,0.8)", textDecoration: "none", padding: "8px 12px", borderRadius: 8, fontWeight: 500 }}>Comment ça marche</a>
-            <a href="#usecases" className="nav-link" style={{ fontSize: 14, color: scrolled ? "#555" : "rgba(255,255,255,0.8)", textDecoration: "none", padding: "8px 12px", borderRadius: 8, fontWeight: 500 }}>Cas d'usage</a>
-            <div style={{ width: 1, height: 18, background: scrolled ? "#e0e0e0" : "rgba(255,255,255,0.25)", margin: "0 6px" }} />
+            <a href="#features" className="nav-link" style={{ fontSize: 14, color: scrolled ? "#555" : "rgba(255,255,255,0.8)", textDecoration: "none", padding: "8px 12px", borderRadius: 8, fontWeight: 500 }}>{t("land_features")}</a>
+            <a href="#how" className="nav-link" style={{ fontSize: 14, color: scrolled ? "#555" : "rgba(255,255,255,0.8)", textDecoration: "none", padding: "8px 12px", borderRadius: 8, fontWeight: 500 }}>{t("land_how")}</a>
+            <a href="#usecases" className="nav-link" style={{ fontSize: 14, color: scrolled ? "#555" : "rgba(255,255,255,0.8)", textDecoration: "none", padding: "8px 12px", borderRadius: 8, fontWeight: 500 }}>{t("land_usecases")}</a>
+            <div style={{ width: 1, height: 18, background: scrolled ? "#e0e0e0" : "rgba(255,255,255,0.25)", margin: "0 4px" }} />
+            <LanguageSwitcher lang={lang} setLang={setLang} dark={!scrolled} />
+            <div style={{ width: 1, height: 18, background: scrolled ? "#e0e0e0" : "rgba(255,255,255,0.25)", margin: "0 4px" }} />
             <button onClick={onGuest} className="btn-ghost" style={{ fontSize: 13, color: scrolled ? "#555" : "rgba(255,255,255,0.85)", background: "transparent", border: `1px solid ${scrolled ? "#ddd" : "rgba(255,255,255,0.25)"}`, borderRadius: 10, padding: "7px 14px", cursor: "pointer", fontWeight: 600, fontFamily: "inherit" }}>
-              Invité
+              {t("land_guest_access")}
             </button>
-            <button onClick={onSignIn} className="btn-secondary" style={{ fontSize: 13, color: scrolled ? "#0F0F0F" : "#0F0F0F", background: scrolled ? "#f5f5f5" : "rgba(255,255,255,0.92)", border: "none", borderRadius: 10, padding: "7px 14px", cursor: "pointer", fontWeight: 700, fontFamily: "inherit" }}>
-              Connexion
+            <button onClick={onSignIn} className="btn-secondary" style={{ fontSize: 13, color: "#0F0F0F", background: scrolled ? "#f5f5f5" : "rgba(255,255,255,0.92)", border: "none", borderRadius: 10, padding: "7px 14px", cursor: "pointer", fontWeight: 700, fontFamily: "inherit" }}>
+              {t("land_signin")}
             </button>
             <button onClick={onSignUp} className="btn-primary" style={{ fontSize: 13, color: "#fff", background: "#0F0F0F", border: "none", borderRadius: 10, padding: "8px 18px", cursor: "pointer", fontWeight: 700, fontFamily: "inherit" }}>
-              S'inscrire →
+              {t("land_signup")} →
             </button>
           </div>
         )}
@@ -134,11 +138,11 @@ export default function LandingPage({ onSignIn, onSignUp, onGuest }) {
           animation: "slideDown 0.2s ease",
           boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
         }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 24 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 16 }}>
             {[
-              { href: "#features", label: "Fonctionnalités" },
-              { href: "#how", label: "Comment ça marche" },
-              { href: "#usecases", label: "Cas d'usage" },
+              { href: "#features", label: t("land_features") },
+              { href: "#how", label: t("land_how") },
+              { href: "#usecases", label: t("land_usecases") },
             ].map(link => (
               <a key={link.href} href={link.href} onClick={() => setMenuOpen(false)}
                 style={{ fontSize: 16, color: "rgba(255,255,255,0.8)", textDecoration: "none", fontWeight: 600, padding: "12px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
@@ -146,18 +150,21 @@ export default function LandingPage({ onSignIn, onSignUp, onGuest }) {
               </a>
             ))}
           </div>
+          <div style={{ marginBottom: 16 }}>
+            <LanguageSwitcher lang={lang} setLang={setLang} dark={true} />
+          </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <button onClick={() => { setMenuOpen(false); onGuest(); }}
               style={{ padding: "13px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.15)", background: "transparent", color: "rgba(255,255,255,0.8)", fontSize: 15, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
-              Accès invité
+              {t("land_guest_access")}
             </button>
             <button onClick={() => { setMenuOpen(false); onSignIn(); }}
               style={{ padding: "13px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.08)", color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
-              Se connecter
+              {t("land_signin")}
             </button>
             <button onClick={() => { setMenuOpen(false); onSignUp(); }}
               style={{ padding: "13px", borderRadius: 12, border: "none", background: "#fff", color: "#0F0F0F", fontSize: 15, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-              Commencer gratuitement →
+              {t("land_start_free")}
             </button>
           </div>
         </div>
@@ -178,35 +185,35 @@ export default function LandingPage({ onSignIn, onSignUp, onGuest }) {
         <div style={{ position: "relative", textAlign: "center", maxWidth: 760, margin: "0 auto", width: "100%" }}>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 30, padding: "6px 16px", marginBottom: 28 }}>
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#2E7D32", display: "inline-block", boxShadow: "0 0 8px #2E7D32" }} />
-            <span style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", fontWeight: 600, letterSpacing: 0.5 }}>Gestion de dépenses partagées</span>
+            <span style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", fontWeight: 600, letterSpacing: 0.5 }}>{t("land_badge")}</span>
           </div>
 
           <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 44 : 76, fontWeight: 900, color: "#fff", lineHeight: 1.08, marginBottom: 24, letterSpacing: -2 }}>
-            Fini les calculs<br />
+            {t("land_hero_title")}<br />
             <span style={{ background: "linear-gradient(90deg, #4CAF50, #2196F3, #FF9800)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>
-              à la main.
+              {t("land_hero_title2")}
             </span>
           </h1>
 
           <p style={{ fontSize: isMobile ? 16 : 20, color: "rgba(255,255,255,0.65)", lineHeight: 1.6, marginBottom: 44, maxWidth: 560, margin: "0 auto 44px" }}>
-            SplitLy gère les dépenses partagées de vos sorties, voyages et soirées. Qui a payé quoi, qui doit combien — tout en quelques clics.
+            {t("land_hero_desc")}
           </p>
 
           <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginBottom: 40 }}>
             <button onClick={onSignUp} className="btn-primary" style={{ background: "#fff", color: "#0F0F0F", border: "none", borderRadius: 14, padding: isMobile ? "13px 24px" : "14px 32px", fontSize: isMobile ? 14 : 15, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", width: isMobile ? "100%" : "auto" }}>
-              Commencer gratuitement →
+              {t("land_start_free")}
             </button>
             <button onClick={onSignIn} className="btn-ghost" style={{ background: "rgba(255,255,255,0.08)", color: "#fff", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 14, padding: isMobile ? "13px 24px" : "14px 28px", fontSize: isMobile ? 14 : 15, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", width: isMobile ? "100%" : "auto" }}>
-              Se connecter
+              {t("land_signin")}
             </button>
             <button onClick={onGuest} style={{ background: "transparent", color: "rgba(255,255,255,0.55)", border: "none", padding: "12px 16px", fontSize: 13, cursor: "pointer", fontFamily: "inherit", fontWeight: 500, textDecoration: "underline", textUnderlineOffset: 3, width: isMobile ? "100%" : "auto" }}>
-              Accéder en tant qu'invité
+              {t("land_guest_access")}
             </button>
           </div>
 
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: isMobile ? 12 : 20, flexWrap: "wrap" }}>
-            {["✓ Gratuit", "✓ Aucune carte requise", "✓ Multi-devises", "✓ Export PDF"].map(t => (
-              <span key={t} style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", fontWeight: 500 }}>{t}</span>
+            {[t("land_free"), t("land_no_card"), t("land_multi_currency"), t("land_export_pdf")].map(label => (
+              <span key={label} style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", fontWeight: 500 }}>{label}</span>
             ))}
           </div>
         </div>
@@ -216,10 +223,10 @@ export default function LandingPage({ onSignIn, onSignUp, onGuest }) {
       <section style={{ background: "#fff", borderBottom: "1px solid #f0f0f0", padding: "24px 24px" }}>
         <div style={{ maxWidth: 900, margin: "0 auto", display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 16 }}>
           {[
-            { value: "100%", label: "Calculs automatiques" },
-            { value: "12+", label: "Catégories" },
-            { value: "6", label: "Devises supportées" },
-            { value: "∞", label: "Participants" },
+            { value: "100%", label: t("land_stat_auto") },
+            { value: "12+", label: t("land_stat_categories") },
+            { value: "6", label: t("land_stat_currencies") },
+            { value: "∞", label: t("land_stat_participants") },
           ].map((s, i, arr) => (
             <div key={s.label} style={{ textAlign: "center", padding: "12px 8px", borderRight: !isMobile && i < arr.length - 1 ? "1px solid #f0f0f0" : "none" }}>
               <div style={{ fontSize: isMobile ? 24 : 30, fontWeight: 800, fontFamily: "'Playfair Display', serif", color: "#0F0F0F", marginBottom: 4 }}>{s.value}</div>
@@ -233,9 +240,9 @@ export default function LandingPage({ onSignIn, onSignUp, onGuest }) {
       <section id="how" style={{ background: "#fafafa", padding: isMobile ? "64px 24px" : "96px 32px" }}>
         <div style={{ maxWidth: 960, margin: "0 auto" }}>
           <div style={{ textAlign: "center", marginBottom: 56 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#2E7D32", letterSpacing: 2, textTransform: "uppercase", marginBottom: 12 }}>Fonctionnement</div>
-            <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 30 : 44, fontWeight: 700, color: "#0F0F0F", marginBottom: 14, lineHeight: 1.2 }}>Simple comme bonjour.</h2>
-            <p style={{ fontSize: 16, color: "#666", maxWidth: 440, margin: "0 auto", lineHeight: 1.6 }}>Trois étapes suffisent pour gérer n'importe quelle dépense partagée.</p>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#2E7D32", letterSpacing: 2, textTransform: "uppercase", marginBottom: 12 }}>{t("land_how")}</div>
+            <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 30 : 44, fontWeight: 700, color: "#0F0F0F", marginBottom: 14, lineHeight: 1.2 }}>{t("land_how_title")}</h2>
+            <p style={{ fontSize: 16, color: "#666", maxWidth: 440, margin: "0 auto", lineHeight: 1.6 }}>{t("land_how_desc")}</p>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)", gap: isMobile ? 24 : 32 }}>
             {steps.map((s) => (
@@ -256,9 +263,9 @@ export default function LandingPage({ onSignIn, onSignUp, onGuest }) {
       <section id="features" style={{ background: "#fff", padding: isMobile ? "64px 24px" : "96px 32px" }}>
         <div style={{ maxWidth: 1000, margin: "0 auto" }}>
           <div style={{ textAlign: "center", marginBottom: 56 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#1565C0", letterSpacing: 2, textTransform: "uppercase", marginBottom: 12 }}>Fonctionnalités</div>
-            <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 30 : 44, fontWeight: 700, color: "#0F0F0F", marginBottom: 14, lineHeight: 1.2 }}>Tout ce dont vous avez besoin.</h2>
-            <p style={{ fontSize: 16, color: "#666", maxWidth: 480, margin: "0 auto", lineHeight: 1.6 }}>SplitLy couvre tous les cas de figure, des plus simples aux plus complexes.</p>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#1565C0", letterSpacing: 2, textTransform: "uppercase", marginBottom: 12 }}>{t("land_features")}</div>
+            <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 30 : 44, fontWeight: 700, color: "#0F0F0F", marginBottom: 14, lineHeight: 1.2 }}>{t("land_feat_title")}</h2>
+            <p style={{ fontSize: 16, color: "#666", maxWidth: 480, margin: "0 auto", lineHeight: 1.6 }}>{t("land_feat_desc")}</p>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 16 }}>
             {features.map((f) => (
@@ -276,9 +283,9 @@ export default function LandingPage({ onSignIn, onSignUp, onGuest }) {
       <section id="usecases" style={{ background: "#0F0F0F", padding: isMobile ? "64px 24px" : "96px 32px" }}>
         <div style={{ maxWidth: 960, margin: "0 auto" }}>
           <div style={{ textAlign: "center", marginBottom: 56 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#F57F17", letterSpacing: 2, textTransform: "uppercase", marginBottom: 12 }}>Cas d'usage</div>
-            <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 30 : 44, fontWeight: 700, color: "#fff", marginBottom: 14, lineHeight: 1.2 }}>Pour toutes vos aventures.</h2>
-            <p style={{ fontSize: 16, color: "rgba(255,255,255,0.5)", maxWidth: 440, margin: "0 auto", lineHeight: 1.6 }}>Peu importe l'occasion, SplitLy s'adapte à votre situation.</p>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#F57F17", letterSpacing: 2, textTransform: "uppercase", marginBottom: 12 }}>{t("land_usecases")}</div>
+            <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 30 : 44, fontWeight: 700, color: "#fff", marginBottom: 14, lineHeight: 1.2 }}>{t("land_use_title")}</h2>
+            <p style={{ fontSize: 16, color: "rgba(255,255,255,0.5)", maxWidth: 440, margin: "0 auto", lineHeight: 1.6 }}>{t("land_use_desc")}</p>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 14 }}>
             {useCases.map((u) => (
@@ -296,23 +303,23 @@ export default function LandingPage({ onSignIn, onSignUp, onGuest }) {
       <section style={{ background: "linear-gradient(135deg, #2E7D32 0%, #1565C0 100%)", padding: isMobile ? "64px 24px" : "96px 32px", textAlign: "center" }}>
         <div style={{ maxWidth: 600, margin: "0 auto" }}>
           <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 30 : 46, fontWeight: 700, color: "#fff", marginBottom: 18, lineHeight: 1.15 }}>
-            Prêt à simplifier vos dépenses ?
+            {t("land_cta_title")}
           </h2>
           <p style={{ fontSize: 16, color: "rgba(255,255,255,0.8)", marginBottom: 40, lineHeight: 1.6 }}>
-            Créez votre premier événement en moins de 30 secondes. Aucune carte bancaire requise.
+            {t("land_cta_desc")}
           </p>
           <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
             <button onClick={onSignUp} className="btn-primary" style={{ background: "#fff", color: "#0F0F0F", border: "none", borderRadius: 14, padding: "14px 32px", fontSize: 15, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", width: isMobile ? "100%" : "auto" }}>
-              Commencer gratuitement →
+              {t("land_start_free")}
             </button>
             <button onClick={onGuest} className="btn-ghost" style={{ background: "rgba(255,255,255,0.12)", color: "#fff", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 14, padding: "14px 24px", fontSize: 15, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", width: isMobile ? "100%" : "auto" }}>
-              Accès invité
+              {t("land_guest_access")}
             </button>
           </div>
           <p style={{ marginTop: 20, fontSize: 13, color: "rgba(255,255,255,0.5)" }}>
-            Déjà un compte ?{" "}
+            {t("land_already_account")}{" "}
             <button onClick={onSignIn} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.8)", cursor: "pointer", textDecoration: "underline", fontSize: 13, fontFamily: "inherit", fontWeight: 600 }}>
-              Se connecter
+              {t("land_signin")}
             </button>
           </p>
         </div>
@@ -324,24 +331,22 @@ export default function LandingPage({ onSignIn, onSignUp, onGuest }) {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 28, marginBottom: 32 }}>
             <div style={{ maxWidth: 240 }}>
               <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 700, color: "#fff", marginBottom: 8 }}>SplitLy</div>
-              <p style={{ fontSize: 13, lineHeight: 1.6, color: "rgba(255,255,255,0.35)" }}>
-                Gestion intelligente des dépenses partagées entre amis, en famille ou entre collègues.
-              </p>
+              <p style={{ fontSize: 13, lineHeight: 1.6, color: "rgba(255,255,255,0.35)" }}>{t("land_footer_tagline")}</p>
             </div>
             {!isMobile && (
               <div style={{ display: "flex", gap: 48 }}>
                 <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 14 }}>Application</div>
-                  {["Fonctionnalités", "Comment ça marche", "Cas d'usage"].map(l => (
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 14 }}>{t("land_footer_app")}</div>
+                  {[t("land_features"), t("land_how"), t("land_usecases")].map(l => (
                     <div key={l} style={{ fontSize: 13, color: "rgba(255,255,255,0.35)", marginBottom: 10 }}>{l}</div>
                   ))}
                 </div>
                 <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 14 }}>Compte</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 14 }}>{t("land_footer_account")}</div>
                   {[
-                    { label: "Se connecter", action: onSignIn },
-                    { label: "S'inscrire", action: onSignUp },
-                    { label: "Accès invité", action: onGuest },
+                    { label: t("land_signin"), action: onSignIn },
+                    { label: t("land_signup"), action: onSignUp },
+                    { label: t("land_guest_access"), action: onGuest },
                   ].map(l => (
                     <div key={l.label} onClick={l.action} style={{ fontSize: 13, color: "rgba(255,255,255,0.35)", marginBottom: 10, cursor: "pointer" }}>{l.label}</div>
                   ))}
@@ -350,8 +355,8 @@ export default function LandingPage({ onSignIn, onSignUp, onGuest }) {
             )}
           </div>
           <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 20, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-            <span style={{ fontSize: 12 }}>© 2026 SplitLy. Tous droits réservés.</span>
-            <span style={{ fontSize: 12 }}>Fait avec ♥ pour simplifier vos sorties</span>
+            <span style={{ fontSize: 12 }}>© 2026 SplitLy. {t("land_footer_rights")}</span>
+            <span style={{ fontSize: 12 }}>{t("land_footer_love")}</span>
           </div>
         </div>
       </footer>
