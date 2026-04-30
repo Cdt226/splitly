@@ -1172,17 +1172,51 @@ function Expenses({ events, expenses, user, reload, isMobile, addToast }) {
 
   const handleSave = async () => {
     if (!form.eventId || !form.category || !form.sub || !form.detail || !form.paidBy || form.included.length === 0) {
-      addToast("Veuillez remplir tous les champs.", "warning"); return;
+      addToast(t("toast_fill_all"), "warning"); return;
     }
     const amountError = validateAmount(form.qty, form.unit);
     if (amountError) { addToast(amountError, "warning"); return; }
     setSaving(true);
+    const qty = Number(form.qty);
+    const unit = Number(form.unit);
+    const totalAmount = qty * unit;
+
     if (editingEx) {
-      await updateExpense(editingEx.id, { ...form, qty: Number(form.qty), unit: Number(form.unit) }, user.id, editingEx);
-      addToast("Charge modifiée.", "success");
+      // Modification : ajuster la contribution du payeur
+      // Retirer l'ancienne contribution automatique, ajouter la nouvelle
+      const oldTotal = editingEx.qty * (editingEx.unit_price ?? 0);
+      const oldPayer = editingEx.paid_by;
+      const newPayer = form.paidBy;
+
+      // Récupérer les contributions actuelles
+      const evContribs = contributions[form.eventId] || [];
+      const getContrib = (name) => (evContribs.find(c => c.participant === name)?.amount || 0);
+
+      if (oldPayer === newPayer) {
+        // Même payeur — ajuster le delta
+        const current = getContrib(newPayer);
+        const newAmount = Math.max(0, current - oldTotal + totalAmount);
+        await upsertContribution(form.eventId, newPayer, newAmount, user.id);
+      } else {
+        // Payeur différent — retirer l'ancien, créditer le nouveau
+        const oldCurrent = getContrib(oldPayer);
+        await upsertContribution(form.eventId, oldPayer, Math.max(0, oldCurrent - oldTotal), user.id);
+        const newCurrent = getContrib(newPayer);
+        await upsertContribution(form.eventId, newPayer, newCurrent + totalAmount, user.id);
+      }
+
+      await updateExpense(editingEx.id, { ...form, qty, unit }, user.id, editingEx);
+      addToast(t("toast_expense_edited"), "success");
     } else {
-      await createExpense({ ...form, qty: Number(form.qty), unit: Number(form.unit) }, user.id);
-      addToast("Charge ajoutée.", "success");
+      // Nouvelle charge — créditer automatiquement le payeur
+      await createExpense({ ...form, qty, unit }, user.id);
+
+      // Récupérer la contribution actuelle du payeur et l'incrémenter
+      const evContribs = contributions[form.eventId] || [];
+      const currentContrib = evContribs.find(c => c.participant === form.paidBy)?.amount || 0;
+      await upsertContribution(form.eventId, form.paidBy, currentContrib + totalAmount, user.id);
+
+      addToast(t("toast_expense_added"), "success");
     }
     await reload(); setForm(empty); setEditingEx(null); setShowForm(false); setSaving(false);
   };
@@ -1197,10 +1231,16 @@ function Expenses({ events, expenses, user, reload, isMobile, addToast }) {
     setConfirm({
       message: `Supprimer la charge "${ex.detail}" ?`,
       onConfirm: async () => {
+        // Décrémenter la contribution du payeur
+        const evContribs = contributions[ex.event_id] || [];
+        const currentContrib = evContribs.find(c => c.participant === ex.paid_by)?.amount || 0;
+        const totalAmount = ex.qty * (ex.unit_price ?? 0);
+        await upsertContribution(ex.event_id, ex.paid_by, Math.max(0, currentContrib - totalAmount), user.id);
+
         await deleteExpense(ex, user.id);
         await reload();
         setConfirm(null);
-        addToast("Charge supprimée.", "info");
+        addToast(t("toast_expense_deleted"), "info");
       },
       onCancel: () => setConfirm(null),
     });
