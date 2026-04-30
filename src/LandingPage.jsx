@@ -43,6 +43,8 @@ export default function LandingPage({ onSignIn, onSignUp, onGuest }) {
     { emoji: "✈️", title: "Voyages en groupe", desc: "Airbnb, voiture, activités... Gérez des dizaines de dépenses sur plusieurs jours facilement." },
     { emoji: "🏠", title: "Colocations", desc: "Loyer, courses, factures — répartissez équitablement les charges mensuelles entre colocataires." },
     { emoji: "🎉", title: "Fêtes & célébrations", desc: "Organisez un anniversaire ou une soirée sans vous prendre la tête avec les remboursements." },
+    { emoji: "💼", title: "Dépenses pro & équipes", desc: "Réunions, déplacements, fournitures — suivez et partagez les frais professionnels en toute transparence." },
+    { emoji: "🎓", title: "Vie étudiante", desc: "Coloc, sorties, repas entre étudiants — gérez votre budget collectif sans prise de tête." },
   ];
 
   return (
@@ -215,7 +217,7 @@ export default function LandingPage({ onSignIn, onSignUp, onGuest }) {
         <div style={{ maxWidth: 900, margin: "0 auto", display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 16 }}>
           {[
             { value: "100%", label: "Calculs automatiques" },
-            { value: "8+", label: "Catégories" },
+            { value: "12+", label: "Catégories" },
             { value: "6", label: "Devises supportées" },
             { value: "∞", label: "Participants" },
           ].map((s, i, arr) => (
@@ -278,7 +280,7 @@ export default function LandingPage({ onSignIn, onSignUp, onGuest }) {
             <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 30 : 44, fontWeight: 700, color: "#fff", marginBottom: 14, lineHeight: 1.2 }}>Pour toutes vos aventures.</h2>
             <p style={{ fontSize: 16, color: "rgba(255,255,255,0.5)", maxWidth: 440, margin: "0 auto", lineHeight: 1.6 }}>Peu importe l'occasion, SplitLy s'adapte à votre situation.</p>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 14 }}>
             {useCases.map((u) => (
               <div key={u.title} className="use-card" style={{ background: "rgba(255,255,255,0.05)", borderRadius: 16, padding: isMobile ? "20px 16px" : "26px 20px", border: "1px solid rgba(255,255,255,0.08)", cursor: "default" }}>
                 <div style={{ fontSize: isMobile ? 28 : 34, marginBottom: 14 }}>{u.emoji}</div>

@@ -17,10 +17,18 @@ import {
 
 // ─── CONSTANTES ───────────────────────────────────────────────
 const CATEGORIES = {
-  Nourriture:  { icon: "🍽️", color: "#E8F5E9", accent: "#2E7D32", subs: ["Entrée", "Plat", "Dessert"] },
-  Boisson:     { icon: "🥤", color: "#E3F2FD", accent: "#1565C0", subs: ["Alcool", "Jus", "Eau", "Autre"] },
-  Transport:   { icon: "🚖", color: "#FFF8E1", accent: "#F57F17", subs: ["Taxi", "Tram", "Bus", "Autre"] },
-  Accessoires: { icon: "🎉", color: "#F3E5F5", accent: "#6A1B9A", subs: ["Décoration", "Matériel", "Autre"] },
+  "Nourriture":           { icon: "🍽️", color: "#E8F5E9", accent: "#2E7D32",  subs: ["Entrée", "Plat", "Dessert", "Autre"] },
+  "Boisson":              { icon: "🥤", color: "#E3F2FD", accent: "#1565C0",  subs: ["Alcool", "Jus", "Eau", "Autre"] },
+  "Transport":            { icon: "🚖", color: "#FFF8E1", accent: "#F57F17",  subs: ["Taxi", "Tram", "Bus", "Train", "Avion", "Autre"] },
+  "Accessoires":          { icon: "🎉", color: "#F3E5F5", accent: "#6A1B9A",  subs: ["Décoration", "Fournitures", "Équipement", "Autre"] },
+  "Hébergement":          { icon: "🏨", color: "#E0F7FA", accent: "#00695C",  subs: ["Hôtel", "Airbnb", "Auberge", "Autre"] },
+  "Loisirs & Activités":  { icon: "🎭", color: "#FCE4EC", accent: "#AD1457",  subs: ["Cinéma", "Concert", "Musée", "Autre"] },
+  "Courses & Épicerie":   { icon: "🛒", color: "#F1F8E9", accent: "#558B2F",  subs: ["Supermarché", "Marché", "Boulangerie", "Autre"] },
+  "Loyer & Factures":     { icon: "💡", color: "#FFFDE7", accent: "#F9A825",  subs: ["Loyer", "Électricité", "Internet", "Autre"] },
+  "Cadeaux":              { icon: "🎁", color: "#FBE9E7", accent: "#BF360C",  subs: ["Anniversaire", "Mariage", "Naissance", "Autre"] },
+  "Santé & Bien-être":    { icon: "💊", color: "#E8EAF6", accent: "#283593",  subs: ["Médecin", "Pharmacie", "Salle de sport", "Autre"] },
+  "Technologie & Services":{ icon: "📱", color: "#ECEFF1", accent: "#455A64", subs: ["Abonnement", "Logiciel", "Appareil", "Autre"] },
+  "Autre":                { icon: "❓", color: "#F5F5F5", accent: "#757575",  subs: ["Autre"] },
 };
 const CURRENCIES = ["EUR €", "USD $", "GBP £", "XOF FCFA", "MAD DH", "CAD $"];
 
@@ -780,10 +788,10 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
       )}
       <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, height: 62, background: "#0F0F0F", display: "flex", alignItems: "center", justifyContent: "space-around", zIndex: 200, borderTop: "1px solid #1e1e1e" }}>
         {nav.slice(0, 5).map(n => (
-          <button key={n.key} onClick={() => setActive(n.key)} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, background: "none", border: "none", cursor: "pointer", color: active === n.key ? "#fff" : "#555", padding: "6px 4px", position: "relative", flex: 1 }}>
-            <span style={{ fontSize: 19 }}>{n.icon}</span>
-            <span style={{ fontSize: 9, fontWeight: active === n.key ? 700 : 400 }}>{n.label.split(" ")[0]}</span>
-            {n.badge > 0 && <span style={{ position: "absolute", top: 2, right: 8, background: "#C62828", color: "#fff", borderRadius: 10, fontSize: 9, fontWeight: 700, padding: "0 4px" }}>{n.badge}</span>}
+          <button key={n.key} onClick={() => setActive(n.key)} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, background: "none", border: "none", cursor: "pointer", color: active === n.key ? "#fff" : "#555", padding: "6px 4px", position: "relative", flex: 1, textAlign: "center" }}>
+            <span style={{ fontSize: 19, display: "block", textAlign: "center" }}>{n.icon}</span>
+            <span style={{ fontSize: 9, fontWeight: active === n.key ? 700 : 400, display: "block", textAlign: "center", width: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.label.split(" ")[0]}</span>
+            {n.badge > 0 && <span style={{ position: "absolute", top: 4, right: "50%", transform: "translateX(12px)", background: "#C62828", color: "#fff", borderRadius: 10, fontSize: 9, fontWeight: 700, padding: "0 4px", minWidth: 14, textAlign: "center" }}>{n.badge}</span>}
           </button>
         ))}
       </div>
