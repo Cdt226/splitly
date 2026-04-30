@@ -120,8 +120,8 @@ function validateAmount(qty, unit) {
   if (!Number.isInteger(q)) return "La quantité doit être un nombre entier.";
   if (q > 10000) return "La quantité ne peut pas dépasser 10 000.";
   if (!unit || u <= 0) return "Le prix unitaire doit être supérieur à 0.";
-  if (u > 10000000) return "Le prix unitaire semble anormalement élevé (max 10 000 000).";
-  if (q * u > 50000000) return "Le montant total dépasse la limite autorisée.";
+  if (u > 99999) return "Le prix unitaire ne peut pas dépasser 99 999.";
+  if (q * u > 99999) return "Le montant total ne peut pas dépasser 99 999 (5 chiffres).";
   return null;
 }
 
