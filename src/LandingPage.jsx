@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useTranslation, LanguageSwitcher } from "./i18n.js";
+import { useTranslation, LanguageSwitcher } from "./i18n.jsx";
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);

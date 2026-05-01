@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import LandingPage from "./LandingPage.jsx";
-import { useTranslation, LanguageSwitcher } from "./i18n.js";
+import { useTranslation, LanguageSwitcher } from "./i18n.jsx";
 import {
   supabase, signUp, signIn, signOut, getSession,
   fetchEvents, createEvent, updateEventStatus, deleteEvent,
