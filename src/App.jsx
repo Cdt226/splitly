@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import LandingPage from "./LandingPage.jsx";
-import { useTranslation, LanguageSwitcher, LanguageMenu } from "./i18n.jsx";
+import { useTranslation, LanguageSwitcher, LanguageMenu } from "./i18n.js";
 import {
   supabase, signUp, signIn, signOut, getSession,
   fetchEvents, createEvent, updateEventStatus, deleteEvent,
@@ -479,8 +479,10 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
   const [contributions, setContributions] = useState({});
   const [active, setActive] = useState("events");
   const [loading, setLoading] = useState(true);
-  const [pendingForm, setPendingForm] = useState(false);
+  const [pendingForm, setPendingForm] = useState(false); // false | "add" | "edit"
   const [saving, setSaving] = useState(false);
+  const [editingExpense, setEditingExpense] = useState(null);
+  const [selectedEventPdf, setSelectedEventPdf] = useState("");
 
   const loadGuest = useCallback(async () => {
     setLoading(true);
@@ -522,7 +524,7 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
       <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
       <div style={{ background: "#0F0F0F", padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 100 }}>
         <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, color: "#fff", cursor: "pointer" }} onClick={() => setActive("events")}>SplitLy</div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ background: "#1565C0", color: "#fff", fontSize: 11, padding: "3px 10px", borderRadius: 20, fontWeight: 600 }}>👤 Invité</span>
           {!isMobile && <span style={{ color: "#666", fontSize: 12 }}>{guestEmail}</span>}
           <button onClick={onSignOut} style={{ background: "none", border: "1px solid #333", color: "#aaa", fontSize: 11, padding: "5px 12px", borderRadius: 8, cursor: "pointer" }}>Quitter</button>
@@ -544,7 +546,35 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
 
         {active === "events" && (
           <div>
-            <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700, marginBottom: 16 }}>Événements partagés</h2>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
+              <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700 }}>Événements partagés</h2>
+              {events.length > 0 && (
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <select
+                    style={{ ...S.input, width: "auto", fontSize: 12 }}
+                    value={selectedEventPdf}
+                    onChange={e => setSelectedEventPdf(e.target.value)}
+                  >
+                    <option value="">Choisir un événement...</option>
+                    {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
+                  </select>
+                  <button
+                    disabled={!selectedEventPdf}
+                    onClick={() => {
+                      const ev = events.find(e => e.id === selectedEventPdf);
+                      if (!ev) return;
+                      const evExp = expenses.filter(e => e.event_id === selectedEventPdf);
+                      const evContribs = contributions[selectedEventPdf] || {};
+                      const participants = (ev.event_participants || []).map(p => p.name);
+                      exportPDF(ev, evExp, evContribs, participants);
+                    }}
+                    style={{ ...S.btnDark, opacity: !selectedEventPdf ? 0.5 : 1, whiteSpace: "nowrap" }}
+                  >
+                    📄 PDF
+                  </button>
+                </div>
+              )}
+            </div>
             {events.length === 0 ? (
               <EmptyState icon="🎊" title="Aucun événement" subtitle="Aucun événement n'a encore été partagé avec vous." />
             ) : (
@@ -561,7 +591,7 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
                         <AvatarStack names={participants} size={22} />
                       </div>
                       <div style={{ textAlign: "right", flexShrink: 0 }}>
-                        <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Playfair Display', serif" }}>{evTotal.toFixed(2)} {currencySymbol(ev.currency)}</div>
+                        <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Playfair Display', serif" }}>{fmt(evTotal, currencySymbol(ev.currency))}</div>
                         <div style={{ fontSize: 11, color: "#aaa" }}>budget collectif</div>
                       </div>
                     </div>
@@ -574,13 +604,32 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
 
         {active === "expenses" && (
           <div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
               <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700 }}>Charges</h2>
-              <button onClick={() => setPendingForm(!pendingForm)} style={S.btnDark}>+ Demander ajout</button>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => setPendingForm(pendingForm === "add" ? false : "add")} style={S.btnDark}>➕ Demander ajout</button>
+              </div>
             </div>
-            {pendingForm && (
+
+            {/* Formulaire ajout */}
+            {pendingForm === "add" && (
               <GuestExpenseForm events={events} onSubmit={handleRequestAction} onCancel={() => setPendingForm(false)} saving={saving} />
             )}
+
+            {/* Formulaire modification */}
+            {pendingForm === "edit" && editingExpense && (
+              <GuestEditExpenseForm
+                expense={editingExpense}
+                events={events}
+                onSubmit={async (data) => {
+                  await handleRequestAction("modify_expense", { ...data, expense_id: editingExpense.id }, editingExpense.event_id);
+                  setEditingExpense(null);
+                }}
+                onCancel={() => { setPendingForm(false); setEditingExpense(null); }}
+                saving={saving}
+              />
+            )}
+
             {expenses.length === 0 ? (
               <EmptyState icon="🧾" title="Aucune charge" subtitle="Aucune dépense n'a encore été enregistrée." />
             ) : (
@@ -588,9 +637,10 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
                 {expenses.map(ex => {
                   const cat = CATEGORIES[ex.category];
                   const ev = events.find(e => e.id === ex.event_id);
-                  const t = ex.qty * (ex.unit_price ?? 0);
+                  const total = ex.qty * (ex.unit_price ?? 0);
                   const inc = ex.included || [];
-                  const share = inc.length > 0 ? t / inc.length : 0;
+                  const share = inc.length > 0 ? total / inc.length : 0;
+                  const sym = currencySymbol(ev?.currency);
                   return (
                     <div key={ex.id} style={{ background: "#fff", borderRadius: 12, padding: "14px 18px", border: "1px solid #eee" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
@@ -598,13 +648,24 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
                           <span style={{ fontSize: 22, flexShrink: 0 }}>{cat?.icon}</span>
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ex.detail}</div>
-                            <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>{ev?.name} · par {ex.paid_by}</div>
+                            <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>
+                              {ev?.name} · {ex.is_unpaid ? <span style={{ color: "#F57F17", fontWeight: 600 }}>⏳ Non réglée</span> : `par ${ex.paid_by}`}
+                            </div>
+                            {ex.comment && <div style={{ fontSize: 11, color: "#888", fontStyle: "italic", marginTop: 2 }}>💬 {ex.comment}</div>}
                             {cat && <div style={{ marginTop: 4 }}><Badge label={ex.sub_category} color={cat.color} accent={cat.accent} /></div>}
                           </div>
                         </div>
                         <div style={{ textAlign: "right", flexShrink: 0 }}>
-                          <div style={{ fontSize: 16, fontWeight: 700 }}>{t.toFixed(2)}</div>
-                          <div style={{ fontSize: 11, color: "#2E7D32", fontWeight: 600 }}>{share.toFixed(2)}/p.</div>
+                          <div style={{ fontSize: 16, fontWeight: 700 }}>{fmt(total, sym)}</div>
+                          <div style={{ fontSize: 11, color: "#2E7D32", fontWeight: 600 }}>{fmt(share, sym)}/p.</div>
+                          {ev?.status === "open" && (
+                            <button
+                              onClick={() => { setEditingExpense(ex); setPendingForm("edit"); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+                              style={{ marginTop: 6, padding: "3px 10px", borderRadius: 8, border: "1.5px solid #e0e0e0", background: "#fafafa", fontSize: 11, cursor: "pointer", color: "#555", fontWeight: 600 }}
+                            >
+                              ✏️ Demander modification
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1700,7 +1761,87 @@ function Balance({ events, expenses, contributions, user, reload, isMobile, addT
   );
 }
 
-// ─── ANALYSES ─────────────────────────────────────────────────
+// ─── GUEST EDIT EXPENSE FORM ──────────────────────────────────
+function GuestEditExpenseForm({ expense, events, onSubmit, onCancel, saving }) {
+  const ev = events.find(e => e.id === expense.event_id);
+  const participants = (ev?.event_participants || []).map(p => p.name);
+  const [form, setForm] = useState({
+    category: expense.category || "",
+    sub: expense.sub_category || "",
+    detail: expense.detail || "",
+    qty: expense.qty || 1,
+    unit: expense.unit_price || 0,
+    paidBy: expense.paid_by || "",
+    included: expense.included || [...participants],
+    comment: expense.comment || "",
+  });
+  const total = (Number(form.qty) || 0) * (Number(form.unit) || 0);
+  const sym = currencySymbol(ev?.currency);
+
+  return (
+    <div style={{ ...S.card, border: "1.5px solid #F57F17", marginBottom: 16 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4, color: "#E65100" }}>✏️ Demande de modification</div>
+      <div style={{ fontSize: 12, color: "#888", marginBottom: 14 }}>
+        Charge : <strong>{expense.detail}</strong> · Événement : <strong>{ev?.name}</strong>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+        <div><label style={S.label}>Catégorie</label>
+          <select style={S.input} value={form.category} onChange={e => setForm({ ...form, category: e.target.value, sub: "" })}>
+            {Object.keys(CATEGORIES).map(c => <option key={c} value={c}>{CATEGORIES[c].icon} {c}</option>)}
+          </select>
+        </div>
+        <div><label style={S.label}>Sous-catégorie</label>
+          <select style={S.input} value={form.sub} onChange={e => setForm({ ...form, sub: e.target.value })}>
+            {form.category && CATEGORIES[form.category]?.subs.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <label style={S.label}>Description</label>
+          <input style={S.input} value={form.detail} onChange={e => setForm({ ...form, detail: e.target.value })} />
+        </div>
+        <div><label style={S.label}>Quantité</label>
+          <input type="number" style={S.input} value={form.qty} min={1} onChange={e => setForm({ ...form, qty: Number(e.target.value) })} />
+        </div>
+        <div><label style={S.label}>Prix unitaire</label>
+          <input type="number" style={S.input} value={form.unit} min={0} step={0.01} onChange={e => setForm({ ...form, unit: e.target.value })} />
+        </div>
+        <div><label style={S.label}>Payé par</label>
+          <select style={S.input} value={form.paidBy} onChange={e => setForm({ ...form, paidBy: e.target.value })}>
+            <option value="">Sélectionner...</option>
+            {participants.map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, paddingTop: 20 }}>
+          <span style={{ fontSize: 14, fontWeight: 700, color: "#0F0F0F" }}>
+            Total : {fmt(total, sym)}
+          </span>
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <label style={S.label}>Qui partage ?</label>
+        <ParticipantToggle people={participants} selected={form.included} onChange={p => setForm({ ...form, included: p })} label="" />
+      </div>
+
+      <div style={{ marginBottom: 14 }}>
+        <label style={S.label}>Commentaire (optionnel)</label>
+        <textarea style={{ ...S.input, minHeight: 56, resize: "vertical", fontFamily: "inherit" }}
+          placeholder="Expliquez pourquoi vous souhaitez modifier cette charge..."
+          value={form.comment} onChange={e => setForm({ ...form, comment: e.target.value })} maxLength={300}
+        />
+      </div>
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <button onClick={() => onSubmit(form)} disabled={saving}
+          style={{ ...S.btnDark, background: "#E65100", flex: 1 }}>
+          {saving ? "Envoi..." : "📤 Soumettre la modification"}
+        </button>
+        <button onClick={onCancel} style={S.btnGhost}>Annuler</button>
+      </div>
+    </div>
+  );
+}
 function Analytics({ events, expenses, contributions, isMobile }) {
   const [sel, setSel] = useState(events[0]?.id || "");
   const ev = events.find(e => e.id === sel);
@@ -2076,20 +2217,30 @@ function NotificationsPage({ notifications, events, expenses, pendingActions, us
             const ev = events.find(e => e.id === action.event_id);
             const data = action.action_data;
             const total = ((data?.qty || 0) * (data?.unit || 0)).toFixed(2);
+            const isModify = action.action_type === "modify_expense";
+            const originalExp = expenses.find(e => e.id === data?.expense_id);
             return (
-              <div key={action.id} style={{ background: "#F3E5F5", borderRadius: 14, padding: "16px 18px", border: "1.5px solid #ce93d8", marginBottom: 12 }}>
+              <div key={action.id} style={{ background: isModify ? "#FFF3E0" : "#F3E5F5", borderRadius: 14, padding: "16px 18px", border: `1.5px solid ${isModify ? "#FFCC80" : "#ce93d8"}`, marginBottom: 12 }}>
                 <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 12 }}>
-                  <div style={{ fontSize: 24, flexShrink: 0 }}>📝</div>
+                  <div style={{ fontSize: 24, flexShrink: 0 }}>{isModify ? "✏️" : "📝"}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "#6A1B9A", marginBottom: 6 }}>
-                      {action.guest_email} demande d'ajouter une charge
+                    <div style={{ fontSize: 13, fontWeight: 700, color: isModify ? "#E65100" : "#6A1B9A", marginBottom: 6 }}>
+                      {action.guest_email} {isModify ? "demande de modifier une charge" : "demande d'ajouter une charge"}
                     </div>
+                    {isModify && originalExp && (
+                      <div style={{ fontSize: 12, color: "#888", marginBottom: 4, fontStyle: "italic" }}>
+                        Original : <strong>{originalExp.detail}</strong> → <strong>{data?.detail}</strong>
+                      </div>
+                    )}
                     <div style={{ fontSize: 12, color: "#555", marginBottom: 4 }}>
                       <strong>{ev?.name}</strong> · {data?.detail} · <strong>{total} {currencySymbol(ev?.currency)}</strong>
                     </div>
                     <div style={{ fontSize: 11, color: "#888" }}>
                       Payé par : {data?.paidBy} · Inclus : {(data?.included || []).join(", ")}
                     </div>
+                    {data?.comment && (
+                      <div style={{ fontSize: 11, color: "#666", fontStyle: "italic", marginTop: 4 }}>💬 {data.comment}</div>
+                    )}
                     <div style={{ fontSize: 10, color: "#aaa", marginTop: 4 }}>
                       {new Date(action.created_at).toLocaleString("fr-FR")}
                     </div>

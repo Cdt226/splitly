@@ -151,15 +151,31 @@ export async function fetchAllPendingActions(eventIds) {
 }
 
 export async function approvePendingAction(actionId, adminUserId, actionData) {
-  // Exécuter l'action
+  // Exécuter l'action selon son type
   if (actionData.action_type === 'add_expense') {
     const ex = actionData.action_data;
     await supabase.from('expenses').insert({
       event_id: ex.eventId, category: ex.category, sub_category: ex.sub,
       detail: ex.detail, qty: ex.qty, unit_price: ex.unit,
       paid_by: ex.paidBy, included: ex.included, created_by: adminUserId,
+      comment: ex.comment || null,
     });
+  } else if (actionData.action_type === 'modify_expense') {
+    const ex = actionData.action_data;
+    if (ex.expense_id) {
+      await supabase.from('expenses').update({
+        category: ex.category,
+        sub_category: ex.sub,
+        detail: ex.detail,
+        qty: Number(ex.qty),
+        unit_price: Number(ex.unit),
+        paid_by: ex.paidBy,
+        included: ex.included,
+        comment: ex.comment || null,
+      }).eq('id', ex.expense_id);
+    }
   }
+
   // Marquer comme approuvée
   const { error } = await supabase
     .from('pending_actions')
