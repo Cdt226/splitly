@@ -3,7 +3,7 @@
 import i18n from "i18next";
 import { initReactI18next, useTranslation as useI18nTranslation } from "react-i18next";
 import LanguageDetector from "i18next-browser-languagedetector";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 import fr from "../locales/fr.json";
 import en from "../locales/en.json";
@@ -66,14 +66,30 @@ export function useTranslation() {
 // ─── LanguageMenu — dropdown professionnel ────────────────────
 export function LanguageMenu({ lang, setLang, dark = false, dropUp = true }) {
   const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState(null);
+  const btnRef = useRef(null);
   const current = LANGUAGES.find(l => l.code === lang) || LANGUAGES[0];
   const border = dark ? "#2a2a2a" : "#e0e0e0";
   const textColor = dark ? "#fff" : "#333";
 
+  const handleToggle = () => {
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setCoords({
+        top: rect.bottom + 6,
+        bottom: window.innerHeight - rect.top + 6,
+        left: rect.left,
+        width: rect.width,
+      });
+    }
+    setOpen(v => !v);
+  };
+
   return (
     <div style={{ position: "relative" }}>
       <button
-        onClick={() => setOpen(!open)}
+        ref={btnRef}
+        onClick={handleToggle}
         style={{
           display: "flex", alignItems: "center", gap: 8,
           padding: "7px 10px", borderRadius: 9, cursor: "pointer",
@@ -90,23 +106,31 @@ export function LanguageMenu({ lang, setLang, dark = false, dropUp = true }) {
           transition: "transform 0.2s",
           transform: open
             ? (dropUp ? "rotate(0deg)" : "rotate(180deg)")
-            : (dropUp ? "rotate(180deg)" : "rotate(0deg)")
+            : (dropUp ? "rotate(180deg)" : "rotate(0deg)"),
         }}>▼</span>
       </button>
 
-      {open && (
+      {open && coords && (
         <>
-          <div style={{ position: "fixed", inset: 0, zIndex: 998 }} onClick={() => setOpen(false)} />
+          {/* Overlay pour fermer */}
+          <div
+            style={{ position: "fixed", inset: 0, zIndex: 9998 }}
+            onClick={() => setOpen(false)}
+          />
+          {/* Dropdown en position:fixed — échappe tout overflow:hidden */}
           <div style={{
-            position: "absolute",
+            position: "fixed",
             ...(dropUp
-              ? { bottom: "calc(100% + 6px)" }
-              : { top: "calc(100% + 6px)" }),
-            left: 0, right: 0,
+              ? { bottom: coords.bottom }
+              : { top: coords.top }),
+            left: coords.left,
+            width: coords.width,
             background: dark ? "#1e1e1e" : "#fff",
-            border: `1px solid ${border}`, borderRadius: 10,
-            boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
-            zIndex: 999, overflow: "hidden",
+            border: `1px solid ${border}`,
+            borderRadius: 10,
+            boxShadow: "0 8px 32px rgba(0,0,0,0.35)",
+            zIndex: 9999,
+            overflow: "hidden",
           }}>
             {LANGUAGES.map(l => (
               <button

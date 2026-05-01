@@ -864,7 +864,7 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
     { key: "history",       icon: "◷", label: t("nav_history") },
     { key: "invite",        icon: "◎", label: t("nav_invite") },
     { key: "notifications", icon: "◬", label: t("nav_notifications"), badge: totalBadge },
-    { key: "settings",      icon: "⚙", label: t("nav_settings") || "Paramètres" },
+    { key: "settings", icon: "⚙", label: t("nav_settings") || "Paramètres" },
     ...(isAdmin ? [{ key: "superadmin", icon: "⚡", label: "Super Admin" }] : []),
   ];
 
@@ -991,7 +991,7 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
   );
 
   return (
-    <aside style={{ width: 260, minWidth: 260, background: "#0F0F0F", display: "flex", flexDirection: "column", flexShrink: 0, position: "sticky", top: 0, height: "100vh", overflow: "hidden" }}>
+    <aside style={{ width: 260, minWidth: 260, background: "#0F0F0F", display: "flex", flexDirection: "column", flexShrink: 0, position: "sticky", top: 0, height: "100vh", overflowX: "hidden", overflowY: "auto" }}>
       {/* Logo */}
       <div style={{ padding: "22px 20px 16px", borderBottom: "1px solid #1e1e1e" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1028,7 +1028,9 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
 function Dashboard({ events, expenses, contributions, user, isMobile, navigateTo, t, lang }) {
   const firstName = user?.user_metadata?.full_name?.split(" ")[0] || "vous";
   const now = new Date();
-  const locale = lang === "ar" ? "ar-MA" : lang === "en" ? "en-GB" : lang === "es" ? "es-ES" : lang === "pt" ? "pt-PT" : "fr-FR";
+  // Lire la langue sauvegardée depuis localStorage plutôt que le navigateur
+  const savedLang = (() => { try { return localStorage.getItem("splitly_lang") || lang; } catch { return lang || "fr"; } })();
+  const locale = savedLang === "ar" ? "ar-MA" : savedLang === "en" ? "en-GB" : savedLang === "es" ? "es-ES" : savedLang === "pt" ? "pt-PT" : "fr-FR";
   const dateLabel = now.toLocaleDateString(locale, { weekday: "long", day: "numeric", month: "long" });
 
   // ── KPIs globaux ──────────────────────────────────────────
@@ -1105,7 +1107,7 @@ function Dashboard({ events, expenses, contributions, user, isMobile, navigateTo
       ) : (
         <>
           {/* ── KPIs ── */}
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 12, marginBottom: 24, minWidth: 0 }}>
             <KpiCard icon="💰" label="Budget total" value={fmt(grandTotal)} sub={`${expenses.length} charge${expenses.length > 1 ? "s" : ""}`} accent="#0F0F0F" onClick={() => navigateTo && navigateTo("expenses")} />
             <KpiCard icon="🎊" label="Événements" value={events.length} sub={`${openEvents.length} ouvert${openEvents.length > 1 ? "s" : ""} · ${closedEvents.length} bouclé${closedEvents.length > 1 ? "s" : ""}`} accent="#2E7D32" onClick={() => navigateTo && navigateTo("events")} />
             <KpiCard icon="👥" label="Participants" value={uniqueParticipants.length} sub="profils uniques" accent="#1565C0" onClick={() => navigateTo && navigateTo("analytics")} />
