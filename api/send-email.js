@@ -21,7 +21,7 @@ export default async function handler(req, res) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'SplitLy <onboarding@resend.dev>',
+        from: 'SplitLy <noreply@splitmeapp.com>',
         to,
         subject,
         html,
