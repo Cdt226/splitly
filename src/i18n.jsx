@@ -334,6 +334,29 @@ export const TRANSLATIONS = {
     land_signup: "S'inscrire",
     land_guest_access: "Accès invité",
     land_start_free: "Commencer gratuitement →",
+
+    // Features
+    feat_1_title: "Événements partagés", feat_1_desc: "Créez un événement, ajoutez vos amis et gérez toutes les dépenses en un seul endroit.",
+    feat_2_title: "Répartition intelligente", feat_2_desc: "Choisissez qui partage chaque charge. Bob ne boit pas d'alcool ? Excluez-le en un clic.",
+    feat_3_title: "Soldes en temps réel", feat_3_desc: "Visualisez instantanément qui doit quoi à qui. Les calculs sont automatiques et précis.",
+    feat_4_title: "Bouclage d'événement", feat_4_desc: "Une fois tout soldé, bouclez l'événement pour figer les données définitivement.",
+    feat_5_title: "Analyses détaillées", feat_5_desc: "Suivez votre budget par catégorie, par événement et par participant.",
+    feat_6_title: "Accès invités", feat_6_desc: "Invitez vos amis à consulter les dépenses via un code sécurisé sans création de compte.",
+    feat_7_title: "Export PDF", feat_7_desc: "Générez un récapitulatif PDF daté de toutes les dépenses et contributions.",
+    feat_8_title: "Multi-devises", feat_8_desc: "EUR, USD, FCFA, MAD… Choisissez la devise de votre événement parmi les plus utilisées.",
+
+    // Steps
+    step_1_title: "Créez l'événement", step_1_desc: "Donnez un nom à votre sortie, choisissez une date, une devise et ajoutez les participants.",
+    step_2_title: "Enregistrez les dépenses", step_2_desc: "Ajoutez chaque charge avec sa catégorie, le payeur et les personnes concernées.",
+    step_3_title: "Soldez et bouclez", step_3_desc: "L'app calcule automatiquement qui doit combien. Soldez en un clic et bouclezez quand tout est réglé.",
+
+    // Use cases
+    use_1_title: "Restos & sorties", use_1_desc: "Qui a payé quoi ? Qui partage le dessert ? Fini les calculs à la main sur une serviette.",
+    use_2_title: "Voyages en groupe", use_2_desc: "Airbnb, voiture, activités... Gérez des dizaines de dépenses sur plusieurs jours facilement.",
+    use_3_title: "Colocations", use_3_desc: "Loyer, courses, factures — répartissez équitablement les charges mensuelles entre colocataires.",
+    use_4_title: "Fêtes & célébrations", use_4_desc: "Organisez un anniversaire ou une soirée sans vous prendre la tête avec les remboursements.",
+    use_5_title: "Dépenses pro & équipes", use_5_desc: "Réunions, déplacements, fournitures — suivez et partagez les frais professionnels en toute transparence.",
+    use_6_title: "Vie étudiante", use_6_desc: "Coloc, sorties, repas entre étudiants — gérez votre budget collectif sans prise de tête.",
   },
 
   // ─── ENGLISH ─────────────────────────────────────────────────
@@ -647,10 +670,30 @@ export const TRANSLATIONS = {
     land_signup: "Sign up",
     land_guest_access: "Guest access",
     land_start_free: "Get started for free →",
-  },
 
-  // ─── ESPAÑOL ─────────────────────────────────────────────────
-  es: {
+    // Features
+    feat_1_title: "Shared events", feat_1_desc: "Create an event, add your friends and manage all expenses in one place.",
+    feat_2_title: "Smart splitting", feat_2_desc: "Choose who shares each expense. Bob doesn't drink? Exclude him in one click.",
+    feat_3_title: "Real-time balances", feat_3_desc: "Instantly see who owes what to whom. Calculations are automatic and accurate.",
+    feat_4_title: "Event closing", feat_4_desc: "Once everything is settled, close the event to lock the data permanently.",
+    feat_5_title: "Detailed analytics", feat_5_desc: "Track your budget by category, by event and by participant.",
+    feat_6_title: "Guest access", feat_6_desc: "Invite friends to view expenses via a secure code without creating an account.",
+    feat_7_title: "PDF export", feat_7_desc: "Generate a dated PDF summary of all expenses and contributions.",
+    feat_8_title: "Multi-currency", feat_8_desc: "EUR, USD, FCFA, MAD… Choose the currency for your event from the most used ones.",
+
+    // Steps
+    step_1_title: "Create the event", step_1_desc: "Give your outing a name, choose a date, a currency and add the participants.",
+    step_2_title: "Record expenses", step_2_desc: "Add each expense with its category, who paid and the people involved.",
+    step_3_title: "Settle and close", step_3_desc: "The app automatically calculates who owes what. Settle in one click and close when done.",
+
+    // Use cases
+    use_1_title: "Restaurants & outings", use_1_desc: "Who paid what? Who shares the dessert? No more hand calculations on a napkin.",
+    use_2_title: "Group trips", use_2_desc: "Airbnb, car, activities... Manage dozens of expenses over several days easily.",
+    use_3_title: "Flatsharing", use_3_desc: "Rent, groceries, bills — split monthly expenses fairly between flatmates.",
+    use_4_title: "Parties & celebrations", use_4_desc: "Organize a birthday or party without the headache of tracking reimbursements.",
+    use_5_title: "Professional expenses", use_5_desc: "Meetings, travel, supplies — track and share professional costs transparently.",
+    use_6_title: "Student life", use_6_desc: "Flatsharing, outings, meals — manage your collective budget without the hassle.",
+  },
     app_name: "SplitLy",
     app_tagline: "Gestión de gastos compartidos",
     loading: "Cargando...",
@@ -960,6 +1003,29 @@ export const TRANSLATIONS = {
     land_signup: "Registrarse",
     land_guest_access: "Acceso invitado",
     land_start_free: "Empezar gratis →",
+
+    // Features
+    feat_1_title: "Eventos compartidos", feat_1_desc: "Crea un evento, añade a tus amigos y gestiona todos los gastos en un solo lugar.",
+    feat_2_title: "Reparto inteligente", feat_2_desc: "Elige quién comparte cada gasto. ¿Bob no bebe alcohol? Exclúyelo en un clic.",
+    feat_3_title: "Saldos en tiempo real", feat_3_desc: "Visualiza instantáneamente quién debe qué a quién. Los cálculos son automáticos y precisos.",
+    feat_4_title: "Cierre de evento", feat_4_desc: "Una vez todo saldado, cierra el evento para fijar los datos definitivamente.",
+    feat_5_title: "Análisis detallados", feat_5_desc: "Sigue tu presupuesto por categoría, por evento y por participante.",
+    feat_6_title: "Acceso invitados", feat_6_desc: "Invita a tus amigos a consultar los gastos con un código seguro sin crear cuenta.",
+    feat_7_title: "Exportar PDF", feat_7_desc: "Genera un resumen PDF fechado de todos los gastos y contribuciones.",
+    feat_8_title: "Multi-moneda", feat_8_desc: "EUR, USD, FCFA, MAD… Elige la moneda de tu evento entre las más usadas.",
+
+    // Steps
+    step_1_title: "Crea el evento", step_1_desc: "Dale un nombre a tu salida, elige una fecha, una moneda y añade los participantes.",
+    step_2_title: "Registra los gastos", step_2_desc: "Añade cada gasto con su categoría, quién pagó y las personas implicadas.",
+    step_3_title: "Salda y cierra", step_3_desc: "La app calcula automáticamente quién debe cuánto. Salda en un clic y cierra cuando esté listo.",
+
+    // Use cases
+    use_1_title: "Restaurantes & salidas", use_1_desc: "¿Quién pagó qué? ¿Quién comparte el postre? Se acabaron los cálculos a mano.",
+    use_2_title: "Viajes en grupo", use_2_desc: "Airbnb, coche, actividades... Gestiona docenas de gastos durante varios días fácilmente.",
+    use_3_title: "Pisos compartidos", use_3_desc: "Alquiler, compras, facturas — reparte equitativamente los gastos mensuales entre compañeros.",
+    use_4_title: "Fiestas & celebraciones", use_4_desc: "Organiza un cumpleaños o fiesta sin el dolor de cabeza de los reembolsos.",
+    use_5_title: "Gastos profesionales", use_5_desc: "Reuniones, viajes, suministros — sigue y comparte los gastos profesionales con transparencia.",
+    use_6_title: "Vida universitaria", use_6_desc: "Piso compartido, salidas, comidas — gestiona tu presupuesto colectivo sin complicaciones.",
   },
 };
 

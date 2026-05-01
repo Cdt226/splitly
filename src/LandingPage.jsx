@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useTranslation, LanguageSwitcher } from "./i18n.jsx";
+import { useTranslation, LanguageSwitcher } from "./i18n.js";
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -24,29 +24,29 @@ export default function LandingPage({ onSignIn, onSignUp, onGuest }) {
   }, []);
 
   const features = [
-    { icon: "🎊", title: "Événements partagés", desc: "Créez un événement, ajoutez vos amis et gérez toutes les dépenses en un seul endroit." },
-    { icon: "⚖️", title: "Répartition intelligente", desc: "Choisissez qui partage chaque charge. Bob ne boit pas d'alcool ? Excluez-le en un clic." },
-    { icon: "💸", title: "Soldes en temps réel", desc: "Visualisez instantanément qui doit quoi à qui. Les calculs sont automatiques et précis." },
-    { icon: "🔒", title: "Bouclage d'événement", desc: "Une fois tout soldé, bouclez l'événement pour figer les données définitivement." },
-    { icon: "📊", title: "Analyses détaillées", desc: "Suivez votre budget par catégorie, par événement et par participant." },
-    { icon: "👥", title: "Accès invités", desc: "Invitez vos amis à consulter les dépenses via un code sécurisé sans création de compte." },
-    { icon: "📄", title: "Export PDF", desc: "Générez un récapitulatif PDF daté de toutes les dépenses et contributions." },
-    { icon: "🌍", title: "Multi-devises", desc: "EUR, USD, FCFA, MAD… Choisissez la devise de votre événement parmi les plus utilisées." },
+    { icon: "🎊", title: t("feat_1_title"), desc: t("feat_1_desc") },
+    { icon: "⚖️", title: t("feat_2_title"), desc: t("feat_2_desc") },
+    { icon: "💸", title: t("feat_3_title"), desc: t("feat_3_desc") },
+    { icon: "🔒", title: t("feat_4_title"), desc: t("feat_4_desc") },
+    { icon: "📊", title: t("feat_5_title"), desc: t("feat_5_desc") },
+    { icon: "👥", title: t("feat_6_title"), desc: t("feat_6_desc") },
+    { icon: "📄", title: t("feat_7_title"), desc: t("feat_7_desc") },
+    { icon: "🌍", title: t("feat_8_title"), desc: t("feat_8_desc") },
   ];
 
   const steps = [
-    { num: "01", title: "Créez l'événement", desc: "Donnez un nom à votre sortie, choisissez une date, une devise et ajoutez les participants.", icon: "🎊" },
-    { num: "02", title: "Enregistrez les dépenses", desc: "Ajoutez chaque charge avec sa catégorie, le payeur et les personnes concernées.", icon: "🧾" },
-    { num: "03", title: "Soldez et bouclez", desc: "L'app calcule automatiquement qui doit combien. Soldez en un clic et bouclezez quand tout est réglé.", icon: "✅" },
+    { num: "01", title: t("step_1_title"), desc: t("step_1_desc"), icon: "🎊" },
+    { num: "02", title: t("step_2_title"), desc: t("step_2_desc"), icon: "🧾" },
+    { num: "03", title: t("step_3_title"), desc: t("step_3_desc"), icon: "✅" },
   ];
 
   const useCases = [
-    { emoji: "🍽️", title: "Restos & sorties", desc: "Qui a payé quoi ? Qui partage le dessert ? Fini les calculs à la main sur une serviette." },
-    { emoji: "✈️", title: "Voyages en groupe", desc: "Airbnb, voiture, activités... Gérez des dizaines de dépenses sur plusieurs jours facilement." },
-    { emoji: "🏠", title: "Colocations", desc: "Loyer, courses, factures — répartissez équitablement les charges mensuelles entre colocataires." },
-    { emoji: "🎉", title: "Fêtes & célébrations", desc: "Organisez un anniversaire ou une soirée sans vous prendre la tête avec les remboursements." },
-    { emoji: "💼", title: "Dépenses pro & équipes", desc: "Réunions, déplacements, fournitures — suivez et partagez les frais professionnels en toute transparence." },
-    { emoji: "🎓", title: "Vie étudiante", desc: "Coloc, sorties, repas entre étudiants — gérez votre budget collectif sans prise de tête." },
+    { emoji: "🍽️", title: t("use_1_title"), desc: t("use_1_desc") },
+    { emoji: "✈️", title: t("use_2_title"), desc: t("use_2_desc") },
+    { emoji: "🏠", title: t("use_3_title"), desc: t("use_3_desc") },
+    { emoji: "🎉", title: t("use_4_title"), desc: t("use_4_desc") },
+    { emoji: "💼", title: t("use_5_title"), desc: t("use_5_desc") },
+    { emoji: "🎓", title: t("use_6_title"), desc: t("use_6_desc") },
   ];
 
   return (
