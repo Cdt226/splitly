@@ -1,0 +1,11 @@
+OVH
+
+Mail OVH : bricezoungrana@outlook.fr
+MDP OVH : Jvu3F8w7!meESv3
+
+
+Service_role_Supabase: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9rd3Vjd3ZkbWRzZXBxa2ttbnVnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NzMzNTk1OSwiZXhwIjoyMDkyOTExOTU5fQ.r4RS6mPiizyRWeXc0pRQYRBOJNBwOoXxxFoyj-jcpwk
+
+
+
+Con Secret : 28edc08c47fb1aa407583875e78c20e3

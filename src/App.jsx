@@ -1038,6 +1038,15 @@ function Dashboard({ events, expenses, user, isMobile }) {
 }
 
 // ─── ÉVÉNEMENTS ───────────────────────────────────────────────
+const TEMPLATES_KEY = "splitly_templates";
+
+function getTemplates() {
+  try { return JSON.parse(localStorage.getItem(TEMPLATES_KEY) || "[]"); } catch { return []; }
+}
+function saveTemplates(templates) {
+  try { localStorage.setItem(TEMPLATES_KEY, JSON.stringify(templates)); } catch {}
+}
+
 function Events({ events, expenses, contributions, user, reload, isMobile, addToast }) {
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState({ name: "", date: "", currency: "EUR €", participants: [] });
@@ -1045,10 +1054,47 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
   const [confirm, setConfirm] = useState(null);
   const [managingEv, setManagingEv] = useState(null);
   const [newParticipant, setNewParticipant] = useState("");
+  const [templates, setTemplates] = useState(getTemplates());
+  const [showTemplates, setShowTemplates] = useState(false);
 
   const MAX_PARTICIPANTS = 30;
   const MAX_NAME_LENGTH = 50;
   const MAX_PARTICIPANT_NAME = 30;
+
+  // Sauvegarder un événement comme modèle
+  const handleSaveTemplate = (ev) => {
+    const participants = (ev.event_participants || []).map(p => p.name);
+    const template = {
+      id: Date.now().toString(),
+      name: ev.name,
+      currency: ev.currency,
+      participants,
+      savedAt: new Date().toISOString(),
+    };
+    const updated = [template, ...templates.filter(t => t.name !== ev.name)].slice(0, 10);
+    saveTemplates(updated);
+    setTemplates(updated);
+    addToast(`Modèle "${ev.name}" sauvegardé !`, "success");
+  };
+
+  // Créer un événement depuis un modèle
+  const handleUseTemplate = (template) => {
+    setForm({
+      name: template.name,
+      date: new Date().toISOString().split("T")[0],
+      currency: template.currency,
+      participants: [...template.participants],
+    });
+    setShowTemplates(false);
+    setShowNew(true);
+  };
+
+  // Supprimer un modèle
+  const handleDeleteTemplate = (id) => {
+    const updated = templates.filter(t => t.id !== id);
+    saveTemplates(updated);
+    setTemplates(updated);
+  };
 
   const handleCreate = async () => {
     // Validations
@@ -1093,12 +1139,106 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
     if (!allSettled) { addToast("Tous les participants doivent solder avant de boucler.", "warning"); return; }
     setConfirm({
       message: `Boucler "${ev.name}" ? L'historique sera effacé et aucune modification ne sera plus possible.`,
-      warnings: ["Action irréversible."],
+      warnings: ["Action irréversible.", "Un résumé PDF sera envoyé par email à l'admin."],
       onConfirm: async () => {
         await updateEventStatus(ev.id, "closed");
         await reload();
         setConfirm(null);
         addToast(`"${ev.name}" bouclé avec succès.`, "success");
+
+        // Envoyer le résumé PDF par email à l'admin
+        try {
+          const sym = currencySymbol(ev.currency);
+          const fmt2 = (n) => `${Number(n).toFixed(2)} ${sym}`;
+          const budget = evExp.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
+
+          // Construire le résumé texte
+          const expenseRows = evExp.map(ex => {
+            const t = ex.qty * (ex.unit_price ?? 0);
+            return `<tr style="border-bottom:1px solid #f0f0f0">
+              <td style="padding:8px 12px">${CATEGORIES[ex.category]?.icon || ""} ${ex.sub_category || ""}</td>
+              <td style="padding:8px 12px">${ex.detail}</td>
+              <td style="padding:8px 12px;text-align:right;font-weight:700">${fmt2(t)}</td>
+              <td style="padding:8px 12px">${ex.is_unpaid ? "⏳ Non réglée" : ex.paid_by}</td>
+            </tr>`;
+          }).join("");
+
+          const contribRows = participants.map(p => {
+            const owed = computeOwed(evExp, p);
+            const paid = evContribMap[p] || 0;
+            const net = paid - owed;
+            const settled = Math.abs(net) <= 1;
+            return `<tr style="border-bottom:1px solid #f0f0f0">
+              <td style="padding:8px 12px;font-weight:600">${p}</td>
+              <td style="padding:8px 12px;text-align:right">${fmt2(owed)}</td>
+              <td style="padding:8px 12px;text-align:right">${fmt2(paid)}</td>
+              <td style="padding:8px 12px;font-weight:700;color:${settled ? "#2E7D32" : net < 0 ? "#C62828" : "#1565C0"}">
+                ${settled ? "✓ Soldé" : net < 0 ? `Doit ${fmt2(Math.abs(net))}` : `Reçoit ${fmt2(net)}`}
+              </td>
+            </tr>`;
+          }).join("");
+
+          const html = `
+            <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:0">
+              <div style="background:linear-gradient(135deg,#0F0F0F,#1a1a2e);padding:32px;color:#fff;border-radius:12px 12px 0 0">
+                <div style="font-size:24px;font-weight:700;margin-bottom:4px">SplitLy</div>
+                <div style="font-size:13px;color:rgba(255,255,255,0.6)">Résumé de clôture d'événement</div>
+              </div>
+              <div style="background:#fff;padding:28px;border:1px solid #eee;border-top:none">
+                <h2 style="font-size:20px;margin-bottom:4px">🔒 ${ev.name}</h2>
+                <div style="font-size:13px;color:#888;margin-bottom:24px">
+                  Bouclé le ${new Date().toLocaleDateString("fr-FR")} · ${participants.length} participants · Budget total : <strong>${fmt2(budget)}</strong>
+                </div>
+
+                <h3 style="font-size:14px;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:12px">Charges</h3>
+                <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:24px">
+                  <thead>
+                    <tr style="background:#f5f5f5">
+                      <th style="padding:8px 12px;text-align:left">Catégorie</th>
+                      <th style="padding:8px 12px;text-align:left">Description</th>
+                      <th style="padding:8px 12px;text-align:right">Montant</th>
+                      <th style="padding:8px 12px;text-align:left">Payé par</th>
+                    </tr>
+                  </thead>
+                  <tbody>${expenseRows}</tbody>
+                </table>
+
+                <h3 style="font-size:14px;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:12px">Soldes finaux</h3>
+                <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:24px">
+                  <thead>
+                    <tr style="background:#f5f5f5">
+                      <th style="padding:8px 12px;text-align:left">Participant</th>
+                      <th style="padding:8px 12px;text-align:right">Part due</th>
+                      <th style="padding:8px 12px;text-align:right">Versé</th>
+                      <th style="padding:8px 12px;text-align:left">Statut</th>
+                    </tr>
+                  </thead>
+                  <tbody>${contribRows}</tbody>
+                </table>
+
+                <a href="https://splitmeapp.com" style="display:inline-block;background:#0F0F0F;color:#fff;padding:12px 24px;border-radius:10px;text-decoration:none;font-weight:700;font-size:13px">
+                  Ouvrir SplitLy →
+                </a>
+              </div>
+              <div style="background:#f9f9f9;padding:16px;border-radius:0 0 12px 12px;font-size:11px;color:#aaa;text-align:center">
+                SplitLy · splitmeapp.com · Résumé généré le ${new Date().toLocaleString("fr-FR")}
+              </div>
+            </div>
+          `;
+
+          await fetch("/api/send-email", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              to: user.email,
+              subject: `🔒 SplitLy — Résumé de clôture : ${ev.name}`,
+              html,
+            }),
+          });
+          addToast("Résumé envoyé par email !", "info");
+        } catch (e) {
+          console.error("Erreur envoi résumé clôture:", e);
+        }
       },
       onCancel: () => setConfirm(null),
     });
@@ -1183,8 +1323,53 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
           <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2 }}>Événements</h2>
           <p style={{ color: "#888", fontSize: 12 }}>{events.length} événement{events.length > 1 ? "s" : ""}</p>
         </div>
-        <button onClick={() => setShowNew(!showNew)} style={S.btnDark}>{showNew ? "× Fermer" : "+ Nouveau"}</button>
+        <div style={{ display: "flex", gap: 8 }}>
+          {templates.length > 0 && (
+            <button onClick={() => setShowTemplates(!showTemplates)}
+              style={{ ...S.btnGhost, fontSize: 12, padding: "8px 14px" }}>
+              📋 Modèles ({templates.length})
+            </button>
+          )}
+          <button onClick={() => { setShowNew(!showNew); setShowTemplates(false); }} style={S.btnDark}>
+            {showNew ? "× Fermer" : "+ Nouveau"}
+          </button>
+        </div>
       </div>
+
+      {/* Panel modèles */}
+      {showTemplates && templates.length > 0 && (
+        <div style={{ ...S.card, marginBottom: 16, border: "1.5px solid #e0e0e0" }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 14 }}>📋 Modèles sauvegardés</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {templates.map(t => (
+              <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "#fafafa", borderRadius: 10, border: "1px solid #eee" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</div>
+                  <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>
+                    {t.participants.length} participants · {currencySymbol(t.currency)} · Sauvegardé le {new Date(t.savedAt).toLocaleDateString("fr-FR")}
+                  </div>
+                  <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+                    {t.participants.slice(0, 5).map(p => (
+                      <span key={p} style={{ fontSize: 10, background: "#f0f0f0", padding: "2px 8px", borderRadius: 20, color: "#666" }}>{p}</span>
+                    ))}
+                    {t.participants.length > 5 && <span style={{ fontSize: 10, color: "#aaa" }}>+{t.participants.length - 5}</span>}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                  <button onClick={() => handleUseTemplate(t)}
+                    style={{ ...S.btnDark, padding: "6px 14px", fontSize: 12 }}>
+                    Utiliser →
+                  </button>
+                  <button onClick={() => handleDeleteTemplate(t.id)}
+                    style={{ padding: "6px 10px", borderRadius: 8, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", cursor: "pointer", fontSize: 12 }}>
+                    🗑️
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {showNew && (
         <div style={{ ...S.card, marginBottom: 16 }}>
@@ -1265,6 +1450,11 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
                     <div style={{ fontSize: 10, color: "#aaa", marginBottom: 10 }}>budget collectif</div>
                     {ev.status === "open" && (
                       <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                        <button onClick={() => handleSaveTemplate(ev)}
+                          title="Sauvegarder comme modèle"
+                          style={{ padding: "5px 12px", borderRadius: 8, border: "1.5px solid #e0e0e0", background: "#fafafa", color: "#555", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
+                          📋 Modèle
+                        </button>
                         {allSettled && (
                           <button onClick={() => handleClose(ev)} style={{ ...S.btnDark, padding: "5px 12px", fontSize: 11, background: "#2E7D32", borderRadius: 8 }}>
                             🔒 Boucler
