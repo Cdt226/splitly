@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, createContext, useContext } from "react";
 import LandingPage from "./LandingPage.jsx";
 import { useTranslation, LanguageSwitcher, LanguageMenu } from "./i18n.jsx";
 import {
@@ -865,11 +865,25 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
     { key: "notifications", icon: "◬", label: t("nav_notifications"), badge: totalBadge },
   ];
 
+  const SHORTCUTS = {
+    dashboard: "D", events: "E", expenses: "X",
+    balance: "B", analytics: "A", history: "H",
+    invite: "I", notifications: "N",
+  };
+
   const NavButton = ({ n }) => (
     <button onClick={() => { setActive(n.key); if (isMobile) setMenuOpen(false); }}
-      style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, border: "none", cursor: "pointer", background: active === n.key ? "#1a1a1a" : "transparent", color: active === n.key ? "#fff" : "#777", fontSize: 13, fontWeight: active === n.key ? 600 : 400, textAlign: "left", width: "100%", transition: "all 0.15s", minWidth: 0 }}>
-      <span style={{ fontSize: 15, opacity: active === n.key ? 1 : 0.6, flexShrink: 0 }}>{n.icon}</span>
+      title={`${n.label} (G+${SHORTCUTS[n.key]})`}
+      style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, border: "none", cursor: "pointer", background: active === n.key ? "#1a1a1a" : "transparent", color: active === n.key ? "#fff" : "#777", fontSize: 13, fontWeight: active === n.key ? 600 : 400, textAlign: "left", width: "100%", transition: "all 0.2s", minWidth: 0, position: "relative" }}>
+      {/* Indicateur actif animé */}
+      {active === n.key && (
+        <div style={{ position: "absolute", left: 0, top: "50%", transform: "translateY(-50%)", width: 3, height: 20, background: "#fff", borderRadius: "0 3px 3px 0", transition: "all 0.2s" }} />
+      )}
+      <span style={{ fontSize: 15, opacity: active === n.key ? 1 : 0.5, flexShrink: 0, transition: "all 0.2s" }}>{n.icon}</span>
       <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 13 }}>{n.label}</span>
+      {!isMobile && active !== n.key && (
+        <span style={{ fontSize: 9, color: "#333", background: "#1a1a1a", borderRadius: 4, padding: "1px 5px", opacity: 0.6, flexShrink: 0, letterSpacing: 0.5 }}>G+{SHORTCUTS[n.key]}</span>
+      )}
       {n.badge > 0 && <span style={{ background: "#C62828", color: "#fff", borderRadius: 10, fontSize: 10, fontWeight: 700, padding: "2px 6px", flexShrink: 0, minWidth: 18, textAlign: "center" }}>{n.badge}</span>}
     </button>
   );
@@ -1017,7 +1031,7 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
 }
 
 // ─── DASHBOARD ────────────────────────────────────────────────
-function Dashboard({ events, expenses, user, isMobile }) {
+function Dashboard({ events, expenses, user, isMobile, navigateTo }) {
   const name = user?.user_metadata?.full_name?.split(" ")[0] || "vous";
   const grandTotal = expenses.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
   const openEvents = events.filter(e => e.status === "open").length;
@@ -1062,22 +1076,34 @@ function Dashboard({ events, expenses, user, isMobile }) {
               </div>
             ))}
           </div>
-          <div style={{ background: "#fff", borderRadius: 16, padding: 20, border: "1px solid #eee" }}>
-            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Événements récents</div>
+          <div style={{ background: "var(--bg-secondary)", borderRadius: 16, padding: 20, border: "1px solid var(--border)" }}>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16, color: "var(--text)" }}>Événements récents</div>
             {events.slice(0, 5).map((ev, i) => {
               const evTotal = expenses.filter(e => e.event_id === ev.id).reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
               const participants = (ev.event_participants || []).map(p => p.name);
               const sym = currencySymbol(ev.currency);
               return (
-                <div key={ev.id} style={{ display: "flex", alignItems: "center", gap: 12, paddingBottom: 12, marginBottom: 12, borderBottom: i < Math.min(events.length, 5) - 1 ? "1px solid #f5f5f5" : "none" }}>
-                  <div style={{ width: 36, height: 36, borderRadius: 10, background: ev.status === "closed" ? "#f5f5f5" : "#f0faf4", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>{ev.status === "closed" ? "🔒" : "🎊"}</div>
+                <div key={ev.id} style={{ display: "flex", alignItems: "center", gap: 12, paddingBottom: 12, marginBottom: 12, borderBottom: i < Math.min(events.length, 5) - 1 ? "1px solid var(--border)" : "none" }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 10, background: ev.status === "closed" ? "var(--hover-bg)" : "#f0faf4", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>{ev.status === "closed" ? "🔒" : "🎊"}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.name}</div>
-                    <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>{ev.date} · {participants.length} participant{participants.length > 1 ? "s" : ""} · {sym}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)" }}>{ev.name}</div>
+                    <div style={{ fontSize: 11, color: "var(--text-sub)", marginTop: 2 }}>{ev.date} · {participants.length} participant{participants.length > 1 ? "s" : ""} · {sym}</div>
                   </div>
-                  <div style={{ textAlign: "right", flexShrink: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700 }}>{fmt(evTotal, sym)}</div>
-                    <div style={{ fontSize: 10, color: "#aaa" }}>budget collectif</div>
+                  <div style={{ textAlign: "right", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{fmt(evTotal, sym)}</div>
+                    {/* Accès rapide */}
+                    {navigateTo && ev.status === "open" && (
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <button onClick={() => navigateTo("expenses")}
+                          title="Voir les charges" style={{ fontSize: 10, padding: "2px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--hover-bg)", color: "var(--text-muted)", cursor: "pointer", fontFamily: "inherit" }}>
+                          Charges →
+                        </button>
+                        <button onClick={() => navigateTo("balance")}
+                          title="Voir la répartition" style={{ fontSize: 10, padding: "2px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--hover-bg)", color: "var(--text-muted)", cursor: "pointer", fontFamily: "inherit" }}>
+                          Soldes →
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -2759,7 +2785,6 @@ const S = {
 
 // ─── THEME CONTEXT ────────────────────────────────────────────
 const THEME_KEY = "splitly_theme";
-import { createContext, useContext } from "react";
 const ThemeContext = createContext({ dark: false, toggle: () => {} });
 
 function ThemeProvider({ children }) {
@@ -2840,13 +2865,14 @@ function AppInner() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [user, setUser] = useState(null);
   const [guestEmail, setGuestEmail] = useState(() => {
-    // Restaurer la session invité depuis localStorage
     try { return localStorage.getItem(GUEST_SESSION_KEY) || null; }
     catch { return null; }
   });
   const [loading, setLoading] = useState(true);
   const [authMode, setAuthMode] = useState(null);
-  const [active, setActive] = useState("dashboard");
+  const [active, setActiveRaw] = useState("dashboard");
+  const [navHistory, setNavHistory] = useState(["dashboard"]);
+  const [pageKey, setPageKey] = useState(0); // Pour déclencher animation
   const [events, setEvents] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [contributions, setContributions] = useState({});
@@ -2856,6 +2882,55 @@ function AppInner() {
   const { toasts, addToast, removeToast } = useToast();
   const { t, lang, setLang } = useTranslation();
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Navigation avec historique et animation
+  const setActive = useCallback((page) => {
+    setActiveRaw(prev => {
+      if (prev === page) return prev;
+      setNavHistory(h => [...h.slice(-9), page]);
+      setPageKey(k => k + 1);
+      return page;
+    });
+  }, []);
+
+  // Bouton retour
+  const goBack = useCallback(() => {
+    setNavHistory(h => {
+      if (h.length < 2) return h;
+      const prev = h[h.length - 2];
+      setActiveRaw(prev);
+      setPageKey(k => k + 1);
+      return h.slice(0, -1);
+    });
+  }, []);
+
+  // Raccourcis clavier G + lettre (comme Notion/Linear)
+  const gPressed = useRef(false);
+  useEffect(() => {
+    const KEYS = { d: "dashboard", e: "events", x: "expenses", b: "balance", a: "analytics", h: "history", i: "invite", n: "notifications" };
+    const down = (e) => {
+      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
+      if (e.key === "g" || e.key === "G") { gPressed.current = true; return; }
+      if (gPressed.current && KEYS[e.key.toLowerCase()]) {
+        setActive(KEYS[e.key.toLowerCase()]);
+        gPressed.current = false;
+      }
+      // Echap pour fermer la recherche
+      if (e.key === "Escape") setSearchQuery("");
+    };
+    const up = (e) => { if (e.key === "g" || e.key === "G") gPressed.current = false; };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
+  }, [setActive]);
+
+  // Labels pour le breadcrumb
+  const NAV_LABELS = {
+    dashboard: t("nav_dashboard"), events: t("nav_events"),
+    expenses: t("nav_expenses"), balance: t("nav_balance"),
+    analytics: t("nav_analytics"), history: t("nav_history"),
+    invite: t("nav_invite"), notifications: t("nav_notifications"),
+  };
 
   // Sauvegarder la session invité
   const handleGuestAuth = useCallback((email) => {
@@ -3011,7 +3086,7 @@ function AppInner() {
   } : null;
 
   const pages = {
-    dashboard:     <Dashboard {...sharedProps} />,
+    dashboard:     <Dashboard {...sharedProps} navigateTo={setActive} />,
     events:        <Events {...sharedProps} />,
     expenses:      <Expenses {...sharedProps} />,
     balance:       <Balance {...sharedProps} />,
@@ -3031,17 +3106,46 @@ function AppInner() {
         *, *::before, *::after { box-sizing: border-box; }
         html, body { overflow-x: hidden; max-width: 100vw; }
         table { table-layout: fixed; }
+        @keyframes pageFadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+        .page-transition { animation: pageFadeIn 0.18s ease; }
+        .kbd-hint { display: inline-flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 4px; padding: 1px 6px; font-size: 10px; font-family: monospace; color: #666; }
       `}</style>
       <ToastContainer toasts={toasts} removeToast={removeToast} />
       <Sidebar active={active} setActive={setActive} unreadCount={unreadCount} pendingCount={pendingCount}
         user={user} onSignOut={handleSignOut} isMobile={isMobile} menuOpen={menuOpen} setMenuOpen={setMenuOpen}
         t={t} lang={lang} setLang={setLang} searchQuery={searchQuery} setSearchQuery={setSearchQuery} />
-      <main style={{ flex: 1, overflow: "auto", overflowX: "hidden", padding: isMobile ? "72px 16px 80px" : "32px 40px", boxSizing: "border-box", minWidth: 0, background: "var(--bg)" }}>
-        <div style={{ maxWidth: 1200, margin: "0 auto", width: "100%" }}>
+      <main style={{ flex: 1, overflowX: "hidden", overflowY: "auto", boxSizing: "border-box", minWidth: 0, background: "var(--bg)", display: "flex", flexDirection: "column", padding: isMobile ? "72px 16px 80px" : 0 }}>
+
+        {/* Topbar desktop — breadcrumb + retour + raccourcis */}
+        {!isMobile && (
+          <div style={{ padding: "14px 40px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10, background: "var(--bg)", flexShrink: 0, position: "sticky", top: 0, zIndex: 10, backdropFilter: "blur(8px)" }}>
+            {navHistory.length > 1 && (
+              <button onClick={goBack} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "4px 12px", cursor: "pointer", color: "var(--text-muted)", fontSize: 12, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4, transition: "all 0.15s" }}>
+                ← {lang === "fr" ? "Retour" : lang === "en" ? "Back" : "Volver"}
+              </button>
+            )}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+              <span style={{ color: "var(--text-sub)", fontSize: 12 }}>SplitLy</span>
+              <span style={{ color: "var(--border)" }}>/</span>
+              <span style={{ fontWeight: 700, color: "var(--text)", fontSize: 14 }}>{NAV_LABELS[active]}</span>
+            </div>
+            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 5, opacity: 0.45 }}>
+              <span style={{ fontSize: 11, color: "var(--text-sub)" }}>
+                {lang === "fr" ? "Navigation rapide" : lang === "en" ? "Quick nav" : "Nav. rápida"} :
+              </span>
+              <span className="kbd-hint">G</span>
+              <span style={{ fontSize: 11, color: "var(--text-sub)" }}>+ {lang === "fr" ? "lettre" : lang === "en" ? "key" : "tecla"}</span>
+            </div>
+          </div>
+        )}
+
+        <div style={{ flex: 1, overflowX: "hidden", overflowY: "auto", padding: isMobile ? 0 : "32px 40px" }}>
+          <div style={{ maxWidth: 1200, margin: "0 auto", width: "100%" }}>
+            <div key={pageKey} className="page-transition">
           {showSearch ? (
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700 }}>
+                <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700, color: "var(--text)" }}>
                   Résultats pour "{searchQuery}"
                 </h2>
                 <button onClick={() => setSearchQuery("")} style={{ ...S.btnGhost, fontSize: 12 }}>× Effacer</button>
@@ -3108,6 +3212,8 @@ function AppInner() {
           ) : (
             pages[active]
           )}
+            </div>
+          </div>
         </div>
       </main>
     </div>
