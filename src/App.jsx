@@ -896,35 +896,24 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
     const [pushEnabled, setPushEnabled] = useState(typeof Notification !== "undefined" && Notification.permission === "granted");
 
     const handlePushToggle = async () => {
-      if (!("Notification" in window) || !("serviceWorker" in navigator)) {
-        addToast("Notifications push non supportées sur ce navigateur.", "warning");
-        return;
-      }
-      if (Notification.permission === "granted") {
-        // Déjà activé — informer
-        addToast("Notifications push déjà activées.", "info");
-        return;
-      }
-      const permission = await Notification.requestPermission();
-      if (permission === "granted") {
-        try {
-          const reg = await navigator.serviceWorker.ready;
-          const sub = await reg.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjZJgGjtHZKhOFaVTFn1vLqKNQ8A", // clé VAPID publique exemple
-          });
-          await fetch("/api/push-subscribe", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ subscription: sub, userId: user.id }),
-          });
-          setPushEnabled(true);
-          addToast("🔔 Notifications push activées !", "success");
-        } catch (e) {
-          addToast("Impossible d'activer les notifications push.", "error");
+      try {
+        if (!("Notification" in window)) {
+          addToast("Notifications non supportées sur ce navigateur.", "warning");
+          return;
         }
-      } else {
-        addToast("Notifications push refusées. Autorisez-les dans les paramètres du navigateur.", "warning");
+        if (Notification.permission === "granted") {
+          addToast("Notifications push déjà activées.", "info");
+          return;
+        }
+        const permission = await Notification.requestPermission();
+        if (permission === "granted") {
+          setPushEnabled(true);
+          addToast("🔔 Notifications activées !", "success");
+        } else {
+          addToast("Notifications refusées. Autorisez-les dans les paramètres du navigateur.", "warning");
+        }
+      } catch (e) {
+        addToast("Impossible d'activer les notifications.", "warning");
       }
     };
 
@@ -955,7 +944,7 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
         <Avatar name={user?.user_metadata?.full_name?.[0] || user?.email?.[0] || "U"} size={30} />
         <div style={{ overflow: "hidden", flex: 1, minWidth: 0 }}>
           <div style={{ color: "#fff", fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user?.user_metadata?.full_name || user?.email}</div>
-          <div style={{ color: "#F57F17", fontSize: 10, marginTop: 1 }}>✦ {profile?.user_role === "admin" ? "Super Admin" : "Admin"}</div>
+          <div style={{ color: "#F57F17", fontSize: 10, marginTop: 1 }}>✦ Admin</div>
         </div>
       </div>
       <button onClick={onSignOut} style={{ width: "100%", padding: "7px", borderRadius: 8, border: "1px solid #2a2a2a", background: "transparent", color: "#666", fontSize: 11, cursor: "pointer", transition: "all 0.15s", fontFamily: "inherit" }}>{t("nav_logout")}</button>
@@ -991,7 +980,9 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
         {nav.slice(0, 5).map(n => (
           <button key={n.key} onClick={() => setActive(n.key)} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, background: "none", border: "none", cursor: "pointer", color: active === n.key ? "#fff" : "#555", padding: "6px 4px", position: "relative", flex: 1, textAlign: "center" }}>
             <span style={{ fontSize: 19, display: "block", textAlign: "center" }}>{n.icon}</span>
-            <span style={{ fontSize: 9, fontWeight: active === n.key ? 700 : 400, display: "block", textAlign: "center", width: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.label.replace(/^[^\s]*\s/, "").split(" ")[0] || n.label.split(" ")[0]}</span>
+            <span style={{ fontSize: 9, fontWeight: active === n.key ? 700 : 400, display: "block", textAlign: "center", width: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {(n.label || "").replace(/^[⚡◈◉◫⊜◐◷◎◬⚙]\s*/, "").split(" ")[0] || n.label}
+            </span>
             {n.badge > 0 && <span style={{ position: "absolute", top: 4, right: "50%", transform: "translateX(12px)", background: "#C62828", color: "#fff", borderRadius: 10, fontSize: 9, fontWeight: 700, padding: "0 4px", minWidth: 14, textAlign: "center" }}>{n.badge}</span>}
           </button>
         ))}
@@ -2163,11 +2154,7 @@ function Balance({ events, expenses, contributions, user, reload, isMobile, addT
     setSaving(false);
   };
 
-  const transactions = useMemo(
-    () => participants.length > 0 ? computeTransactions(evExp, evContribMap, participants) : [],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [filterEvent, expenses, contributions]
-  );
+  const transactions = participants.length > 0 ? computeTransactions(evExp, evContribMap, participants) : [];
 
   const handleExportPDF = () => {
     if (!ev) return;
@@ -3763,7 +3750,7 @@ function useTheme() {
 const GUEST_SESSION_KEY = "splitly_guest_email";
 
 function AppInner() {
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isOnline, setIsOnline] = useState(() => typeof navigator !== "undefined" ? navigator.onLine : true);
   useEffect(() => {
     const on = () => setIsOnline(true);
     const off = () => setIsOnline(false);
