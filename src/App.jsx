@@ -955,7 +955,7 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
         <Avatar name={user?.user_metadata?.full_name?.[0] || user?.email?.[0] || "U"} size={30} />
         <div style={{ overflow: "hidden", flex: 1, minWidth: 0 }}>
           <div style={{ color: "#fff", fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user?.user_metadata?.full_name || user?.email}</div>
-          <div style={{ color: "#F57F17", fontSize: 10, marginTop: 1 }}>✦ {profile?.user_role === "admin" ? "Super Admin" : "Admin"}</div>
+          <div style={{ color: "#F57F17", fontSize: 10, marginTop: 1 }}>✦ Admin</div>
         </div>
       </div>
       <button onClick={onSignOut} style={{ width: "100%", padding: "7px", borderRadius: 8, border: "1px solid #2a2a2a", background: "transparent", color: "#666", fontSize: 11, cursor: "pointer", transition: "all 0.15s", fontFamily: "inherit" }}>{t("nav_logout")}</button>
@@ -3854,9 +3854,11 @@ function AppInner() {
           const onboarded = localStorage.getItem(ONBOARDING_KEY);
           if (!onboarded) setShowOnboarding(true);
         } catch {}
-        // Charger le profil pour détecter le rôle admin
-        const { data: prof } = await fetchProfile(u.id);
-        setProfile(prof);
+        // Charger le profil (silencieux si erreur RLS)
+        try {
+          const { data: prof } = await fetchProfile(u.id);
+          setProfile(prof || null);
+        } catch {}
       }
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
