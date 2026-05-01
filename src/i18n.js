@@ -998,29 +998,32 @@ export function useTranslation() {
 
 // ─── COMPOSANT LanguageSwitcher ───────────────────────────────
 export function LanguageSwitcher({ lang, setLang, dark = false }) {
-  const textColor = dark ? "#fff" : "#333";
-  const borderColor = dark ? "rgba(255,255,255,0.2)" : "#e0e0e0";
-  const bgColor = dark ? "rgba(255,255,255,0.08)" : "#f9f9f9";
-
   return (
-    <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+    <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
       {LANGUAGES.map(l => (
         <button
           key={l.code}
           onClick={() => setLang(l.code)}
           title={l.label}
           style={{
-            display: "flex", alignItems: "center", gap: 4,
-            padding: "4px 8px", borderRadius: 8, cursor: "pointer",
-            background: lang === l.code ? (dark ? "rgba(255,255,255,0.15)" : "#0F0F0F") : bgColor,
-            color: lang === l.code ? (dark ? "#fff" : "#fff") : textColor,
-            border: `1px solid ${lang === l.code ? (dark ? "rgba(255,255,255,0.3)" : "#0F0F0F") : borderColor}`,
-            fontSize: 12, fontWeight: lang === l.code ? 700 : 400,
+            display: "flex", alignItems: "center", gap: 5,
+            padding: "5px 10px", borderRadius: 8, cursor: "pointer",
+            background: lang === l.code
+              ? (dark ? "#fff" : "#0F0F0F")
+              : (dark ? "rgba(255,255,255,0.06)" : "#f5f5f5"),
+            color: lang === l.code
+              ? (dark ? "#0F0F0F" : "#fff")
+              : (dark ? "rgba(255,255,255,0.6)" : "#555"),
+            border: `1px solid ${lang === l.code
+              ? (dark ? "#fff" : "#0F0F0F")
+              : (dark ? "rgba(255,255,255,0.12)" : "#e0e0e0")}`,
+            fontSize: 12, fontWeight: lang === l.code ? 700 : 500,
             transition: "all 0.15s", fontFamily: "inherit",
+            letterSpacing: 0.3,
           }}
         >
-          <span style={{ fontSize: 14 }}>{l.flag}</span>
-          {l.code.toUpperCase()}
+          <span style={{ fontSize: 13 }}>{l.flag}</span>
+          <span>{l.code.toUpperCase()}</span>
         </button>
       ))}
     </div>

@@ -34,16 +34,49 @@ function generateCode() {
 
 export async function sendGuestCode(email, adminUserId) {
   const code = generateCode();
-  // Upsert le code pour cet email
+
+  // Stocker le code en base
   const { error } = await supabase
     .from('guest_codes')
     .upsert({ email, code, created_by: adminUserId }, { onConflict: 'email' });
   if (error) return { error };
 
-  // Envoyer l'email via Supabase Edge Function ou directement
-  // Pour l'instant on stocke le code et on le retourne pour test
-  // En production: connecter à un service email (Resend, SendGrid etc.)
-  console.log(`Code pour ${email}: ${code}`); // À remplacer par vrai email
+  // Envoyer l'email via la Vercel Function
+  try {
+    const response = await fetch('/api/send-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: email,
+        subject: 'Votre code d\'accès SplitLy',
+        html: `
+          <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:40px 32px;background:#fff;border-radius:16px">
+            <div style="font-family:Georgia,serif;font-size:28px;font-weight:700;color:#0F0F0F;margin-bottom:8px">SplitLy</div>
+            <div style="font-size:13px;color:#aaa;margin-bottom:32px">Gestion de dépenses partagées</div>
+            <p style="font-size:15px;color:#444;margin-bottom:24px">Voici votre code d'accès :</p>
+            <div style="font-size:42px;font-weight:800;letter-spacing:10px;color:#0F0F0F;padding:24px;background:#f5f5f5;border-radius:12px;text-align:center;font-family:monospace">
+              ${code}
+            </div>
+            <p style="color:#888;font-size:13px;margin-top:24px;line-height:1.6">
+              Entrez ce code sur la page d'accueil de SplitLy pour accéder aux événements partagés avec vous.<br>
+              Ce code est valable indéfiniment.
+            </p>
+            <div style="margin-top:32px;padding-top:20px;border-top:1px solid #eee;font-size:11px;color:#ccc">
+              SplitLy — Gestion de dépenses partagées · splitmeapp.com
+            </div>
+          </div>
+        `,
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.json();
+      console.error('Erreur envoi email:', err);
+    }
+  } catch (e) {
+    console.error('Erreur appel API email:', e);
+  }
+
   return { code, error: null };
 }
 

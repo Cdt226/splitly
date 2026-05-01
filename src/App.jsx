@@ -754,26 +754,28 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
 
   const NavButton = ({ n }) => (
     <button onClick={() => { setActive(n.key); if (isMobile) setMenuOpen(false); }}
-      style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, border: "none", cursor: "pointer", background: active === n.key ? "#1a1a1a" : "transparent", color: active === n.key ? "#fff" : "#777", fontSize: 13, fontWeight: active === n.key ? 600 : 400, textAlign: "left", width: "100%", transition: "all 0.15s" }}>
+      style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, border: "none", cursor: "pointer", background: active === n.key ? "#1a1a1a" : "transparent", color: active === n.key ? "#fff" : "#777", fontSize: 13, fontWeight: active === n.key ? 600 : 400, textAlign: "left", width: "100%", transition: "all 0.15s", minWidth: 0 }}>
       <span style={{ fontSize: 15, opacity: active === n.key ? 1 : 0.6, flexShrink: 0 }}>{n.icon}</span>
-      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.label}</span>
-      {n.badge > 0 && <span style={{ background: "#C62828", color: "#fff", borderRadius: 10, fontSize: 10, fontWeight: 700, padding: "2px 7px", flexShrink: 0 }}>{n.badge}</span>}
+      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 13 }}>{n.label}</span>
+      {n.badge > 0 && <span style={{ background: "#C62828", color: "#fff", borderRadius: 10, fontSize: 10, fontWeight: 700, padding: "2px 6px", flexShrink: 0, minWidth: 18, textAlign: "center" }}>{n.badge}</span>}
     </button>
   );
 
   const UserFooter = () => (
-    <div style={{ padding: "14px 16px", borderTop: "1px solid #1e1e1e" }}>
-      <div style={{ marginBottom: 10 }}>
+    <div style={{ padding: "14px 16px", borderTop: "1px solid #1e1e1e", flexShrink: 0 }}>
+      {/* Sélecteur de langue */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 10, color: "#555", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Langue / Language</div>
         <LanguageSwitcher lang={lang} setLang={setLang} dark={true} />
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
         <Avatar name={user?.user_metadata?.full_name?.[0] || user?.email?.[0] || "U"} size={30} />
-        <div style={{ overflow: "hidden", flex: 1 }}>
+        <div style={{ overflow: "hidden", flex: 1, minWidth: 0 }}>
           <div style={{ color: "#fff", fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user?.user_metadata?.full_name || user?.email}</div>
           <div style={{ color: "#F57F17", fontSize: 10, marginTop: 1 }}>✦ Admin</div>
         </div>
       </div>
-      <button onClick={onSignOut} style={{ width: "100%", padding: "7px", borderRadius: 8, border: "1px solid #2a2a2a", background: "transparent", color: "#666", fontSize: 11, cursor: "pointer", transition: "all 0.15s" }}>{t("nav_logout")}</button>
+      <button onClick={onSignOut} style={{ width: "100%", padding: "7px", borderRadius: 8, border: "1px solid #2a2a2a", background: "transparent", color: "#666", fontSize: 11, cursor: "pointer", transition: "all 0.15s", fontFamily: "inherit" }}>{t("nav_logout")}</button>
     </div>
   );
 
@@ -814,12 +816,12 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
   );
 
   return (
-    <aside style={{ width: 224, background: "#0F0F0F", display: "flex", flexDirection: "column", flexShrink: 0, position: "sticky", top: 0, height: "100vh", overflow: "hidden" }}>
+    <aside style={{ width: 260, minWidth: 260, background: "#0F0F0F", display: "flex", flexDirection: "column", flexShrink: 0, position: "sticky", top: 0, height: "100vh", overflow: "hidden" }}>
       <div style={{ padding: "24px 20px 20px", borderBottom: "1px solid #1e1e1e" }}>
         <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, color: "#fff", cursor: "pointer", letterSpacing: -0.5 }} onClick={() => setActive("dashboard")}>SplitLy</div>
         <div style={{ fontSize: 11, color: "#555", marginTop: 3 }}>Gestion de dépenses</div>
       </div>
-      <div style={{ padding: "14px 8px 0", flex: 1, display: "flex", flexDirection: "column", gap: 2, overflow: "auto" }}>
+      <div style={{ padding: "14px 10px 0", flex: 1, display: "flex", flexDirection: "column", gap: 2, overflow: "auto" }}>
         {nav.map(n => <NavButton key={n.key} n={n} />)}
       </div>
       <UserFooter />
@@ -2200,14 +2202,14 @@ export default function App() {
   };
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: "#f2f2f2", fontFamily: "'DM Sans', sans-serif" }}>
+    <div style={{ display: "flex", height: "100vh", width: "100vw", background: "#f2f2f2", fontFamily: "'DM Sans', sans-serif", overflow: "hidden" }}>
       <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
       <ToastContainer toasts={toasts} removeToast={removeToast} />
       <Sidebar active={active} setActive={setActive} unreadCount={unreadCount} pendingCount={pendingCount}
         user={user} onSignOut={handleSignOut} isMobile={isMobile} menuOpen={menuOpen} setMenuOpen={setMenuOpen}
         t={t} lang={lang} setLang={setLang} />
-      <main style={{ flex: 1, overflow: "auto", padding: isMobile ? "72px 16px 80px" : "28px 36px", maxWidth: "100%", boxSizing: "border-box" }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+      <main style={{ flex: 1, overflow: "auto", padding: isMobile ? "72px 16px 80px" : "32px 40px", boxSizing: "border-box", minWidth: 0 }}>
+        <div style={{ maxWidth: 1200, margin: "0 auto", width: "100%" }}>
           {pages[active]}
         </div>
       </main>
