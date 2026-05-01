@@ -14,6 +14,7 @@ import {
   sendGuestCode, verifyGuestCode,
   subscribeToNotifications, unsubscribe,
   exportPDF,
+  fetchProfile, fetchAdminUsers, adminUserAction,
 } from "./supabase.js";
 
 // ─── CONSTANTES ───────────────────────────────────────────────
@@ -852,7 +853,7 @@ function GuestBalance({ events, expenses, contributions }) {
 }
 
 // ─── SIDEBAR ──────────────────────────────────────────────────
-function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut, isMobile, menuOpen, setMenuOpen, t, lang, setLang, searchQuery, setSearchQuery }) {
+function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut, isMobile, menuOpen, setMenuOpen, t, lang, setLang, searchQuery, setSearchQuery, isAdmin }) {
   const totalBadge = unreadCount + pendingCount;
   const nav = [
     { key: "dashboard",     icon: "◈", label: t("nav_dashboard") },
@@ -864,6 +865,7 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
     { key: "invite",        icon: "◎", label: t("nav_invite") },
     { key: "notifications", icon: "◬", label: t("nav_notifications"), badge: totalBadge },
     { key: "settings",      icon: "⚙", label: t("nav_settings") || "Paramètres" },
+    ...(isAdmin ? [{ key: "superadmin", icon: "⚡", label: "Super Admin" }] : []),
   ];
 
   const SHORTCUTS = {
@@ -953,7 +955,7 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
         <Avatar name={user?.user_metadata?.full_name?.[0] || user?.email?.[0] || "U"} size={30} />
         <div style={{ overflow: "hidden", flex: 1, minWidth: 0 }}>
           <div style={{ color: "#fff", fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user?.user_metadata?.full_name || user?.email}</div>
-          <div style={{ color: "#F57F17", fontSize: 10, marginTop: 1 }}>✦ Admin</div>
+          <div style={{ color: "#F57F17", fontSize: 10, marginTop: 1 }}>✦ {profile?.user_role === "admin" ? "Super Admin" : "Admin"}</div>
         </div>
       </div>
       <button onClick={onSignOut} style={{ width: "100%", padding: "7px", borderRadius: 8, border: "1px solid #2a2a2a", background: "transparent", color: "#666", fontSize: 11, cursor: "pointer", transition: "all 0.15s", fontFamily: "inherit" }}>{t("nav_logout")}</button>
@@ -3407,6 +3409,267 @@ function OnboardingWizard({ onComplete }) {
   );
 }
 
+// ─── SUPER ADMIN ──────────────────────────────────────────────
+function SuperAdminPage({ user, isMobile, addToast }) {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [confirm, setConfirm] = useState(null); // { action, userId, userName }
+  const [acting, setActing] = useState(null);
+  const [search, setSearch] = useState("");
+  const [filterRole, setFilterRole] = useState("all");
+
+  const load = async () => {
+    setLoading(true);
+    const { data, error } = await fetchAdminUsers();
+    if (error) { addToast("Erreur chargement : " + error.message, "error"); }
+    else setUsers(data || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const handleAction = async () => {
+    if (!confirm) return;
+    setActing(confirm.userId);
+    const { error } = await adminUserAction(confirm.action, confirm.userId);
+    if (error) addToast("Erreur : " + error.message, "error");
+    else {
+      const labels = { block: "bloqué", unblock: "débloqué", delete: "supprimé" };
+      addToast(`✓ Compte ${labels[confirm.action]} avec succès.`, "success");
+      await load();
+    }
+    setActing(null);
+    setConfirm(null);
+  };
+
+  // Filtres
+  const filtered = users.filter(u => {
+    const q = search.toLowerCase();
+    const matchSearch = !q || u.email?.toLowerCase().includes(q) || u.full_name?.toLowerCase().includes(q);
+    const matchRole = filterRole === "all" || u.user_role === filterRole;
+    return matchSearch && matchRole;
+  });
+
+  // KPIs
+  const totalUsers = users.length;
+  const activeUsers = users.filter(u => u.user_role === 'user').length;
+  const blockedUsers = users.filter(u => u.user_role === 'blocked').length;
+  const totalBudget = users.reduce((s, u) => s + (u.budget_total || 0), 0);
+  const totalEvents = users.reduce((s, u) => s + (u.events_total || 0), 0);
+
+  const roleBadge = (role) => {
+    const map = {
+      admin:   { label: "Admin",   bg: "#FFF8E1", color: "#F57F17" },
+      user:    { label: "Utilisateur", bg: "#E8F5E9", color: "#2E7D32" },
+      blocked: { label: "Bloqué",  bg: "#FFEBEE", color: "#C62828" },
+    };
+    const s = map[role] || map.user;
+    return <span style={{ background: s.bg, color: s.color, fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 20, border: `1px solid ${s.color}22` }}>{s.label}</span>;
+  };
+
+  const fmtDate = (d) => d ? new Date(d).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+  const fmtDateShort = (d) => d ? new Date(d).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" }) : "—";
+
+  return (
+    <div>
+      {confirm && (
+        <Modal title="Confirmer l'action" onClose={() => setConfirm(null)}>
+          <div style={{ fontSize: 14, color: "var(--text)", marginBottom: 16, lineHeight: 1.6 }}>
+            {confirm.action === "delete" && (
+              <div style={{ background: "#FFEBEE", border: "1px solid #FFCDD2", borderRadius: 10, padding: "12px 16px", marginBottom: 14, fontSize: 13, color: "#C62828" }}>
+                ⚠️ Cette action est <strong>irréversible</strong>. Tous les événements et charges de cet utilisateur seront supprimés.
+              </div>
+            )}
+            <span>Action : <strong>{confirm.action === "block" ? "Bloquer" : confirm.action === "unblock" ? "Débloquer" : "Supprimer"}</strong> le compte de <strong>{confirm.userName}</strong></span>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={handleAction} disabled={!!acting}
+              style={{ ...S.btnDark, flex: 1, justifyContent: "center", display: "flex", background: confirm.action === "delete" ? "#C62828" : confirm.action === "block" ? "#F57F17" : "#2E7D32" }}>
+              {acting ? "..." : "Confirmer"}
+            </button>
+            <button onClick={() => setConfirm(null)} style={{ ...S.btnGhost, flex: 1, justifyContent: "center", display: "flex" }}>Annuler</button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24, flexWrap: "wrap", gap: 10 }}>
+        <div>
+          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 4, color: "var(--text)", display: "flex", alignItems: "center", gap: 10 }}>
+            ⚡ Super Admin
+            <span style={{ background: "#FFF8E1", color: "#F57F17", fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, border: "1px solid #FFE08244" }}>Back-office</span>
+          </h2>
+          <p style={{ color: "var(--text-sub)", fontSize: 12 }}>Gestion des comptes utilisateurs SplitLy</p>
+        </div>
+        <button onClick={load} style={{ ...S.btnGhost, fontSize: 12, padding: "8px 14px" }}>↻ Actualiser</button>
+      </div>
+
+      {/* KPIs */}
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(5, 1fr)", gap: 12, marginBottom: 24 }}>
+        {[
+          { label: "Utilisateurs", value: totalUsers, sub: "inscrits", accent: "#0F0F0F" },
+          { label: "Actifs", value: activeUsers, sub: "comptes actifs", accent: "#2E7D32" },
+          { label: "Bloqués", value: blockedUsers, sub: "comptes bloqués", accent: "#C62828" },
+          { label: "Événements", value: totalEvents, sub: "sur la plateforme", accent: "#1565C0" },
+          { label: "Budget plateforme", value: `${(totalBudget / 1000).toFixed(1)}k`, sub: "toutes devises", accent: "#6A1B9A" },
+        ].map(k => (
+          <div key={k.label} style={{ background: "var(--bg-secondary)", borderRadius: 14, padding: "16px 18px", border: `1px solid var(--border)`, borderLeft: `4px solid ${k.accent}` }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-sub)", textTransform: "uppercase", letterSpacing: 0.9, marginBottom: 6 }}>{k.label}</div>
+            <div style={{ fontSize: 24, fontWeight: 700, fontFamily: "'Playfair Display', serif", color: "var(--text)" }}>{k.value}</div>
+            <div style={{ fontSize: 11, color: "var(--text-sub)", marginTop: 3 }}>{k.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Filtres */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--bg-secondary)", borderRadius: 10, padding: "8px 12px", border: "1px solid var(--border)", flex: 1, minWidth: 180 }}>
+          <span style={{ fontSize: 13, opacity: 0.5 }}>🔍</span>
+          <input placeholder="Rechercher un utilisateur..." value={search} onChange={e => setSearch(e.target.value)}
+            style={{ background: "none", border: "none", outline: "none", color: "var(--text)", fontSize: 13, width: "100%", fontFamily: "inherit" }} />
+        </div>
+        <div style={{ display: "flex", background: "var(--hover-bg)", borderRadius: 10, padding: 3, gap: 2 }}>
+          {[["all", "Tous"], ["user", "Actifs"], ["blocked", "Bloqués"], ["admin", "Admins"]].map(([val, lbl]) => (
+            <button key={val} onClick={() => setFilterRole(val)}
+              style={{ padding: "6px 12px", borderRadius: 8, border: "none", background: filterRole === val ? "#0F0F0F" : "transparent", color: filterRole === val ? "#fff" : "var(--text-muted)", fontSize: 12, fontWeight: filterRole === val ? 700 : 400, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
+              {lbl}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Tableau */}
+      {loading ? (
+        <div style={{ textAlign: "center", padding: 60 }}><Spinner fullscreen={false} /></div>
+      ) : filtered.length === 0 ? (
+        <EmptyState icon="👤" title="Aucun utilisateur" subtitle="Aucun résultat pour ces critères." />
+      ) : isMobile ? (
+        // Vue mobile — cartes
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {filtered.map(u => (
+            <div key={u.id} style={{ background: "var(--bg-secondary)", borderRadius: 14, padding: "14px 16px", border: `1px solid ${u.user_role === "blocked" ? "#FFCDD2" : "var(--border)"}` }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                  <Avatar name={u.full_name !== "—" ? u.full_name : u.email} size={36} />
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.full_name !== "—" ? u.full_name : u.email}</div>
+                    <div style={{ fontSize: 11, color: "var(--text-sub)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.email}</div>
+                  </div>
+                </div>
+                {roleBadge(u.user_role)}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12, fontSize: 11 }}>
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ fontWeight: 700, color: "var(--text)" }}>{u.events_total}</div>
+                  <div style={{ color: "var(--text-sub)" }}>Événements</div>
+                </div>
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ fontWeight: 700, color: "var(--text)" }}>{u.expenses_total}</div>
+                  <div style={{ color: "var(--text-sub)" }}>Charges</div>
+                </div>
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ fontWeight: 700, color: "var(--text)" }}>{fmtDateShort(u.last_sign_in)}</div>
+                  <div style={{ color: "var(--text-sub)" }}>Dernière co.</div>
+                </div>
+              </div>
+              {u.user_role !== "admin" && (
+                <div style={{ display: "flex", gap: 8 }}>
+                  {u.user_role === "blocked" ? (
+                    <button onClick={() => setConfirm({ action: "unblock", userId: u.id, userName: u.email })}
+                      style={{ flex: 1, padding: "7px", borderRadius: 9, border: "1.5px solid #c8e6c9", background: "#E8F5E9", color: "#2E7D32", fontSize: 12, cursor: "pointer", fontWeight: 700, fontFamily: "inherit" }}>
+                      ✓ Débloquer
+                    </button>
+                  ) : (
+                    <button onClick={() => setConfirm({ action: "block", userId: u.id, userName: u.email })}
+                      style={{ flex: 1, padding: "7px", borderRadius: 9, border: "1.5px solid #FFE082", background: "#FFF8E1", color: "#F57F17", fontSize: 12, cursor: "pointer", fontWeight: 700, fontFamily: "inherit" }}>
+                      ⊘ Bloquer
+                    </button>
+                  )}
+                  <button onClick={() => setConfirm({ action: "delete", userId: u.id, userName: u.email })}
+                    style={{ flex: 1, padding: "7px", borderRadius: 9, border: "1.5px solid #FFCDD2", background: "#FFEBEE", color: "#C62828", fontSize: 12, cursor: "pointer", fontWeight: 700, fontFamily: "inherit" }}>
+                    🗑 Supprimer
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        // Vue desktop — tableau
+        <div style={{ background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border)", overflow: "hidden" }}>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 800 }}>
+              <thead>
+                <tr style={{ background: "var(--hover-bg)" }}>
+                  {["Utilisateur", "Rôle", "Inscription", "Dernière co.", "Événements", "Charges", "Budget", "Actions"].map(h => (
+                    <th key={h} style={{ padding: "12px 16px", fontSize: 10, fontWeight: 700, color: "var(--text-sub)", textAlign: "left", textTransform: "uppercase", letterSpacing: 0.7, whiteSpace: "nowrap" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((u, i) => (
+                  <tr key={u.id} style={{ borderBottom: i < filtered.length - 1 ? "1px solid var(--border)" : "none", opacity: u.user_role === "blocked" ? 0.65 : 1 }}
+                    onMouseEnter={e => e.currentTarget.style.background = "var(--hover-bg)"}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    <td style={{ padding: "12px 16px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <Avatar name={u.full_name !== "—" ? u.full_name : u.email} size={30} />
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{u.full_name !== "—" ? u.full_name : "—"}</div>
+                          <div style={{ fontSize: 11, color: "var(--text-sub)" }}>{u.email}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td style={{ padding: "12px 16px" }}>{roleBadge(u.user_role)}</td>
+                    <td style={{ padding: "12px 16px", fontSize: 12, color: "var(--text-sub)", whiteSpace: "nowrap" }}>{fmtDate(u.created_at)}</td>
+                    <td style={{ padding: "12px 16px", fontSize: 12, color: "var(--text-sub)", whiteSpace: "nowrap" }}>{fmtDate(u.last_sign_in)}</td>
+                    <td style={{ padding: "12px 16px" }}>
+                      <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{u.events_total}</span>
+                        {u.events_open > 0 && <span style={{ fontSize: 10, color: "#2E7D32", fontWeight: 600 }}>({u.events_open} ouvert{u.events_open > 1 ? "s" : ""})</span>}
+                      </div>
+                    </td>
+                    <td style={{ padding: "12px 16px", fontSize: 13, color: "var(--text)", fontWeight: 600 }}>{u.expenses_total}</td>
+                    <td style={{ padding: "12px 16px", fontSize: 13, fontWeight: 700, color: "var(--text)", whiteSpace: "nowrap" }}>
+                      {u.budget_total > 0 ? `${(u.budget_total).toFixed(0)}` : "—"}
+                    </td>
+                    <td style={{ padding: "12px 16px" }}>
+                      {u.user_role !== "admin" ? (
+                        <div style={{ display: "flex", gap: 6 }}>
+                          {u.user_role === "blocked" ? (
+                            <button onClick={() => setConfirm({ action: "unblock", userId: u.id, userName: u.email })} disabled={acting === u.id}
+                              style={{ padding: "5px 10px", borderRadius: 8, border: "1.5px solid #c8e6c9", background: "#E8F5E9", color: "#2E7D32", fontSize: 11, cursor: "pointer", fontWeight: 700, fontFamily: "inherit" }}>
+                              ✓ Débloquer
+                            </button>
+                          ) : (
+                            <button onClick={() => setConfirm({ action: "block", userId: u.id, userName: u.email })} disabled={acting === u.id}
+                              style={{ padding: "5px 10px", borderRadius: 8, border: "1.5px solid #FFE082", background: "#FFF8E1", color: "#F57F17", fontSize: 11, cursor: "pointer", fontWeight: 700, fontFamily: "inherit" }}>
+                              ⊘ Bloquer
+                            </button>
+                          )}
+                          <button onClick={() => setConfirm({ action: "delete", userId: u.id, userName: u.email })} disabled={acting === u.id}
+                            style={{ padding: "5px 10px", borderRadius: 8, border: "1.5px solid #FFCDD2", background: "#FFEBEE", color: "#C62828", fontSize: 11, cursor: "pointer", fontWeight: 700, fontFamily: "inherit" }}>
+                            🗑
+                          </button>
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: 11, color: "var(--text-sub)" }}>—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ padding: "10px 16px", borderTop: "1px solid var(--border)", fontSize: 11, color: "var(--text-sub)" }}>
+            {filtered.length} utilisateur{filtered.length > 1 ? "s" : ""} affiché{filtered.length > 1 ? "s" : ""}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── STYLES ───────────────────────────────────────────────────
 const S = {
   label: { display: "block", fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 },
@@ -3514,6 +3777,7 @@ function AppInner() {
   const [history, setHistory] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [pendingActions, setPendingActions] = useState([]);
+  const [profile, setProfile] = useState(null);
   const { toasts, addToast, removeToast } = useToast();
   const { t, lang, setLang } = useTranslation();
   const [searchQuery, setSearchQuery] = useState("");
@@ -3581,16 +3845,18 @@ function AppInner() {
   }, []);
 
   useEffect(() => {
-    getSession().then(s => {
+    getSession().then(async s => {
       const u = s?.user || null;
       setUser(u);
       setLoading(false);
-      // Onboarding au premier login
       if (u) {
         try {
           const onboarded = localStorage.getItem(ONBOARDING_KEY);
           if (!onboarded) setShowOnboarding(true);
         } catch {}
+        // Charger le profil pour détecter le rôle admin
+        const { data: prof } = await fetchProfile(u.id);
+        setProfile(prof);
       }
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
@@ -3730,6 +3996,8 @@ function AppInner() {
     participants: [...new Set(events.flatMap(e => (e.event_participants || []).map(p => p.name)))].filter(p => p.toLowerCase().includes(q)),
   } : null;
 
+  const isAdmin = profile?.user_role === "admin";
+
   const pages = {
     dashboard:     <Dashboard {...sharedProps} navigateTo={setActive} />,
     events:        <Events {...sharedProps} />,
@@ -3743,6 +4011,7 @@ function AppInner() {
                      onMarkAll={async () => { await markAllNotificationsRead(user.id); await loadAll(); addToast(t("notif_mark_all"), "info"); }}
                      onDismiss={async (id) => { await deleteNotification(id); await loadAll(); }} />,
     settings:      <SettingsPage user={user} onSignOut={handleSignOut} isMobile={isMobile} addToast={addToast} />,
+    ...(isAdmin ? { superadmin: <SuperAdminPage user={user} isMobile={isMobile} addToast={addToast} /> } : {}),
   };
 
   return (
@@ -3760,7 +4029,8 @@ function AppInner() {
       {showOnboarding && <OnboardingWizard onComplete={() => setShowOnboarding(false)} />}
       <Sidebar active={active} setActive={setActive} unreadCount={unreadCount} pendingCount={pendingCount}
         user={user} onSignOut={handleSignOut} isMobile={isMobile} menuOpen={menuOpen} setMenuOpen={setMenuOpen}
-        t={t} lang={lang} setLang={setLang} searchQuery={searchQuery} setSearchQuery={setSearchQuery} />
+        t={t} lang={lang} setLang={setLang} searchQuery={searchQuery} setSearchQuery={setSearchQuery}
+        isAdmin={isAdmin} />
 
       <main style={{ flex: 1, overflow: "hidden", minWidth: 0, background: "var(--bg)", display: "flex", flexDirection: "column" }}>
         {/* Topbar desktop — breadcrumb léger */}

@@ -695,3 +695,57 @@ export function exportPDF(ev, evExp, evContribMap, participants) {
   w.document.write(html);
   w.document.close();
 }
+
+// ─── PROFILES ─────────────────────────────────────────────────
+export async function fetchProfile(userId) {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .single();
+  return { data, error };
+}
+
+export async function updateProfile(userId, updates) {
+  const { data, error } = await supabase
+    .from('profiles')
+    .update(updates)
+    .eq('id', userId)
+    .select()
+    .single();
+  return { data, error };
+}
+
+// ─── SUPER ADMIN ──────────────────────────────────────────────
+export async function fetchAdminUsers() {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return { data: null, error: new Error('Non connecté') };
+
+  const response = await fetch('/api/admin-users', {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`,
+    },
+  });
+  const json = await response.json();
+  if (!response.ok) return { data: null, error: new Error(json.error) };
+  return { data: json.users, error: null };
+}
+
+export async function adminUserAction(action, userId) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return { error: new Error('Non connecté') };
+
+  const response = await fetch('/api/admin-users', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({ action, userId }),
+  });
+  const json = await response.json();
+  if (!response.ok) return { error: new Error(json.error) };
+  return { data: json, error: null };
+}
