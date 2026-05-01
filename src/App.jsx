@@ -1837,8 +1837,9 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
           })}
         </div>
       ) : (
-        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #eee", overflow: "auto", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}>
+        <div style={{ background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border)", overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
+          <div style={{ overflowX: "auto", width: "100%" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 600 }}>
             <thead>
               <tr style={{ background: "#f8f8f8", borderBottom: "1.5px solid #eee" }}>
                 {["Catégorie", "Détail", "Événement", "Qté", "Unitaire", "Total", "Part/p.", "Payé par", "Inclus", ""].map(h => (
@@ -1894,6 +1895,7 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>
@@ -3023,13 +3025,18 @@ function AppInner() {
   };
 
   return (
-    <div style={{ display: "flex", height: "100vh", width: "100vw", background: "var(--bg)", fontFamily: "'DM Sans', sans-serif", overflow: "hidden" }}>
+    <div style={{ display: "flex", height: "100vh", width: "100vw", maxWidth: "100vw", background: "var(--bg)", fontFamily: "'DM Sans', sans-serif", overflow: "hidden" }}>
       <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+      <style>{`
+        *, *::before, *::after { box-sizing: border-box; }
+        html, body { overflow-x: hidden; max-width: 100vw; }
+        table { table-layout: fixed; }
+      `}</style>
       <ToastContainer toasts={toasts} removeToast={removeToast} />
       <Sidebar active={active} setActive={setActive} unreadCount={unreadCount} pendingCount={pendingCount}
         user={user} onSignOut={handleSignOut} isMobile={isMobile} menuOpen={menuOpen} setMenuOpen={setMenuOpen}
         t={t} lang={lang} setLang={setLang} searchQuery={searchQuery} setSearchQuery={setSearchQuery} />
-      <main style={{ flex: 1, overflow: "auto", padding: isMobile ? "72px 16px 80px" : "32px 40px", boxSizing: "border-box", minWidth: 0, background: "var(--bg)" }}>
+      <main style={{ flex: 1, overflow: "auto", overflowX: "hidden", padding: isMobile ? "72px 16px 80px" : "32px 40px", boxSizing: "border-box", minWidth: 0, background: "var(--bg)" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto", width: "100%" }}>
           {showSearch ? (
             <div>
