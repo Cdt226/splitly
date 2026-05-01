@@ -934,7 +934,10 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
     <aside style={{ width: 260, minWidth: 260, background: "#0F0F0F", display: "flex", flexDirection: "column", flexShrink: 0, position: "sticky", top: 0, height: "100vh", overflow: "hidden" }}>
       {/* Logo */}
       <div style={{ padding: "22px 20px 16px", borderBottom: "1px solid #1e1e1e" }}>
-        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, color: "#fff", cursor: "pointer", letterSpacing: -0.5 }} onClick={() => setActive("dashboard")}>SplitLy</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, color: "#fff", cursor: "pointer", letterSpacing: -0.5 }} onClick={() => setActive("dashboard")}>SplitLy</div>
+          <div title="Temps réel actif" style={{ width: 7, height: 7, borderRadius: "50%", background: "#2E7D32", boxShadow: "0 0 6px #2E7D32", flexShrink: 0 }} />
+        </div>
         <div style={{ fontSize: 11, color: "#555", marginTop: 2 }}>Gestion de dépenses</div>
       </div>
       {/* Recherche globale */}
@@ -2582,6 +2585,7 @@ export default function App() {
 
   useEffect(() => { if (user) loadAll(); }, [user, loadAll]);
 
+  // ─── Notifications Realtime ───────────────────────────────────
   useEffect(() => {
     if (!user) return;
     const ch = subscribeToNotifications(user.id, () => {
@@ -2589,6 +2593,49 @@ export default function App() {
     });
     return () => unsubscribe(ch);
   }, [user]);
+
+  // ─── Charges & Contributions Realtime ────────────────────────
+  useEffect(() => {
+    if (!user || events.length === 0) return;
+    const eventIds = events.map(e => e.id);
+
+    // S'abonner aux changements des charges
+    const expCh = supabase
+      .channel("expenses-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "expenses" }, (payload) => {
+        // Recharger seulement si la charge appartient à un de nos événements
+        const evId = payload.new?.event_id || payload.old?.event_id;
+        if (evId && eventIds.includes(evId)) {
+          loadAll();
+        }
+      })
+      .subscribe();
+
+    // S'abonner aux changements des contributions
+    const contCh = supabase
+      .channel("contributions-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "contributions" }, (payload) => {
+        const evId = payload.new?.event_id || payload.old?.event_id;
+        if (evId && eventIds.includes(evId)) {
+          loadAll();
+        }
+      })
+      .subscribe();
+
+    // S'abonner aux pending actions
+    const pendingCh = supabase
+      .channel("pending-actions-realtime")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "pending_actions" }, () => {
+        loadAll();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(expCh);
+      supabase.removeChannel(contCh);
+      supabase.removeChannel(pendingCh);
+    };
+  }, [user, events.length]);
 
   const handleSignOut = async () => {
     await signOut();
