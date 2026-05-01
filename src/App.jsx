@@ -893,7 +893,7 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
 
   const UserFooter = () => {
     const { dark, toggle } = useTheme();
-    const [pushEnabled, setPushEnabled] = useState(Notification.permission === "granted");
+    const [pushEnabled, setPushEnabled] = useState(typeof Notification !== "undefined" && Notification.permission === "granted");
 
     const handlePushToggle = async () => {
       if (!("Notification" in window) || !("serviceWorker" in navigator)) {
@@ -955,7 +955,7 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
         <Avatar name={user?.user_metadata?.full_name?.[0] || user?.email?.[0] || "U"} size={30} />
         <div style={{ overflow: "hidden", flex: 1, minWidth: 0 }}>
           <div style={{ color: "#fff", fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user?.user_metadata?.full_name || user?.email}</div>
-          <div style={{ color: "#F57F17", fontSize: 10, marginTop: 1 }}>✦ Admin</div>
+          <div style={{ color: "#F57F17", fontSize: 10, marginTop: 1 }}>✦ {profile?.user_role === "admin" ? "Super Admin" : "Admin"}</div>
         </div>
       </div>
       <button onClick={onSignOut} style={{ width: "100%", padding: "7px", borderRadius: 8, border: "1px solid #2a2a2a", background: "transparent", color: "#666", fontSize: 11, cursor: "pointer", transition: "all 0.15s", fontFamily: "inherit" }}>{t("nav_logout")}</button>
@@ -991,7 +991,7 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
         {nav.slice(0, 5).map(n => (
           <button key={n.key} onClick={() => setActive(n.key)} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, background: "none", border: "none", cursor: "pointer", color: active === n.key ? "#fff" : "#555", padding: "6px 4px", position: "relative", flex: 1, textAlign: "center" }}>
             <span style={{ fontSize: 19, display: "block", textAlign: "center" }}>{n.icon}</span>
-            <span style={{ fontSize: 9, fontWeight: active === n.key ? 700 : 400, display: "block", textAlign: "center", width: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.label.split(" ")[0]}</span>
+            <span style={{ fontSize: 9, fontWeight: active === n.key ? 700 : 400, display: "block", textAlign: "center", width: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.label.replace(/^[^\s]*\s/, "").split(" ")[0] || n.label.split(" ")[0]}</span>
             {n.badge > 0 && <span style={{ position: "absolute", top: 4, right: "50%", transform: "translateX(12px)", background: "#C62828", color: "#fff", borderRadius: 10, fontSize: 9, fontWeight: 700, padding: "0 4px", minWidth: 14, textAlign: "center" }}>{n.badge}</span>}
           </button>
         ))}
@@ -1034,10 +1034,11 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
 }
 
 // ─── DASHBOARD ────────────────────────────────────────────────
-function Dashboard({ events, expenses, contributions, user, isMobile, navigateTo, t }) {
+function Dashboard({ events, expenses, contributions, user, isMobile, navigateTo, t, lang }) {
   const firstName = user?.user_metadata?.full_name?.split(" ")[0] || "vous";
   const now = new Date();
-  const dateLabel = now.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
+  const locale = lang === "ar" ? "ar-MA" : lang === "en" ? "en-GB" : lang === "es" ? "es-ES" : lang === "pt" ? "pt-PT" : "fr-FR";
+  const dateLabel = now.toLocaleDateString(locale, { weekday: "long", day: "numeric", month: "long" });
 
   // ── KPIs globaux ──────────────────────────────────────────
   const grandTotal = expenses.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
@@ -2162,7 +2163,11 @@ function Balance({ events, expenses, contributions, user, reload, isMobile, addT
     setSaving(false);
   };
 
-  const transactions = participants.length > 0 ? computeTransactions(evExp, evContribMap, participants) : [];
+  const transactions = useMemo(
+    () => participants.length > 0 ? computeTransactions(evExp, evContribMap, participants) : [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filterEvent, expenses, contributions]
+  );
 
   const handleExportPDF = () => {
     if (!ev) return;
@@ -3238,7 +3243,7 @@ function NotificationsPage({ notifications, events, expenses, pendingActions, us
 }
 
 // ─── PAGE PARAMÈTRES ─────────────────────────────────────────
-function SettingsPage({ user, onSignOut, isMobile, addToast }) {
+function SettingsPage({ user, onSignOut, isMobile, addToast, t }) {
   const { dark, toggle } = useTheme();
   const { lang, setLang } = useTranslation();
   const [pushEnabled, setPushEnabled] = useState(
@@ -3292,7 +3297,7 @@ function SettingsPage({ user, onSignOut, isMobile, addToast }) {
   return (
     <div style={{ maxWidth: 600 }}>
       <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 4, color: "var(--text)" }}>
-        Paramètres
+        {t ? t("nav_settings") : "Paramètres"}
       </h2>
       <p style={{ color: "var(--text-sub)", fontSize: 12, marginBottom: 24 }}>Personnalisez votre expérience SplitLy</p>
 
@@ -3758,6 +3763,15 @@ function useTheme() {
 const GUEST_SESSION_KEY = "splitly_guest_email";
 
 function AppInner() {
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  useEffect(() => {
+    const on = () => setIsOnline(true);
+    const off = () => setIsOnline(false);
+    window.addEventListener("online", on);
+    window.addEventListener("offline", off);
+    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
+  }, []);
+
   const isMobile = useIsMobile();
   const [menuOpen, setMenuOpen] = useState(false);
   const [user, setUser] = useState(null);
@@ -3829,6 +3843,8 @@ function AppInner() {
     expenses: t("nav_expenses"), balance: t("nav_balance"),
     analytics: t("nav_analytics"), history: t("nav_history"),
     invite: t("nav_invite"), notifications: t("nav_notifications"),
+    settings: t("nav_settings") || "Paramètres",
+    superadmin: "Super Admin",
   };
 
   // Sauvegarder la session invité
@@ -3854,11 +3870,9 @@ function AppInner() {
           const onboarded = localStorage.getItem(ONBOARDING_KEY);
           if (!onboarded) setShowOnboarding(true);
         } catch {}
-        // Charger le profil (silencieux si erreur RLS)
-        try {
-          const { data: prof } = await fetchProfile(u.id);
-          setProfile(prof || null);
-        } catch {}
+        // Charger le profil pour détecter le rôle admin
+        const { data: prof } = await fetchProfile(u.id);
+        setProfile(prof);
       }
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
@@ -4001,7 +4015,7 @@ function AppInner() {
   const isAdmin = profile?.user_role === "admin";
 
   const pages = {
-    dashboard:     <Dashboard {...sharedProps} navigateTo={setActive} />,
+    dashboard:     <Dashboard {...sharedProps} navigateTo={setActive} lang={lang} />,
     events:        <Events {...sharedProps} />,
     expenses:      <Expenses {...sharedProps} />,
     balance:       <Balance {...sharedProps} />,
@@ -4012,7 +4026,7 @@ function AppInner() {
                      pendingActions={pendingActions} user={user} reload={loadAll} isMobile={isMobile} addToast={addToast} t={t}
                      onMarkAll={async () => { await markAllNotificationsRead(user.id); await loadAll(); addToast(t("notif_mark_all"), "info"); }}
                      onDismiss={async (id) => { await deleteNotification(id); await loadAll(); }} />,
-    settings:      <SettingsPage user={user} onSignOut={handleSignOut} isMobile={isMobile} addToast={addToast} />,
+    settings:      <SettingsPage user={user} onSignOut={handleSignOut} isMobile={isMobile} addToast={addToast} t={t} />,
     ...(isAdmin ? { superadmin: <SuperAdminPage user={user} isMobile={isMobile} addToast={addToast} /> } : {}),
   };
 
@@ -4028,6 +4042,11 @@ function AppInner() {
         .kbd-hint { display:inline-flex;align-items:center;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:4px;padding:1px 6px;font-size:10px;font-family:monospace;color:#666; }
       `}</style>
       <ToastContainer toasts={toasts} removeToast={removeToast} />
+      {!isOnline && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 9999, background: "#F57F17", color: "#fff", textAlign: "center", padding: "8px 16px", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+          ⚠️ Connexion perdue — vos modifications ne seront pas enregistrées
+        </div>
+      )}
       {showOnboarding && <OnboardingWizard onComplete={() => setShowOnboarding(false)} />}
       <Sidebar active={active} setActive={setActive} unreadCount={unreadCount} pendingCount={pendingCount}
         user={user} onSignOut={handleSignOut} isMobile={isMobile} menuOpen={menuOpen} setMenuOpen={setMenuOpen}
