@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import LandingPage from "./LandingPage.jsx";
-import { useTranslation, LanguageSwitcher } from "./i18n.jsx";
+import { useTranslation, LanguageSwitcher, LanguageMenu } from "./i18n.js";
 import {
   supabase, signUp, signIn, signOut, getSession,
   fetchEvents, createEvent, updateEventStatus, deleteEvent,
@@ -739,7 +739,7 @@ function GuestBalance({ events, expenses, contributions }) {
 }
 
 // ─── SIDEBAR ──────────────────────────────────────────────────
-function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut, isMobile, menuOpen, setMenuOpen, t, lang, setLang }) {
+function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut, isMobile, menuOpen, setMenuOpen, t, lang, setLang, searchQuery, setSearchQuery }) {
   const totalBadge = unreadCount + pendingCount;
   const nav = [
     { key: "dashboard",     icon: "◈", label: t("nav_dashboard") },
@@ -763,10 +763,12 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
 
   const UserFooter = () => (
     <div style={{ padding: "14px 16px", borderTop: "1px solid #1e1e1e", flexShrink: 0 }}>
-      {/* Sélecteur de langue */}
+      {/* Sélecteur de langue professionnel */}
       <div style={{ marginBottom: 12 }}>
-        <div style={{ fontSize: 10, color: "#555", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Langue / Language</div>
-        <LanguageSwitcher lang={lang} setLang={setLang} dark={true} />
+        <div style={{ fontSize: 10, color: "#555", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
+          🌐 {lang === "fr" ? "Langue" : lang === "en" ? "Language" : "Idioma"}
+        </div>
+        <LanguageMenu lang={lang} setLang={setLang} dark={true} />
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
         <Avatar name={user?.user_metadata?.full_name?.[0] || user?.email?.[0] || "U"} size={30} />
@@ -817,11 +819,28 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
 
   return (
     <aside style={{ width: 260, minWidth: 260, background: "#0F0F0F", display: "flex", flexDirection: "column", flexShrink: 0, position: "sticky", top: 0, height: "100vh", overflow: "hidden" }}>
-      <div style={{ padding: "24px 20px 20px", borderBottom: "1px solid #1e1e1e" }}>
+      {/* Logo */}
+      <div style={{ padding: "22px 20px 16px", borderBottom: "1px solid #1e1e1e" }}>
         <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, color: "#fff", cursor: "pointer", letterSpacing: -0.5 }} onClick={() => setActive("dashboard")}>SplitLy</div>
-        <div style={{ fontSize: 11, color: "#555", marginTop: 3 }}>Gestion de dépenses</div>
+        <div style={{ fontSize: 11, color: "#555", marginTop: 2 }}>Gestion de dépenses</div>
       </div>
-      <div style={{ padding: "14px 10px 0", flex: 1, display: "flex", flexDirection: "column", gap: 2, overflow: "auto" }}>
+      {/* Recherche globale */}
+      <div style={{ padding: "12px 12px 8px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(255,255,255,0.06)", borderRadius: 10, padding: "8px 12px", border: "1px solid rgba(255,255,255,0.08)" }}>
+          <span style={{ fontSize: 13, opacity: 0.5 }}>🔍</span>
+          <input
+            placeholder={lang === "fr" ? "Rechercher..." : lang === "en" ? "Search..." : "Buscar..."}
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            style={{ background: "none", border: "none", outline: "none", color: "#fff", fontSize: 13, width: "100%", fontFamily: "inherit" }}
+          />
+          {searchQuery && (
+            <button onClick={() => setSearchQuery("")} style={{ background: "none", border: "none", color: "#555", cursor: "pointer", fontSize: 16, padding: 0, lineHeight: 1 }}>×</button>
+          )}
+        </div>
+      </div>
+      {/* Nav */}
+      <div style={{ padding: "4px 10px 0", flex: 1, display: "flex", flexDirection: "column", gap: 2, overflow: "auto" }}>
         {nav.map(n => <NavButton key={n.key} n={n} />)}
       </div>
       <UserFooter />
@@ -1155,11 +1174,13 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
 function Expenses({ events, expenses, contributions, user, reload, isMobile, addToast, t }) {
   const [showForm, setShowForm] = useState(false);
   const [filterEvent, setFilterEvent] = useState("all");
+  const [filterCategory, setFilterCategory] = useState("all");
+  const [sortBy, setSortBy] = useState("date_desc");
   const [editingEx, setEditingEx] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [unpaid, setUnpaid] = useState(false); // Charge non encore réglée
-  const empty = { eventId: "", category: "", sub: "", detail: "", qty: 1, unit: "", paidBy: "", included: [] };
+  const [unpaid, setUnpaid] = useState(false);
+  const empty = { eventId: "", category: "", sub: "", detail: "", qty: 1, unit: "", paidBy: "", included: [], comment: "" };
   const [form, setForm] = useState(empty);
 
   const handleEventChange = (evId) => {
@@ -1239,7 +1260,7 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
   };
 
   const startEdit = (ex) => {
-    setForm({ eventId: ex.event_id, category: ex.category, sub: ex.sub_category || "", detail: ex.detail, qty: ex.qty, unit: ex.unit_price ?? 0, paidBy: ex.paid_by || "", included: [...(ex.included || [])] });
+    setForm({ eventId: ex.event_id, category: ex.category, sub: ex.sub_category || "", detail: ex.detail, qty: ex.qty, unit: ex.unit_price ?? 0, paidBy: ex.paid_by || "", included: [...(ex.included || [])], comment: ex.comment || "" });
     setUnpaid(ex.is_unpaid || false);
     setEditingEx(ex); setShowForm(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1265,7 +1286,17 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
     });
   };
 
-  const filtered = filterEvent === "all" ? expenses : expenses.filter(e => e.event_id === filterEvent);
+  // Filtrage et tri
+  let filtered = filterEvent === "all" ? expenses : expenses.filter(e => e.event_id === filterEvent);
+  if (filterCategory !== "all") filtered = filtered.filter(e => e.category === filterCategory);
+  filtered = [...filtered].sort((a, b) => {
+    const ta = a.qty * (a.unit_price ?? 0);
+    const tb = b.qty * (b.unit_price ?? 0);
+    if (sortBy === "amount_desc") return tb - ta;
+    if (sortBy === "amount_asc") return ta - tb;
+    if (sortBy === "date_asc") return new Date(a.created_at) - new Date(b.created_at);
+    return new Date(b.created_at) - new Date(a.created_at); // date_desc par défaut
+  });
 
   return (
     <div>
@@ -1279,14 +1310,29 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
           style={S.btnDark}>{showForm && !editingEx ? "× Fermer" : "+ Ajouter"}</button>
       </div>
 
-      <div style={{ marginBottom: 16 }}>
-        <select style={{ ...S.input, width: "auto", maxWidth: "100%" }} value={filterEvent} onChange={e => setFilterEvent(e.target.value)}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+        <select style={{ ...S.input, width: "auto" }} value={filterEvent} onChange={e => setFilterEvent(e.target.value)}>
           <option value="all">Tous les événements ({expenses.length})</option>
           {events.map(ev => {
             const count = expenses.filter(e => e.event_id === ev.id).length;
             return <option key={ev.id} value={ev.id}>{ev.name} ({count})</option>;
           })}
         </select>
+        <select style={{ ...S.input, width: "auto" }} value={filterCategory} onChange={e => setFilterCategory(e.target.value)}>
+          <option value="all">Toutes catégories</option>
+          {Object.keys(CATEGORIES).map(c => <option key={c} value={c}>{CATEGORIES[c].icon} {c}</option>)}
+        </select>
+        <select style={{ ...S.input, width: "auto" }} value={sortBy} onChange={e => setSortBy(e.target.value)}>
+          <option value="date_desc">📅 Plus récent</option>
+          <option value="date_asc">📅 Plus ancien</option>
+          <option value="amount_desc">💰 Montant ↓</option>
+          <option value="amount_asc">💰 Montant ↑</option>
+        </select>
+        {(filterEvent !== "all" || filterCategory !== "all") && (
+          <button onClick={() => { setFilterEvent("all"); setFilterCategory("all"); }} style={{ ...S.btnGhost, padding: "8px 12px", fontSize: 12 }}>
+            × Réinitialiser
+          </button>
+        )}
       </div>
 
       {showForm && (
@@ -1366,6 +1412,18 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
               {form.included.length === 0 && <div style={{ marginTop: 8, fontSize: 12, color: "#C62828" }}>⚠️ Sélectionnez au moins une personne</div>}
             </div>
           )}
+          {/* Commentaire optionnel */}
+          <div style={{ marginBottom: 16 }}>
+            <label style={S.label}>💬 Commentaire (optionnel)</label>
+            <textarea
+              style={{ ...S.input, resize: "vertical", minHeight: 64, fontFamily: "inherit", lineHeight: 1.5 }}
+              placeholder="Ex: Remboursement pour le billet d'Alice achetée en avance..."
+              value={form.comment || ""}
+              onChange={e => setForm({ ...form, comment: e.target.value })}
+              maxLength={300}
+            />
+            {form.comment && <div style={{ fontSize: 10, color: "#aaa", marginTop: 3, textAlign: "right" }}>{form.comment.length}/300</div>}
+          </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={handleSave} disabled={saving} style={S.btnDark}>{saving ? "Enregistrement..." : editingEx ? "Enregistrer les modifications" : "Ajouter la charge"}</button>
             <button onClick={() => { setShowForm(false); setEditingEx(null); setForm(empty); }} style={S.btnGhost}>Annuler</button>
@@ -1395,6 +1453,7 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
                       <div style={{ fontSize: 11, color: "#aaa", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {ev?.name} · {ex.is_unpaid ? <span style={{ color: "#F57F17", fontWeight: 600 }}>⏳ Non réglée</span> : `par ${ex.paid_by}`}
                       </div>
+                      {ex.comment && <div style={{ fontSize: 11, color: "#888", marginTop: 3, fontStyle: "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>💬 {ex.comment}</div>}
                     </div>
                   </div>
                   <div style={{ textAlign: "right", flexShrink: 0 }}>
@@ -2086,13 +2145,19 @@ const S = {
 };
 
 // ─── APP RACINE ───────────────────────────────────────────────
+const GUEST_SESSION_KEY = "splitly_guest_email";
+
 export default function App() {
   const isMobile = useIsMobile();
   const [menuOpen, setMenuOpen] = useState(false);
   const [user, setUser] = useState(null);
-  const [guestEmail, setGuestEmail] = useState(null);
+  const [guestEmail, setGuestEmail] = useState(() => {
+    // Restaurer la session invité depuis localStorage
+    try { return localStorage.getItem(GUEST_SESSION_KEY) || null; }
+    catch { return null; }
+  });
   const [loading, setLoading] = useState(true);
-  const [authMode, setAuthMode] = useState(null); // null | "login" | "register" | "guest"
+  const [authMode, setAuthMode] = useState(null);
   const [active, setActive] = useState("dashboard");
   const [events, setEvents] = useState([]);
   const [expenses, setExpenses] = useState([]);
@@ -2102,9 +2167,26 @@ export default function App() {
   const [pendingActions, setPendingActions] = useState([]);
   const { toasts, addToast, removeToast } = useToast();
   const { t, lang, setLang } = useTranslation();
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Sauvegarder la session invité
+  const handleGuestAuth = useCallback((email) => {
+    try { localStorage.setItem(GUEST_SESSION_KEY, email); } catch {}
+    setGuestEmail(email);
+    setAuthMode(null);
+  }, []);
+
+  // Déconnexion invité
+  const handleGuestSignOut = useCallback(() => {
+    try { localStorage.removeItem(GUEST_SESSION_KEY); } catch {}
+    setGuestEmail(null);
+  }, []);
 
   useEffect(() => {
-    getSession().then(s => { setUser(s?.user || null); setLoading(false); });
+    getSession().then(s => {
+      setUser(s?.user || null);
+      setLoading(false);
+    });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setUser(s?.user || null));
     return () => subscription.unsubscribe();
   }, []);
@@ -2160,7 +2242,7 @@ export default function App() {
           <AuthScreen
             initialMode={authMode}
             onAuth={(u) => { setAuthMode(null); setUser(u); }}
-            onGuestAuth={(email) => { setAuthMode(null); setGuestEmail(email); }}
+            onGuestAuth={handleGuestAuth}
             onClose={() => setAuthMode(null)}
           />
         ) : (
@@ -2174,7 +2256,7 @@ export default function App() {
     );
   }
 
-  if (guestEmail) return <GuestView guestEmail={guestEmail} onSignOut={() => setGuestEmail(null)} isMobile={isMobile} addToast={addToast} t={t} />;
+  if (guestEmail) return <GuestView guestEmail={guestEmail} onSignOut={handleGuestSignOut} isMobile={isMobile} addToast={addToast} t={t} />;
 
   const unreadCount = notifications.filter(n => !n.is_read).length;
   const pendingCount = pendingActions.length;
@@ -2186,6 +2268,15 @@ export default function App() {
   });
 
   const sharedProps = { events, expenses, contributions: contribNorm, user, reload: loadAll, isMobile, addToast, t };
+
+  // Résultats de recherche globale
+  const showSearch = searchQuery.trim().length > 1;
+  const q = searchQuery.toLowerCase();
+  const searchResults = showSearch ? {
+    events: events.filter(e => e.name.toLowerCase().includes(q)),
+    expenses: expenses.filter(e => e.detail?.toLowerCase().includes(q) || e.paid_by?.toLowerCase().includes(q) || e.category?.toLowerCase().includes(q)),
+    participants: [...new Set(events.flatMap(e => (e.event_participants || []).map(p => p.name)))].filter(p => p.toLowerCase().includes(q)),
+  } : null;
 
   const pages = {
     dashboard:     <Dashboard {...sharedProps} />,
@@ -2207,10 +2298,79 @@ export default function App() {
       <ToastContainer toasts={toasts} removeToast={removeToast} />
       <Sidebar active={active} setActive={setActive} unreadCount={unreadCount} pendingCount={pendingCount}
         user={user} onSignOut={handleSignOut} isMobile={isMobile} menuOpen={menuOpen} setMenuOpen={setMenuOpen}
-        t={t} lang={lang} setLang={setLang} />
+        t={t} lang={lang} setLang={setLang} searchQuery={searchQuery} setSearchQuery={setSearchQuery} />
       <main style={{ flex: 1, overflow: "auto", padding: isMobile ? "72px 16px 80px" : "32px 40px", boxSizing: "border-box", minWidth: 0 }}>
         <div style={{ maxWidth: 1200, margin: "0 auto", width: "100%" }}>
-          {pages[active]}
+          {showSearch ? (
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700 }}>
+                  Résultats pour "{searchQuery}"
+                </h2>
+                <button onClick={() => setSearchQuery("")} style={{ ...S.btnGhost, fontSize: 12 }}>× Effacer</button>
+              </div>
+
+              {/* Événements trouvés */}
+              {searchResults.events.length > 0 && (
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#aaa", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Événements ({searchResults.events.length})</div>
+                  {searchResults.events.map(ev => (
+                    <div key={ev.id} onClick={() => { setActive("events"); setSearchQuery(""); }} style={{ background: "#fff", borderRadius: 12, padding: "14px 16px", border: "1px solid #eee", marginBottom: 8, cursor: "pointer", display: "flex", alignItems: "center", gap: 12 }}>
+                      <span style={{ fontSize: 20 }}>{ev.status === "closed" ? "🔒" : "🎊"}</span>
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 600 }}>{ev.name}</div>
+                        <div style={{ fontSize: 12, color: "#aaa" }}>{ev.date} · {(ev.event_participants || []).length} participants</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Charges trouvées */}
+              {searchResults.expenses.length > 0 && (
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#aaa", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Charges ({searchResults.expenses.length})</div>
+                  {searchResults.expenses.slice(0, 8).map(ex => {
+                    const ev = events.find(e => e.id === ex.event_id);
+                    const cat = CATEGORIES[ex.category];
+                    const total = ex.qty * (ex.unit_price ?? 0);
+                    return (
+                      <div key={ex.id} onClick={() => { setActive("expenses"); setSearchQuery(""); }} style={{ background: "#fff", borderRadius: 12, padding: "14px 16px", border: "1px solid #eee", marginBottom: 8, cursor: "pointer", display: "flex", alignItems: "center", gap: 12 }}>
+                        <span style={{ fontSize: 20 }}>{cat?.icon || "🧾"}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ex.detail}</div>
+                          <div style={{ fontSize: 12, color: "#aaa" }}>{ev?.name} · par {ex.paid_by}</div>
+                        </div>
+                        <div style={{ fontSize: 14, fontWeight: 700 }}>{fmt(total, currencySymbol(ev?.currency))}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Participants trouvés */}
+              {searchResults.participants.length > 0 && (
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#aaa", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Participants ({searchResults.participants.length})</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                    {searchResults.participants.map(p => (
+                      <div key={p} style={{ display: "flex", alignItems: "center", gap: 8, background: "#fff", borderRadius: 20, padding: "8px 16px", border: "1px solid #eee" }}>
+                        <Avatar name={p} size={24} />
+                        <span style={{ fontSize: 13, fontWeight: 600 }}>{p}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Aucun résultat */}
+              {searchResults.events.length === 0 && searchResults.expenses.length === 0 && searchResults.participants.length === 0 && (
+                <EmptyState icon="🔍" title="Aucun résultat" subtitle={`Aucun élément ne correspond à "${searchQuery}".`} />
+              )}
+            </div>
+          ) : (
+            pages[active]
+          )}
         </div>
       </main>
     </div>

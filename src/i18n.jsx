@@ -996,7 +996,75 @@ export function useTranslation() {
   return { t, lang, setLang };
 }
 
-// ─── COMPOSANT LanguageSwitcher ───────────────────────────────
+// ─── COMPOSANT LanguageMenu — Menu déroulant professionnel ────
+export function LanguageMenu({ lang, setLang, dark = false }) {
+  const [open, setOpen] = useState(false);
+  const current = LANGUAGES.find(l => l.code === lang) || LANGUAGES[0];
+
+  const bg = dark ? "#1a1a1a" : "#fff";
+  const border = dark ? "#2a2a2a" : "#e0e0e0";
+  const textColor = dark ? "#fff" : "#333";
+  const hoverBg = dark ? "#252525" : "#f5f5f5";
+
+  return (
+    <div style={{ position: "relative" }}>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          display: "flex", alignItems: "center", gap: 8,
+          padding: "7px 10px", borderRadius: 9, cursor: "pointer",
+          background: dark ? "rgba(255,255,255,0.06)" : "#f5f5f5",
+          border: `1px solid ${border}`,
+          color: textColor, fontSize: 12, fontWeight: 600,
+          fontFamily: "inherit", width: "100%", transition: "all 0.15s",
+        }}
+      >
+        <span style={{ fontSize: 16 }}>{current.flag}</span>
+        <span style={{ flex: 1, textAlign: "left" }}>{current.label}</span>
+        <span style={{ fontSize: 10, opacity: 0.5, transition: "transform 0.2s", transform: open ? "rotate(180deg)" : "rotate(0)" }}>▼</span>
+      </button>
+
+      {open && (
+        <>
+          {/* Overlay pour fermer */}
+          <div style={{ position: "fixed", inset: 0, zIndex: 998 }} onClick={() => setOpen(false)} />
+          {/* Menu */}
+          <div style={{
+            position: "absolute", bottom: "calc(100% + 6px)", left: 0, right: 0,
+            background: dark ? "#1e1e1e" : "#fff",
+            border: `1px solid ${border}`, borderRadius: 10,
+            boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
+            zIndex: 999, overflow: "hidden",
+          }}>
+            {LANGUAGES.map(l => (
+              <button
+                key={l.code}
+                onClick={() => { setLang(l.code); setOpen(false); }}
+                style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  padding: "10px 14px", width: "100%", border: "none",
+                  background: l.code === lang ? (dark ? "#252525" : "#f0f0f0") : "transparent",
+                  color: l.code === lang ? (dark ? "#fff" : "#0F0F0F") : (dark ? "#aaa" : "#555"),
+                  fontSize: 13, fontWeight: l.code === lang ? 700 : 400,
+                  cursor: "pointer", fontFamily: "inherit", textAlign: "left",
+                  transition: "background 0.1s",
+                }}
+                onMouseEnter={e => { if (l.code !== lang) e.currentTarget.style.background = dark ? "#252525" : "#f8f8f8"; }}
+                onMouseLeave={e => { if (l.code !== lang) e.currentTarget.style.background = "transparent"; }}
+              >
+                <span style={{ fontSize: 18 }}>{l.flag}</span>
+                <span>{l.label}</span>
+                {l.code === lang && <span style={{ marginLeft: "auto", color: "#2E7D32", fontSize: 14 }}>✓</span>}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// Garder LanguageSwitcher pour compatibilité landing page
 export function LanguageSwitcher({ lang, setLang, dark = false }) {
   return (
     <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
@@ -1008,18 +1076,11 @@ export function LanguageSwitcher({ lang, setLang, dark = false }) {
           style={{
             display: "flex", alignItems: "center", gap: 5,
             padding: "5px 10px", borderRadius: 8, cursor: "pointer",
-            background: lang === l.code
-              ? (dark ? "#fff" : "#0F0F0F")
-              : (dark ? "rgba(255,255,255,0.06)" : "#f5f5f5"),
-            color: lang === l.code
-              ? (dark ? "#0F0F0F" : "#fff")
-              : (dark ? "rgba(255,255,255,0.6)" : "#555"),
-            border: `1px solid ${lang === l.code
-              ? (dark ? "#fff" : "#0F0F0F")
-              : (dark ? "rgba(255,255,255,0.12)" : "#e0e0e0")}`,
+            background: lang === l.code ? (dark ? "#fff" : "#0F0F0F") : (dark ? "rgba(255,255,255,0.06)" : "#f5f5f5"),
+            color: lang === l.code ? (dark ? "#0F0F0F" : "#fff") : (dark ? "rgba(255,255,255,0.6)" : "#555"),
+            border: `1px solid ${lang === l.code ? (dark ? "#fff" : "#0F0F0F") : (dark ? "rgba(255,255,255,0.12)" : "#e0e0e0")}`,
             fontSize: 12, fontWeight: lang === l.code ? 700 : 500,
-            transition: "all 0.15s", fontFamily: "inherit",
-            letterSpacing: 0.3,
+            transition: "all 0.15s", fontFamily: "inherit", letterSpacing: 0.3,
           }}
         >
           <span style={{ fontSize: 13 }}>{l.flag}</span>

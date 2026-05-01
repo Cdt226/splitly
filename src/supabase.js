@@ -240,6 +240,7 @@ export async function createExpense(expense, userId) {
     paid_by: expense.is_unpaid ? null : expense.paidBy,
     included: expense.included, created_by: userId,
     is_unpaid: expense.is_unpaid || false,
+    comment: expense.comment || null,
   }).select().single();
   if (!error) await addHistory({ eventId: expense.eventId, action: 'Charge ajoutée', actorId: userId, before: null, after: data });
   return { data, error };
@@ -252,6 +253,7 @@ export async function updateExpense(expenseId, updates, userId, before) {
     paid_by: updates.is_unpaid ? null : updates.paidBy,
     included: updates.included, version: (before.version || 1) + 1,
     is_unpaid: updates.is_unpaid || false,
+    comment: updates.comment || null,
   }).eq('id', expenseId).select().single();
   if (!error) await addHistory({ eventId: before.event_id, action: 'Charge modifiée', actorId: userId, before, after: data });
   return { data, error };
