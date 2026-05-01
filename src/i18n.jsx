@@ -3,11 +3,13 @@
 import i18n from "i18next";
 import { initReactI18next, useTranslation as useI18nTranslation } from "react-i18next";
 import LanguageDetector from "i18next-browser-languagedetector";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 import fr from "../locales/fr.json";
 import en from "../locales/en.json";
 import es from "../locales/es.json";
+import pt from "../locales/pt.json";
+import ar from "../locales/ar.json";
 
 // ─── Initialisation i18next ───────────────────────────────────
 i18n
@@ -18,9 +20,11 @@ i18n
       fr: { translation: fr },
       en: { translation: en },
       es: { translation: es },
+      pt: { translation: pt },
+      ar: { translation: ar },
     },
     fallbackLng: "fr",
-    supportedLngs: ["fr", "en", "es"],
+    supportedLngs: ["fr", "en", "es", "pt", "ar"],
     detection: {
       order: ["localStorage", "navigator"],
       caches: ["localStorage"],
@@ -33,22 +37,30 @@ export default i18n;
 
 // ─── Langues disponibles ──────────────────────────────────────
 export const LANGUAGES = [
-  { code: "fr", label: "Français", flag: "🇫🇷" },
-  { code: "en", label: "English",  flag: "🇬🇧" },
-  { code: "es", label: "Español",  flag: "🇪🇸" },
+  { code: "fr", label: "Français",  flag: "🇫🇷", rtl: false },
+  { code: "en", label: "English",   flag: "🇬🇧", rtl: false },
+  { code: "es", label: "Español",   flag: "🇪🇸", rtl: false },
+  { code: "pt", label: "Português", flag: "🇵🇹", rtl: false },
+  { code: "ar", label: "العربية",   flag: "🇸🇦", rtl: true  },
 ];
 
 // ─── Hook useTranslation (wrapper) ───────────────────────────
-// Utilise useTranslation de react-i18next + expose lang/setLang
 export function useTranslation() {
   const { t, i18n: i18nInstance } = useI18nTranslation();
   const lang = i18nInstance.language?.slice(0, 2) || "fr";
+  const isRTL = LANGUAGES.find(l => l.code === lang)?.rtl || false;
 
   const setLang = (newLang) => {
     i18nInstance.changeLanguage(newLang);
   };
 
-  return { t, lang, setLang };
+  // Appliquer RTL/LTR sur le document automatiquement
+  useEffect(() => {
+    document.documentElement.setAttribute("dir", isRTL ? "rtl" : "ltr");
+    document.documentElement.setAttribute("lang", lang);
+  }, [lang, isRTL]);
+
+  return { t, lang, setLang, isRTL };
 }
 
 // ─── LanguageMenu — dropdown professionnel ────────────────────
@@ -75,7 +87,8 @@ export function LanguageMenu({ lang, setLang, dark = false }) {
         <span style={{ flex: 1, textAlign: "left" }}>{current.label}</span>
         <span style={{
           fontSize: 10, opacity: 0.5, display: "inline-block",
-          transition: "transform 0.2s", transform: open ? "rotate(180deg)" : "rotate(0deg)"
+          transition: "transform 0.2s",
+          transform: open ? "rotate(180deg)" : "rotate(0deg)"
         }}>▼</span>
       </button>
 
@@ -96,8 +109,12 @@ export function LanguageMenu({ lang, setLang, dark = false }) {
                 style={{
                   display: "flex", alignItems: "center", gap: 10,
                   padding: "10px 14px", width: "100%", border: "none",
-                  background: l.code === lang ? (dark ? "#252525" : "#f0f0f0") : "transparent",
-                  color: l.code === lang ? (dark ? "#fff" : "#0F0F0F") : (dark ? "#aaa" : "#555"),
+                  background: l.code === lang
+                    ? (dark ? "#252525" : "#f0f0f0")
+                    : "transparent",
+                  color: l.code === lang
+                    ? (dark ? "#fff" : "#0F0F0F")
+                    : (dark ? "#aaa" : "#555"),
                   fontSize: 13, fontWeight: l.code === lang ? 700 : 400,
                   cursor: "pointer", fontFamily: "inherit", textAlign: "left",
                 }}

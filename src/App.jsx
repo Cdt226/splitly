@@ -863,6 +863,7 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
     { key: "history",       icon: "◷", label: t("nav_history") },
     { key: "invite",        icon: "◎", label: t("nav_invite") },
     { key: "notifications", icon: "◬", label: t("nav_notifications"), badge: totalBadge },
+    { key: "settings",      icon: "⚙", label: t("nav_settings") || "Paramètres" },
   ];
 
   const SHORTCUTS = {
@@ -1134,6 +1135,7 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
   const [newParticipant, setNewParticipant] = useState("");
   const [templates, setTemplates] = useState(getTemplates());
   const [showTemplates, setShowTemplates] = useState(false);
+  const [sortEvents, setSortEvents] = useState("date_desc");
 
   const MAX_PARTICIPANTS = 30;
   const MAX_NAME_LENGTH = 50;
@@ -1479,8 +1481,31 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
         <EmptyState icon="🎊" title="Aucun événement" subtitle="Créez votre premier événement pour commencer."
           action={<button onClick={() => setShowNew(true)} style={S.btnDark}>+ Créer un événement</button>} />
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {events.map(ev => {
+        <>
+          {/* Tri */}
+          {events.length > 1 && (
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+              <select style={{ ...S.input, width: "auto", fontSize: 12 }} value={sortEvents} onChange={e => setSortEvents(e.target.value)}>
+                <option value="date_desc">📅 Plus récent</option>
+                <option value="date_asc">📅 Plus ancien</option>
+                <option value="name_asc">🔤 Nom A→Z</option>
+                <option value="amount_desc">💰 Budget ↓</option>
+                <option value="status">🔒 Statut</option>
+              </select>
+            </div>
+          )}
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {[...events].sort((a, b) => {
+            if (sortEvents === "date_asc") return new Date(a.date) - new Date(b.date);
+            if (sortEvents === "name_asc") return a.name.localeCompare(b.name);
+            if (sortEvents === "amount_desc") {
+              const ta = expenses.filter(e => e.event_id === a.id).reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
+              const tb = expenses.filter(e => e.event_id === b.id).reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
+              return tb - ta;
+            }
+            if (sortEvents === "status") return a.status === "closed" ? 1 : -1;
+            return new Date(b.date) - new Date(a.date); // date_desc
+          }).map(ev => {
             const participants = (ev.event_participants || []).map(p => p.name);
             const evExp = expenses.filter(e => e.event_id === ev.id);
             const evContribMap = {};
@@ -1548,7 +1573,8 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
               </div>
             );
           })}
-        </div>
+          </div>
+        </>
       )}
     </div>
   );
@@ -1560,6 +1586,7 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
   const [filterEvent, setFilterEvent] = useState("all");
   const [filterCategory, setFilterCategory] = useState("all");
   const [sortBy, setSortBy] = useState("date_desc");
+  const [searchText, setSearchText] = useState("");
   const [editingEx, setEditingEx] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -1673,13 +1700,22 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
   // Filtrage et tri
   let filtered = filterEvent === "all" ? expenses : expenses.filter(e => e.event_id === filterEvent);
   if (filterCategory !== "all") filtered = filtered.filter(e => e.category === filterCategory);
+  if (searchText.trim()) {
+    const q = searchText.toLowerCase();
+    filtered = filtered.filter(e =>
+      e.detail?.toLowerCase().includes(q) ||
+      e.paid_by?.toLowerCase().includes(q) ||
+      e.sub_category?.toLowerCase().includes(q) ||
+      e.comment?.toLowerCase().includes(q)
+    );
+  }
   filtered = [...filtered].sort((a, b) => {
     const ta = a.qty * (a.unit_price ?? 0);
     const tb = b.qty * (b.unit_price ?? 0);
     if (sortBy === "amount_desc") return tb - ta;
     if (sortBy === "amount_asc") return ta - tb;
     if (sortBy === "date_asc") return new Date(a.created_at) - new Date(b.created_at);
-    return new Date(b.created_at) - new Date(a.created_at); // date_desc par défaut
+    return new Date(b.created_at) - new Date(a.created_at);
   });
 
   return (
@@ -1695,6 +1731,17 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
       </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+        {/* Recherche texte */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--input-bg)", borderRadius: 10, padding: "8px 12px", border: "1.5px solid var(--border)", flex: isMobile ? "1 1 100%" : "1 1 180px", minWidth: 140 }}>
+          <span style={{ opacity: 0.5, fontSize: 13 }}>🔍</span>
+          <input
+            placeholder="Rechercher une charge..."
+            value={searchText}
+            onChange={e => setSearchText(e.target.value)}
+            style={{ background: "none", border: "none", outline: "none", color: "var(--text)", fontSize: 13, width: "100%", fontFamily: "inherit" }}
+          />
+          {searchText && <button onClick={() => setSearchText("")} style={{ background: "none", border: "none", color: "var(--text-sub)", cursor: "pointer", fontSize: 15, padding: 0 }}>×</button>}
+        </div>
         <select style={{ ...S.input, width: "auto" }} value={filterEvent} onChange={e => setFilterEvent(e.target.value)}>
           <option value="all">Tous les événements ({expenses.length})</option>
           {events.map(ev => {
@@ -1712,10 +1759,13 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
           <option value="amount_desc">💰 Montant ↓</option>
           <option value="amount_asc">💰 Montant ↑</option>
         </select>
-        {(filterEvent !== "all" || filterCategory !== "all") && (
-          <button onClick={() => { setFilterEvent("all"); setFilterCategory("all"); }} style={{ ...S.btnGhost, padding: "8px 12px", fontSize: 12 }}>
+        {(filterEvent !== "all" || filterCategory !== "all" || searchText) && (
+          <button onClick={() => { setFilterEvent("all"); setFilterCategory("all"); setSearchText(""); }} style={{ ...S.btnGhost, padding: "8px 12px", fontSize: 12 }}>
             × Réinitialiser
           </button>
+        )}
+        {filtered.length !== expenses.length && (
+          <span style={{ fontSize: 12, color: "var(--text-sub)" }}>{filtered.length} résultat{filtered.length > 1 ? "s" : ""}</span>
         )}
       </div>
 
@@ -1985,6 +2035,60 @@ function Balance({ events, expenses, contributions, user, reload, isMobile, addT
     addToast("PDF généré !", "success");
   };
 
+  const handleExportExcel = () => {
+    if (!ev || evExp.length === 0) { addToast("Aucune charge à exporter.", "warning"); return; }
+    try {
+      const sym = currencySymbol(ev.currency);
+      // Données charges
+      const expRows = evExp.map(ex => ({
+        "Catégorie": ex.category || "",
+        "Sous-catégorie": ex.sub_category || "",
+        "Description": ex.detail || "",
+        "Quantité": ex.qty,
+        "Prix unitaire": ex.unit_price ?? 0,
+        "Total": ex.qty * (ex.unit_price ?? 0),
+        "Devise": sym,
+        "Payé par": ex.is_unpaid ? "⏳ Non réglée" : (ex.paid_by || ""),
+        "Participants": (ex.included || []).join(", "),
+        "Commentaire": ex.comment || "",
+      }));
+
+      // Données soldes
+      const balRows = participants.map(p => {
+        const owed = computeOwed(evExp, p);
+        const paid = evContribMap[p] || 0;
+        const net = paid - owed;
+        return {
+          "Participant": p,
+          "Part due": owed,
+          "Versé": paid,
+          "Solde": net,
+          "Statut": Math.abs(net) <= 1 ? "Soldé" : net < 0 ? "Doit rembourser" : "À recevoir",
+        };
+      });
+
+      // Créer le workbook manuellement (CSV multi-feuilles simulé)
+      const toCSV = (rows) => {
+        if (!rows.length) return "";
+        const headers = Object.keys(rows[0]);
+        const lines = [headers.join(";"), ...rows.map(r => headers.map(h => `"${r[h]}"`).join(";"))];
+        return lines.join("\n");
+      };
+
+      const content = `CHARGES - ${ev.name}\n${toCSV(expRows)}\n\n\nSOLDES - ${ev.name}\n${toCSV(balRows)}`;
+      const blob = new Blob(["\uFEFF" + content], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `SplitLy_${ev.name.replace(/\s+/g, "_")}_${ev.date}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      addToast("Export CSV téléchargé !", "success");
+    } catch (e) {
+      addToast("Erreur lors de l'export.", "error");
+    }
+  };
+
   return (
     <div>
       {settleModal && (
@@ -2000,13 +2104,14 @@ function Balance({ events, expenses, contributions, user, reload, isMobile, addT
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
         <div>
           <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2 }}>Répartition</h2>
-          <p style={{ color: "#888", fontSize: 12 }}>Soldes calculés en temps réel</p>
+          <p style={{ color: "var(--text-sub)", fontSize: 12 }}>Soldes calculés en temps réel</p>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <select style={{ ...S.input, width: "auto" }} value={filterEvent} onChange={e => setFilterEvent(e.target.value)}>
             {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
           </select>
           <button onClick={handleExportPDF} style={{ ...S.btnGhost, padding: "8px 14px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>📄 PDF</button>
+          <button onClick={handleExportExcel} style={{ ...S.btnGhost, padding: "8px 14px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>📊 CSV</button>
         </div>
       </div>
 
@@ -2773,6 +2878,178 @@ function NotificationsPage({ notifications, events, expenses, pendingActions, us
   );
 }
 
+// ─── PAGE PARAMÈTRES ─────────────────────────────────────────
+function SettingsPage({ user, onSignOut, isMobile, addToast }) {
+  const { dark, toggle } = useTheme();
+  const { lang, setLang } = useTranslation();
+  const [pushEnabled, setPushEnabled] = useState(
+    typeof Notification !== "undefined" && Notification.permission === "granted"
+  );
+
+  const handlePushToggle = async () => {
+    if (typeof Notification === "undefined") {
+      addToast("Notifications non supportées sur ce navigateur.", "warning"); return;
+    }
+    if (Notification.permission === "granted") {
+      addToast("Notifications déjà activées.", "info"); return;
+    }
+    const permission = await Notification.requestPermission();
+    if (permission === "granted") {
+      setPushEnabled(true);
+      addToast("🔔 Notifications activées !", "success");
+    } else {
+      addToast("Notifications refusées. Autorisez-les dans les paramètres du navigateur.", "warning");
+    }
+  };
+
+  const Section = ({ title, children }) => (
+    <div style={{ background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border)", overflow: "hidden", marginBottom: 16 }}>
+      <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)", fontSize: 12, fontWeight: 700, color: "var(--text-sub)", textTransform: "uppercase", letterSpacing: 1 }}>
+        {title}
+      </div>
+      <div style={{ padding: "4px 0" }}>{children}</div>
+    </div>
+  );
+
+  const Row = ({ icon, label, desc, right }) => (
+    <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 20px", borderBottom: "1px solid var(--border)" }}>
+      <div style={{ fontSize: 20, width: 32, textAlign: "center", flexShrink: 0 }}>{icon}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>{label}</div>
+        {desc && <div style={{ fontSize: 12, color: "var(--text-sub)", marginTop: 2 }}>{desc}</div>}
+      </div>
+      <div style={{ flexShrink: 0 }}>{right}</div>
+    </div>
+  );
+
+  const Toggle = ({ value, onToggle }) => (
+    <button onClick={onToggle} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+      <div style={{ width: 44, height: 24, borderRadius: 12, background: value ? "#2E7D32" : "var(--border)", position: "relative", transition: "background 0.2s" }}>
+        <div style={{ position: "absolute", top: 3, left: value ? 22 : 3, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left 0.2s", boxShadow: "0 1px 4px rgba(0,0,0,0.2)" }} />
+      </div>
+    </button>
+  );
+
+  return (
+    <div style={{ maxWidth: 600 }}>
+      <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 4, color: "var(--text)" }}>
+        Paramètres
+      </h2>
+      <p style={{ color: "var(--text-sub)", fontSize: 12, marginBottom: 24 }}>Personnalisez votre expérience SplitLy</p>
+
+      <Section title="🌐 Langue">
+        <div style={{ padding: "14px 20px" }}>
+          <LanguageMenu lang={lang} setLang={setLang} dark={dark} />
+        </div>
+      </Section>
+
+      <Section title="🎨 Apparence">
+        <Row icon={dark ? "🌙" : "☀️"} label={dark ? "Mode sombre" : "Mode clair"} desc="Changer l'apparence de l'interface"
+          right={<Toggle value={dark} onToggle={toggle} />} />
+      </Section>
+
+      <Section title="🔔 Notifications">
+        <Row icon="🔔" label="Notifications push" desc="Recevoir des alertes en temps réel dans le navigateur"
+          right={<Toggle value={pushEnabled} onToggle={handlePushToggle} />} />
+      </Section>
+
+      <Section title="👤 Compte">
+        <Row icon="📧" label="Email" desc={user?.email} right={null} />
+        <Row icon="🏷️" label="Nom" desc={user?.user_metadata?.full_name || "Non défini"} right={null} />
+        <Row icon="🔑" label="Rôle" desc="Administrateur" right={null} />
+      </Section>
+
+      <Section title="⚠️ Zone de danger">
+        <Row icon="🚪" label="Se déconnecter" desc="Fermer votre session sur cet appareil"
+          right={
+            <button onClick={onSignOut} style={{ padding: "7px 16px", borderRadius: 9, border: "1.5px solid var(--border)", background: "var(--card-bg)", color: "var(--text-muted)", fontSize: 13, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>
+              Déconnexion
+            </button>
+          }
+        />
+      </Section>
+
+      <div style={{ textAlign: "center", marginTop: 24, fontSize: 12, color: "var(--text-sub)" }}>
+        SplitLy · splitmeapp.com · v2.0
+      </div>
+    </div>
+  );
+}
+
+// ─── ONBOARDING WIZARD ────────────────────────────────────────
+const ONBOARDING_KEY = "splitly_onboarded";
+
+function OnboardingWizard({ onComplete }) {
+  const [step, setStep] = useState(0);
+
+  const steps = [
+    {
+      icon: "🎊",
+      title: "Bienvenue sur SplitLy !",
+      desc: "Gérez vos dépenses partagées en quelques clics. Voyages, restos, colocations — plus de calculs à la main.",
+      cta: "Commencer →",
+    },
+    {
+      icon: "👥",
+      title: "Créez un événement",
+      desc: "Donnez un nom à votre sortie, ajoutez vos amis et choisissez une devise. C'est tout pour commencer.",
+      cta: "Compris →",
+    },
+    {
+      icon: "💸",
+      title: "Enregistrez les dépenses",
+      desc: "Ajoutez chaque dépense, qui a payé et qui est concerné. SplitLy calcule automatiquement qui doit quoi.",
+      cta: "C'est parti !",
+    },
+  ];
+
+  const current = steps[step];
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000, padding: 20 }}>
+      <div style={{ background: "var(--bg-secondary)", borderRadius: 24, padding: 40, maxWidth: 420, width: "100%", textAlign: "center", boxShadow: "0 32px 80px rgba(0,0,0,0.4)" }}>
+        <div style={{ fontSize: 64, marginBottom: 20 }}>{current.icon}</div>
+        <div style={{ fontSize: 22, fontFamily: "'Playfair Display', serif", fontWeight: 700, marginBottom: 12, color: "var(--text)" }}>
+          {current.title}
+        </div>
+        <div style={{ fontSize: 15, color: "var(--text-muted)", lineHeight: 1.6, marginBottom: 32 }}>
+          {current.desc}
+        </div>
+        {/* Indicateur d'étapes */}
+        <div style={{ display: "flex", gap: 8, justifyContent: "center", marginBottom: 28 }}>
+          {steps.map((_, i) => (
+            <div key={i} style={{ width: i === step ? 24 : 8, height: 8, borderRadius: 4, background: i === step ? "#0F0F0F" : "var(--border)", transition: "all 0.3s" }} />
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+          {step > 0 && (
+            <button onClick={() => setStep(s => s - 1)}
+              style={{ padding: "12px 20px", borderRadius: 12, border: "1.5px solid var(--border)", background: "transparent", color: "var(--text-muted)", fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
+              ← Retour
+            </button>
+          )}
+          <button
+            onClick={() => {
+              if (step < steps.length - 1) {
+                setStep(s => s + 1);
+              } else {
+                try { localStorage.setItem(ONBOARDING_KEY, "true"); } catch {}
+                onComplete();
+              }
+            }}
+            style={{ padding: "12px 28px", borderRadius: 12, background: "#0F0F0F", color: "#fff", border: "none", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", flex: 1 }}>
+            {current.cta}
+          </button>
+        </div>
+        <button onClick={() => { try { localStorage.setItem(ONBOARDING_KEY, "true"); } catch {} onComplete(); }}
+          style={{ marginTop: 16, background: "none", border: "none", color: "var(--text-sub)", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+          Passer l'introduction
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── STYLES ───────────────────────────────────────────────────
 const S = {
   label: { display: "block", fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 },
@@ -2870,9 +3147,10 @@ function AppInner() {
   });
   const [loading, setLoading] = useState(true);
   const [authMode, setAuthMode] = useState(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const [active, setActiveRaw] = useState("dashboard");
   const [navHistory, setNavHistory] = useState(["dashboard"]);
-  const [pageKey, setPageKey] = useState(0); // Pour déclencher animation
+  const [pageKey, setPageKey] = useState(0);
   const [events, setEvents] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [contributions, setContributions] = useState({});
@@ -2947,10 +3225,20 @@ function AppInner() {
 
   useEffect(() => {
     getSession().then(s => {
-      setUser(s?.user || null);
+      const u = s?.user || null;
+      setUser(u);
       setLoading(false);
+      // Onboarding au premier login
+      if (u) {
+        try {
+          const onboarded = localStorage.getItem(ONBOARDING_KEY);
+          if (!onboarded) setShowOnboarding(true);
+        } catch {}
+      }
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setUser(s?.user || null));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
+      setUser(s?.user || null);
+    });
     return () => subscription.unsubscribe();
   }, []);
 
@@ -3097,6 +3385,7 @@ function AppInner() {
                      pendingActions={pendingActions} user={user} reload={loadAll} isMobile={isMobile} addToast={addToast} t={t}
                      onMarkAll={async () => { await markAllNotificationsRead(user.id); await loadAll(); addToast(t("notif_mark_all"), "info"); }}
                      onDismiss={async (id) => { await deleteNotification(id); await loadAll(); }} />,
+    settings:      <SettingsPage user={user} onSignOut={handleSignOut} isMobile={isMobile} addToast={addToast} />,
   };
 
   return (
@@ -3104,43 +3393,37 @@ function AppInner() {
       <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
       <style>{`
         *, *::before, *::after { box-sizing: border-box; }
-        html, body { overflow-x: hidden; max-width: 100vw; }
+        html, body { overflow-x: hidden; max-width: 100vw; margin:0; padding:0; }
         table { table-layout: fixed; }
-        @keyframes pageFadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-        .page-transition { animation: pageFadeIn 0.18s ease; }
-        .kbd-hint { display: inline-flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 4px; padding: 1px 6px; font-size: 10px; font-family: monospace; color: #666; }
+        @keyframes pageFadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        .page-transition { animation: pageFadeIn 0.15s ease; pointer-events: auto; }
+        .kbd-hint { display:inline-flex;align-items:center;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:4px;padding:1px 6px;font-size:10px;font-family:monospace;color:#666; }
       `}</style>
       <ToastContainer toasts={toasts} removeToast={removeToast} />
+      {showOnboarding && <OnboardingWizard onComplete={() => setShowOnboarding(false)} />}
       <Sidebar active={active} setActive={setActive} unreadCount={unreadCount} pendingCount={pendingCount}
         user={user} onSignOut={handleSignOut} isMobile={isMobile} menuOpen={menuOpen} setMenuOpen={setMenuOpen}
         t={t} lang={lang} setLang={setLang} searchQuery={searchQuery} setSearchQuery={setSearchQuery} />
-      <main style={{ flex: 1, overflowX: "hidden", overflowY: "auto", boxSizing: "border-box", minWidth: 0, background: "var(--bg)", display: "flex", flexDirection: "column", padding: isMobile ? "72px 16px 80px" : 0 }}>
 
-        {/* Topbar desktop — breadcrumb + retour + raccourcis */}
+      <main style={{ flex: 1, overflow: "hidden", minWidth: 0, background: "var(--bg)", display: "flex", flexDirection: "column" }}>
+        {/* Topbar desktop — breadcrumb léger */}
         {!isMobile && (
-          <div style={{ padding: "14px 40px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10, background: "var(--bg)", flexShrink: 0, position: "sticky", top: 0, zIndex: 10, backdropFilter: "blur(8px)" }}>
+          <div style={{ padding: "10px 32px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10, background: "var(--bg)", flexShrink: 0 }}>
             {navHistory.length > 1 && (
-              <button onClick={goBack} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "4px 12px", cursor: "pointer", color: "var(--text-muted)", fontSize: 12, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4, transition: "all 0.15s" }}>
-                ← {lang === "fr" ? "Retour" : lang === "en" ? "Back" : "Volver"}
+              <button onClick={goBack} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 7, padding: "3px 10px", cursor: "pointer", color: "var(--text-muted)", fontSize: 12, fontFamily: "inherit" }}>
+                ←
               </button>
             )}
-            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-              <span style={{ color: "var(--text-sub)", fontSize: 12 }}>SplitLy</span>
-              <span style={{ color: "var(--border)" }}>/</span>
-              <span style={{ fontWeight: 700, color: "var(--text)", fontSize: 14 }}>{NAV_LABELS[active]}</span>
-            </div>
-            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 5, opacity: 0.45 }}>
-              <span style={{ fontSize: 11, color: "var(--text-sub)" }}>
-                {lang === "fr" ? "Navigation rapide" : lang === "en" ? "Quick nav" : "Nav. rápida"} :
-              </span>
-              <span className="kbd-hint">G</span>
-              <span style={{ fontSize: 11, color: "var(--text-sub)" }}>+ {lang === "fr" ? "lettre" : lang === "en" ? "key" : "tecla"}</span>
-            </div>
+            <span style={{ fontSize: 12, color: "var(--text-sub)" }}>SplitLy</span>
+            <span style={{ color: "var(--border)", fontSize: 12 }}>/</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{NAV_LABELS[active]}</span>
+            <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--text-sub)", opacity: 0.4 }}>G + lettre</span>
           </div>
         )}
 
-        <div style={{ flex: 1, overflowX: "hidden", overflowY: "auto", padding: isMobile ? 0 : "32px 40px" }}>
-          <div style={{ maxWidth: 1200, margin: "0 auto", width: "100%" }}>
+        {/* Contenu scrollable */}
+        <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: isMobile ? "72px 16px 80px" : "28px 32px" }}>
+          <div style={{ maxWidth: 1100, margin: "0 auto", width: "100%" }}>
             <div key={pageKey} className="page-transition">
           {showSearch ? (
             <div>
