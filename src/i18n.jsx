@@ -64,7 +64,7 @@ export function useTranslation() {
 }
 
 // ─── LanguageMenu — dropdown professionnel ────────────────────
-export function LanguageMenu({ lang, setLang, dark = false }) {
+export function LanguageMenu({ lang, setLang, dark = false, dropUp = true }) {
   const [open, setOpen] = useState(false);
   const current = LANGUAGES.find(l => l.code === lang) || LANGUAGES[0];
   const border = dark ? "#2a2a2a" : "#e0e0e0";
@@ -88,7 +88,9 @@ export function LanguageMenu({ lang, setLang, dark = false }) {
         <span style={{
           fontSize: 10, opacity: 0.5, display: "inline-block",
           transition: "transform 0.2s",
-          transform: open ? "rotate(180deg)" : "rotate(0deg)"
+          transform: open
+            ? (dropUp ? "rotate(0deg)" : "rotate(180deg)")
+            : (dropUp ? "rotate(180deg)" : "rotate(0deg)")
         }}>▼</span>
       </button>
 
@@ -96,7 +98,11 @@ export function LanguageMenu({ lang, setLang, dark = false }) {
         <>
           <div style={{ position: "fixed", inset: 0, zIndex: 998 }} onClick={() => setOpen(false)} />
           <div style={{
-            position: "absolute", bottom: "calc(100% + 6px)", left: 0, right: 0,
+            position: "absolute",
+            ...(dropUp
+              ? { bottom: "calc(100% + 6px)" }
+              : { top: "calc(100% + 6px)" }),
+            left: 0, right: 0,
             background: dark ? "#1e1e1e" : "#fff",
             border: `1px solid ${border}`, borderRadius: 10,
             boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
