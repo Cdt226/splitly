@@ -1,4 +1,4 @@
-const CACHE_NAME = "splitly-v1";
+const CACHE_NAME = "splitly-v2";
 const STATIC_ASSETS = ["/", "/index.html"];
 
 self.addEventListener("install", (event) => {
@@ -18,17 +18,34 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
-  // Pour les requêtes API Supabase, toujours aller sur le réseau
-  if (event.request.url.includes("supabase.co")) {
+  const url = event.request.url;
+  const method = event.request.method;
+
+  // Ne jamais mettre en cache :
+  // - Les requêtes POST, PUT, PATCH, DELETE
+  // - Les URLs /api/
+  // - Les URLs Supabase
+  // - Les URLs Resend
+  if (
+    method !== "GET" ||
+    url.includes("/api/") ||
+    url.includes("supabase.co") ||
+    url.includes("resend.com") ||
+    url.includes("anthropic")
+  ) {
     event.respondWith(fetch(event.request));
     return;
   }
-  // Pour le reste, réseau d'abord, cache en fallback
+
+  // Pour les requêtes GET uniquement : réseau d'abord, cache en fallback
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        // Ne mettre en cache que les réponses valides
+        if (response && response.status === 200 && response.type === "basic") {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
         return response;
       })
       .catch(() => caches.match(event.request))
