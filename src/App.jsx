@@ -6,7 +6,7 @@ import {
   fetchEvents, createEvent, updateEventStatus, deleteEvent,
   addParticipant, removeParticipant,
   fetchExpenses, createExpense, updateExpense, deleteExpense,
-  fetchContributions, upsertContribution,
+  fetchContributions, upsertContribution, recordPayment, fetchPayments,
   fetchHistory, invalidateHistory,
   fetchNotifications, markAllNotificationsRead, deleteNotification,
   fetchInvitations, sendInvitation, removeInvitation, updateInvitationRole,
@@ -149,11 +149,63 @@ function computeTransactions(expenses, contributions, participants) {
 }
 
 // ─── UI COMPONENTS ────────────────────────────────────────────
+
+// ─── EMOJI AVATARS ────────────────────────────────────────────
+const AVATAR_EMOJIS = ["😀","😎","🥳","🤩","🦁","🐯","🐻","🦊","🐼","🐨","🦄","🐸","🦋","🌟","⚡","🔥","🌈","🎯","🎸","🚀","💎","🌺","🍀","🎭","👑"];
+const AVATAR_STORAGE_KEY = "splitly_avatars";
+
+function getAvatarMap() {
+  try { return JSON.parse(localStorage.getItem(AVATAR_STORAGE_KEY) || "{}"); } catch { return {}; }
+}
+function saveAvatarEmoji(name, emoji) {
+  const map = getAvatarMap();
+  if (emoji === null) { delete map[name]; } else { map[name] = emoji; }
+  try { localStorage.setItem(AVATAR_STORAGE_KEY, JSON.stringify(map)); } catch {}
+}
+
 function Avatar({ name = "?", size = 32 }) {
   const colors = ["#2E7D32", "#1565C0", "#F57F17", "#6A1B9A", "#C62828", "#00695C", "#AD1457"];
+  const avatarMap = getAvatarMap();
+  const emoji = avatarMap[name];
+  if (emoji) {
+    return (
+      <div style={{ width: size, height: size, borderRadius: "50%", background: "#f5f5f5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.55, flexShrink: 0, userSelect: "none", border: "1.5px solid #e0e0e0" }}>
+        {emoji}
+      </div>
+    );
+  }
   return (
     <div style={{ width: size, height: size, borderRadius: "50%", background: colors[name.charCodeAt(0) % colors.length], color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.4, fontWeight: 700, flexShrink: 0, userSelect: "none" }}>
       {name[0].toUpperCase()}
+    </div>
+  );
+}
+
+function EmojiPicker({ name, onClose }) {
+  const [selected, setSelected] = useState(getAvatarMap()[name] || null);
+  return (
+    <div style={{ background: "#fff", borderRadius: 16, padding: 20, border: "1.5px solid #eee", boxShadow: "0 8px 32px rgba(0,0,0,0.12)", maxWidth: 300, width: "100%" }}>
+      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 14 }}>Avatar pour <strong>{name}</strong></div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 6, marginBottom: 16 }}>
+        {AVATAR_EMOJIS.map(e => (
+          <button key={e} onClick={() => setSelected(e)} style={{ fontSize: 22, padding: 6, borderRadius: 10, border: `2px solid ${selected === e ? "#0F0F0F" : "#eee"}`, background: selected === e ? "#f0f0f0" : "transparent", cursor: "pointer" }}>
+            {e}
+          </button>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button onClick={() => { if (selected) { saveAvatarEmoji(name, selected); } onClose(); }}
+          style={{ flex: 1, padding: "8px", borderRadius: 10, background: "#0F0F0F", color: "#fff", border: "none", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: 13 }}>
+          ✓ Confirmer
+        </button>
+        <button onClick={() => { saveAvatarEmoji(name, null); onClose(); }}
+          style={{ padding: "8px 12px", borderRadius: 10, background: "#fff5f5", color: "#C62828", border: "1.5px solid #ffcdd2", cursor: "pointer", fontFamily: "inherit", fontSize: 12 }}>
+          Reset
+        </button>
+      </div>
+      <button onClick={onClose} style={{ width: "100%", marginTop: 8, padding: "7px", borderRadius: 10, background: "transparent", color: "#aaa", border: "1px solid #eee", cursor: "pointer", fontFamily: "inherit", fontSize: 12 }}>
+        Annuler
+      </button>
     </div>
   );
 }
@@ -1609,6 +1661,8 @@ function Balance({ events, expenses, contributions, user, reload, isMobile, addT
   const [settleModal, setSettleModal] = useState(null);
   const [versement, setVersement] = useState({});
   const [saving, setSaving] = useState(false);
+  const [emojiPickerFor, setEmojiPickerFor] = useState(null);
+  const [, forceUpdate] = useState(0); // Force re-render après changement d'emoji
 
   const ev = events.find(e => e.id === filterEvent);
   const evExp = expenses.filter(e => e.event_id === filterEvent);
@@ -1643,6 +1697,7 @@ function Balance({ events, expenses, contributions, user, reload, isMobile, addT
     const current = evContribMap[person] || 0;
     setSaving(true);
     await upsertContribution(filterEvent, person, current + amount, user.id);
+    await recordPayment(filterEvent, person, amount, null, user.id);
     await reload();
     setVersement(v => ({ ...v, [person]: "" }));
     addToast(`Versement de ${fmt(amount, sym)} enregistré pour ${person}.`, "success");
@@ -1695,7 +1750,18 @@ function Balance({ events, expenses, contributions, user, reload, isMobile, addT
               const hasCharges = owed > 0;
               const status = settleStatus(net, hasCharges);
               return (
-                <div key={p} style={{ background: "#fff", borderRadius: 14, padding: "16px 12px", border: `2px solid ${settled && hasCharges ? "#c8e6c9" : !hasCharges ? "#f0f0f0" : Math.abs(net) > 10 ? "#ffcdd2" : "#eee"}`, textAlign: "center", transition: "border-color 0.2s" }}>
+                <div key={p} style={{ background: "#fff", borderRadius: 14, padding: "16px 12px", border: `2px solid ${settled && hasCharges ? "#c8e6c9" : !hasCharges ? "#f0f0f0" : Math.abs(net) > 10 ? "#ffcdd2" : "#eee"}`, textAlign: "center", transition: "border-color 0.2s", position: "relative" }}>
+                  {/* Bouton emoji */}
+                  <button onClick={() => setEmojiPickerFor(emojiPickerFor === p ? null : p)}
+                    title="Changer l'avatar"
+                    style={{ position: "absolute", top: 8, right: 8, background: "none", border: "none", cursor: "pointer", fontSize: 14, opacity: 0.4, padding: 2 }}>
+                    🎨
+                  </button>
+                  {emojiPickerFor === p && (
+                    <div style={{ position: "absolute", top: 30, right: 0, zIndex: 100 }}>
+                      <EmojiPicker name={p} onClose={() => { setEmojiPickerFor(null); forceUpdate(n => n + 1); }} />
+                    </div>
+                  )}
                   <Avatar name={p} size={36} />
                   <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p}</div>
                   <div style={{ fontSize: 10, color: "#aaa", marginTop: 4 }}>{hasCharges ? `Doit: ${fmt(owed, sym)}` : "Aucune charge"}</div>
@@ -1755,13 +1821,61 @@ function Balance({ events, expenses, contributions, user, reload, isMobile, addT
               ))
             )}
           </div>
+
+          {/* Historique des versements */}
+          <PaymentHistory eventId={filterEvent} sym={sym} />
         </>
       )}
     </div>
   );
 }
 
-// ─── GUEST EDIT EXPENSE FORM ──────────────────────────────────
+// ─── HISTORIQUE DES VERSEMENTS ────────────────────────────────
+function PaymentHistory({ eventId, sym }) {
+  const [payments, setPayments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [show, setShow] = useState(false);
+
+  useEffect(() => {
+    if (!eventId || !show) return;
+    setLoading(true);
+    fetchPayments(eventId).then(({ data }) => {
+      setPayments(data || []);
+      setLoading(false);
+    });
+  }, [eventId, show]);
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <button onClick={() => setShow(!show)}
+        style={{ background: "#fafafa", border: "1px solid #eee", borderRadius: 10, padding: "10px 16px", fontSize: 13, cursor: "pointer", fontWeight: 600, width: "100%", textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span>📋 Historique des versements</span>
+        <span style={{ fontSize: 12, color: "#aaa" }}>{show ? "▲ Masquer" : "▼ Afficher"}</span>
+      </button>
+      {show && (
+        <div style={{ background: "#fff", borderRadius: "0 0 12px 12px", border: "1px solid #eee", borderTop: "none", overflow: "hidden" }}>
+          {loading ? (
+            <div style={{ padding: 20, textAlign: "center", color: "#aaa", fontSize: 13 }}>Chargement...</div>
+          ) : payments.length === 0 ? (
+            <div style={{ padding: 20, textAlign: "center", color: "#aaa", fontSize: 13 }}>Aucun versement enregistré.</div>
+          ) : (
+            payments.map((p, i) => (
+              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 18px", borderBottom: i < payments.length - 1 ? "1px solid #f5f5f5" : "none" }}>
+                <Avatar name={p.participant} size={28} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{p.participant}</div>
+                  <div style={{ fontSize: 11, color: "#aaa" }}>{new Date(p.created_at).toLocaleString("fr-FR")}</div>
+                  {p.note && <div style={{ fontSize: 11, color: "#888", fontStyle: "italic" }}>💬 {p.note}</div>}
+                </div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "#2E7D32" }}>+{fmt(p.amount, sym)}</div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 function GuestEditExpenseForm({ expense, events, onSubmit, onCancel, saving }) {
   const ev = events.find(e => e.id === expense.event_id);
   const participants = (ev?.event_participants || []).map(p => p.name);
@@ -1844,9 +1958,9 @@ function GuestEditExpenseForm({ expense, events, onSubmit, onCancel, saving }) {
 }
 function Analytics({ events, expenses, contributions, isMobile }) {
   const [sel, setSel] = useState(events[0]?.id || "");
+  const [viewMode, setViewMode] = useState("event"); // "event" | "personal"
   const ev = events.find(e => e.id === sel);
   const evExp = expenses.filter(e => e.event_id === sel);
-  // Lire la devise directement depuis l'événement sélectionné
   const sym = currencySymbol(ev?.currency);
   const budget = evExp.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
   const participants = (ev?.event_participants || []).map(p => p.name);
@@ -1856,29 +1970,128 @@ function Analytics({ events, expenses, contributions, isMobile }) {
     cat, total: evExp.filter(e => e.category === cat).reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0)
   })).filter(c => c.total > 0);
 
-  // Vérifier si tous les événements ont la même devise (pour avertir sinon)
+  // Statistiques personnelles — tous événements confondus
+  const allParticipants = [...new Set(events.flatMap(e => (e.event_participants || []).map(p => p.name)))].sort();
+  const [selParticipant, setSelParticipant] = useState(allParticipants[0] || "");
+
+  const personalStats = (name) => {
+    const pEvents = events.filter(ev => (ev.event_participants || []).some(p => p.name === name));
+    let totalOwed = 0, totalPaid = 0, totalAdvanced = 0, expenseCount = 0;
+    const byEv = pEvents.map(ev => {
+      const evExps = expenses.filter(e => e.event_id === ev.id);
+      const owed = computeOwed(evExps, name);
+      const evContribs = {};
+      (contributions[ev.id] || []).forEach(c => { evContribs[c.participant] = c.amount; });
+      const paid = evContribs[name] || 0;
+      const advanced = evExps.filter(e => e.paid_by === name).reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
+      const net = paid - owed;
+      totalOwed += owed; totalPaid += paid; totalAdvanced += advanced;
+      expenseCount += evExps.filter(e => (e.included || []).includes(name)).length;
+      return { ev, owed, paid, advanced, net };
+    });
+    const favCat = Object.entries(
+      expenses.filter(e => (e.included || []).includes(name))
+        .reduce((acc, e) => { acc[e.category] = (acc[e.category] || 0) + 1; return acc; }, {})
+    ).sort((a, b) => b[1] - a[1])[0];
+    return { pEvents, byEv, totalOwed, totalPaid, totalAdvanced, expenseCount, netGlobal: totalPaid - totalOwed, favCat };
+  };
+
+  const ps = selParticipant ? personalStats(selParticipant) : null;
+
   const allCurrencies = [...new Set(events.map(e => e.currency))];
   const mixedCurrencies = allCurrencies.length > 1;
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 4 }}>Analyses</h2>
-      <p style={{ color: "#888", fontSize: 12, marginBottom: 16 }}>Statistiques détaillées par événement</p>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
+        <div>
+          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2 }}>Analyses</h2>
+          <p style={{ color: "#888", fontSize: 12 }}>Statistiques détaillées par événement</p>
+        </div>
+        {/* Tabs Vue événement / Vue personnelle */}
+        <div style={{ display: "flex", background: "#f5f5f5", borderRadius: 10, padding: 3, gap: 2 }}>
+          {[{ key: "event", label: "📊 Par événement" }, { key: "personal", label: "👤 Par participant" }].map(tab => (
+            <button key={tab.key} onClick={() => setViewMode(tab.key)}
+              style={{ padding: "7px 14px", borderRadius: 8, border: "none", background: viewMode === tab.key ? "#0F0F0F" : "transparent", color: viewMode === tab.key ? "#fff" : "#888", fontSize: 12, fontWeight: viewMode === tab.key ? 700 : 400, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {mixedCurrencies && (
         <div style={{ background: "#FFF8E1", border: "1px solid #FFE082", borderRadius: 12, padding: "11px 16px", marginBottom: 16, fontSize: 13, color: "#E65100" }}>
-          ⚠️ Vos événements utilisent des devises différentes ({allCurrencies.map(currencySymbol).join(", ")}). Les analyses sont affichées séparément par événement — aucune consolidation n'est effectuée.
+          ⚠️ Vos événements utilisent des devises différentes ({allCurrencies.map(currencySymbol).join(", ")}). Les analyses sont affichées séparément par événement.
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
-        {events.map(ev => (
-          <button key={ev.id} onClick={() => setSel(ev.id)} style={{ padding: "7px 14px", borderRadius: 20, border: `1.5px solid ${sel === ev.id ? "#0F0F0F" : "#e0e0e0"}`, background: sel === ev.id ? "#0F0F0F" : "#fff", color: sel === ev.id ? "#fff" : "#555", fontSize: 12, cursor: "pointer", fontWeight: sel === ev.id ? 700 : 400, transition: "all 0.15s" }}>
-            {ev.status === "closed" ? "🔒 " : ""}<Truncate text={ev.name} max={20} />
-            <span style={{ marginLeft: 4, opacity: 0.6, fontSize: 10 }}>({currencySymbol(ev.currency)})</span>
-          </button>
-        ))}
-      </div>
+      {/* ─── VUE PERSONNELLE ─────────────────────────────────── */}
+      {viewMode === "personal" && (
+        <div>
+          <div style={{ marginBottom: 20 }}>
+            <label style={S.label}>Sélectionner un participant</label>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+              {allParticipants.map(p => (
+                <button key={p} onClick={() => setSelParticipant(p)}
+                  style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", borderRadius: 20, border: `1.5px solid ${selParticipant === p ? "#0F0F0F" : "#e0e0e0"}`, background: selParticipant === p ? "#0F0F0F" : "#fff", color: selParticipant === p ? "#fff" : "#555", fontSize: 13, cursor: "pointer", fontWeight: selParticipant === p ? 700 : 400, transition: "all 0.15s" }}>
+                  <Avatar name={p} size={20} />
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {ps && (
+            <div>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 14, marginBottom: 20 }}>
+                <StatCard label="Part due totale" value={fmt(ps.totalOwed)} sub={`sur ${ps.expenseCount} charge(s)`} accent="#C62828" />
+                <StatCard label="Total avancé" value={fmt(ps.totalAdvanced)} sub="charges payées en avance" accent="#1565C0" />
+                <StatCard label="Solde global" value={`${ps.netGlobal >= 0 ? "+" : ""}${fmt(ps.netGlobal)}`} sub={ps.netGlobal >= 0 ? "à recevoir" : "à rembourser"} accent={ps.netGlobal >= 0 ? "#2E7D32" : "#C62828"} />
+                <StatCard label="Événements" value={ps.pEvents.length} sub={ps.favCat ? `Catégorie fav: ${ps.favCat[0]}` : "Aucune charge"} accent="#6A1B9A" />
+              </div>
+
+              <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #eee", overflow: "hidden" }}>
+                <div style={{ padding: "14px 18px", borderBottom: "1px solid #f0f0f0", fontSize: 14, fontWeight: 700 }}>
+                  Détail par événement
+                </div>
+                {ps.byEv.map(({ ev, owed, paid, advanced, net }) => {
+                  const evSym = currencySymbol(ev.currency);
+                  const hasCharges = owed > 0;
+                  const status = settleStatus(net, hasCharges);
+                  return (
+                    <div key={ev.id} style={{ padding: "14px 18px", borderBottom: "1px solid #f5f5f5", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                      <div style={{ fontSize: 20 }}>{ev.status === "closed" ? "🔒" : "🎊"}</div>
+                      <div style={{ flex: 1, minWidth: 140 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700 }}><Truncate text={ev.name} max={25} /></div>
+                        <div style={{ fontSize: 11, color: "#aaa" }}>{ev.date} · {evSym}</div>
+                      </div>
+                      <div style={{ fontSize: 12, color: "#555" }}>
+                        {hasCharges ? `Doit ${fmt(owed, evSym)} · Avancé ${fmt(advanced, evSym)}` : "Non impliqué dans les charges"}
+                      </div>
+                      <span style={{ padding: "4px 10px", borderRadius: 20, background: status.bg, color: status.color, fontSize: 11, fontWeight: 700 }}>
+                        {status.label}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {!ps && <EmptyState icon="👤" title="Sélectionnez un participant" subtitle="Choisissez un participant pour voir ses statistiques." />}
+        </div>
+      )}
+
+      {/* ─── VUE PAR ÉVÉNEMENT ───────────────────────────────── */}
+      {viewMode === "event" && (
+        <>
+          <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+            {events.map(ev => (
+              <button key={ev.id} onClick={() => setSel(ev.id)} style={{ padding: "7px 14px", borderRadius: 20, border: `1.5px solid ${sel === ev.id ? "#0F0F0F" : "#e0e0e0"}`, background: sel === ev.id ? "#0F0F0F" : "#fff", color: sel === ev.id ? "#fff" : "#555", fontSize: 12, cursor: "pointer", fontWeight: sel === ev.id ? 700 : 400, transition: "all 0.15s" }}>
+                {ev.status === "closed" ? "🔒 " : ""}<Truncate text={ev.name} max={20} />
+                <span style={{ marginLeft: 4, opacity: 0.6, fontSize: 10 }}>({currencySymbol(ev.currency)})</span>
+              </button>
+            ))}
+          </div>
 
       {!ev ? (
         <EmptyState icon="📊" title="Sélectionnez un événement" subtitle="Choisissez un événement pour voir ses statistiques." />
@@ -1938,6 +2151,8 @@ function Analytics({ events, expenses, contributions, isMobile }) {
             </div>
           </div>
         </>
+      )}
+      </>
       )}
     </div>
   );

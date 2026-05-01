@@ -296,6 +296,23 @@ export async function upsertContribution(eventId, participant, amount, userId) {
   return { data, error };
 }
 
+export async function recordPayment(eventId, participant, amount, note, userId) {
+  const { data, error } = await supabase
+    .from('payments')
+    .insert({ event_id: eventId, participant, amount, note: note || null, created_by: userId })
+    .select().single();
+  return { data, error };
+}
+
+export async function fetchPayments(eventId) {
+  const { data, error } = await supabase
+    .from('payments')
+    .select('*')
+    .eq('event_id', eventId)
+    .order('created_at', { ascending: false });
+  return { data, error };
+}
+
 // ─── HISTORY ──────────────────────────────────────────────────
 export async function fetchHistory(eventId) {
   const { data, error } = await supabase
