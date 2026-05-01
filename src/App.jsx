@@ -1032,85 +1032,181 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
 }
 
 // ─── DASHBOARD ────────────────────────────────────────────────
-function Dashboard({ events, expenses, user, isMobile, navigateTo, t }) {
-  const name = user?.user_metadata?.full_name?.split(" ")[0] || (t ? t("dash_hello") : "vous");
+function Dashboard({ events, expenses, contributions, user, isMobile, navigateTo, t }) {
+  const firstName = user?.user_metadata?.full_name?.split(" ")[0] || "vous";
+  const now = new Date();
+  const dateLabel = now.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
+
+  // ── KPIs globaux ──────────────────────────────────────────
   const grandTotal = expenses.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
-  const openEvents = events.filter(e => e.status === "open").length;
+  const openEvents = events.filter(e => e.status === "open");
+  const closedEvents = events.filter(e => e.status === "closed");
+  const uniqueParticipants = [...new Set(events.flatMap(e => (e.event_participants || []).map(p => p.name)))];
+
+  // ── Soldes consolidés (tous events ouverts) ───────────────
+  let totalToReceive = 0, totalToPay = 0, pendingReimb = 0;
+  openEvents.forEach(ev => {
+    const evExp = expenses.filter(e => e.event_id === ev.id);
+    const evContribs = {};
+    (contributions[ev.id] || []).forEach(c => { evContribs[c.participant] = c.amount; });
+    const txns = computeTransactions(evExp, evContribs, (ev.event_participants || []).map(p => p.name));
+    pendingReimb += txns.length;
+  });
+
+  // ── Activité récente (10 dernières charges) ───────────────
+  const recentExpenses = [...expenses]
+    .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+    .slice(0, 5);
+
+  // ── Top catégories ────────────────────────────────────────
   const byCategory = Object.keys(CATEGORIES).map(cat => ({
-    cat, total: expenses.filter(e => e.category === cat).reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0),
-  })).filter(c => c.total > 0);
+    cat, total: expenses.filter(e => e.category === cat).reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0)
+  })).filter(c => c.total > 0).sort((a, b) => b.total - a.total).slice(0, 5);
+
+  // ── Progression bouclage par event ouvert ─────────────────
+  const evProgression = openEvents.map(ev => {
+    const evExp = expenses.filter(e => e.event_id === ev.id);
+    const participants = (ev.event_participants || []).map(p => p.name);
+    const evContribs = {};
+    (contributions[ev.id] || []).forEach(c => { evContribs[c.participant] = c.amount; });
+    const settled = participants.filter(p => isSettled(computeNetBalance(evExp, evContribs, p))).length;
+    const pct = participants.length > 0 ? Math.round((settled / participants.length) * 100) : 0;
+    const total = evExp.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
+    return { ev, participants, settled, pct, total, sym: currencySymbol(ev.currency) };
+  });
+
+  const KpiCard = ({ icon, label, value, sub, accent, onClick }) => (
+    <div onClick={onClick} style={{ background: "var(--bg-secondary)", borderRadius: 16, padding: "18px 20px", border: `1px solid var(--border)`, borderLeft: `4px solid ${accent}`, cursor: onClick ? "pointer" : "default", transition: "box-shadow 0.15s" }}
+      onMouseEnter={e => { if (onClick) e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.08)"; }}
+      onMouseLeave={e => { e.currentTarget.style.boxShadow = "none"; }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        <span style={{ fontSize: 18 }}>{icon}</span>
+        <span style={{ fontSize: 10, fontWeight: 700, color: "var(--text-sub)", textTransform: "uppercase", letterSpacing: 0.9 }}>{label}</span>
+      </div>
+      <div style={{ fontSize: 26, fontWeight: 700, fontFamily: "'Playfair Display', serif", color: "var(--text)", letterSpacing: -0.5 }}>{value}</div>
+      {sub && <div style={{ fontSize: 11, color: "var(--text-sub)", marginTop: 4 }}>{sub}</div>}
+    </div>
+  );
 
   return (
     <div>
-      <div style={{ marginBottom: 24 }}>
-        <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 24 : 28, fontWeight: 700, marginBottom: 4 }}>{t ? t("dash_hello") : "Bonjour"}, {name} 👋</h2>
-        <p style={{ color: "#888", fontSize: 13 }}>{t ? t("dash_subtitle") : "Voici l'état de vos dépenses partagées."}</p>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 14, marginBottom: 24 }}>
-        <StatCard label={t ? t("dash_total_budget") : "Budget total"} value={`${fmt(grandTotal)}`} sub={`${expenses.length} ${t ? t("dash_charges") : "charge(s)"} · ${t ? t("dash_all_events") : "tous événements"}`} accent="#0F0F0F" />
-        <StatCard label={t ? t("dash_events") : "Événements"} value={events.length} sub={`${openEvents} ${t ? t("dash_open") : "ouvert"} · ${events.length - openEvents} ${t ? t("dash_closed") : "bouclé"}`} accent="#2E7D32" />
-        <div style={{ gridColumn: isMobile ? "1 / -1" : "auto" }}>
-          <StatCard label={t ? t("dash_unique_participants") : "Participants uniques"} value={[...new Set(events.flatMap(e => (e.event_participants || []).map(p => p.name)))].length} sub={t ? t("dash_all_events") : "sur tous les événements"} accent="#1565C0" />
+      {/* ── En-tête ── */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24, flexWrap: "wrap", gap: 8 }}>
+        <div>
+          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 24 : 28, fontWeight: 700, marginBottom: 4, color: "var(--text)" }}>
+            {t ? t("dash_hello") : "Bonjour"}, {firstName} 👋
+          </h2>
+          <p style={{ color: "var(--text-sub)", fontSize: 12 }}>{dateLabel}</p>
         </div>
+        {navigateTo && (
+          <button onClick={() => navigateTo("events")} style={{ ...S.btnDark, fontSize: 12, padding: "8px 16px" }}>
+            + Nouvel événement
+          </button>
+        )}
       </div>
 
       {events.length === 0 ? (
-        <EmptyState icon="🎊" title="Aucun événement" subtitle="Créez votre premier événement pour commencer à gérer vos dépenses partagées." />
+        <EmptyState icon="🎊" title="Aucun événement" subtitle="Créez votre premier événement pour commencer à gérer vos dépenses partagées."
+          action={navigateTo && <button onClick={() => navigateTo("events")} style={S.btnDark}>Créer un événement →</button>} />
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
-          <div style={{ background: "#fff", borderRadius: 16, padding: 20, border: "1px solid #eee" }}>
-            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16 }}>{t ? t("dash_by_category") : "Dépenses par catégorie"}</div>
-            <div style={{ fontSize: 11, color: "#aaa", marginBottom: 12 }}>Toutes devises confondues — voir Analyses pour le détail par événement</div>
-            {byCategory.length === 0 ? <div style={{ color: "#ccc", fontSize: 13 }}>{t ? t("dash_no_charges") : "Aucune charge enregistrée"}</div> : byCategory.map(c => (
-              <div key={c.cat} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-                <span style={{ fontSize: 18, flexShrink: 0 }}>{CATEGORIES[c.cat].icon}</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                    <span style={{ fontSize: 12 }}>{c.cat}</span>
-                    <span style={{ fontSize: 12, fontWeight: 700 }}>{fmt(c.total)} ({grandTotal > 0 ? ((c.total / grandTotal) * 100).toFixed(0) : 0}%)</span>
-                  </div>
-                  <div style={{ background: "#f0f0f0", borderRadius: 6, height: 6 }}>
-                    <div style={{ background: CATEGORIES[c.cat].accent, borderRadius: 6, height: 6, width: `${grandTotal > 0 ? (c.total / grandTotal) * 100 : 0}%`, transition: "width 0.5s" }} />
-                  </div>
-                </div>
+        <>
+          {/* ── KPIs ── */}
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
+            <KpiCard icon="💰" label="Budget total" value={fmt(grandTotal)} sub={`${expenses.length} charge${expenses.length > 1 ? "s" : ""}`} accent="#0F0F0F" onClick={() => navigateTo && navigateTo("expenses")} />
+            <KpiCard icon="🎊" label="Événements" value={events.length} sub={`${openEvents.length} ouvert${openEvents.length > 1 ? "s" : ""} · ${closedEvents.length} bouclé${closedEvents.length > 1 ? "s" : ""}`} accent="#2E7D32" onClick={() => navigateTo && navigateTo("events")} />
+            <KpiCard icon="👥" label="Participants" value={uniqueParticipants.length} sub="profils uniques" accent="#1565C0" onClick={() => navigateTo && navigateTo("analytics")} />
+            <KpiCard icon="⏳" label="Remboursements" value={pendingReimb} sub="en attente" accent={pendingReimb > 0 ? "#F57F17" : "#2E7D32"} onClick={() => navigateTo && navigateTo("balance")} />
+          </div>
+
+          {/* ── Progression bouclage ── */}
+          {evProgression.length > 0 && (
+            <div style={{ background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border)", padding: 20, marginBottom: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>📈 Progression vers bouclage</div>
+                <button onClick={() => navigateTo && navigateTo("balance")} style={{ fontSize: 11, color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>Voir soldes →</button>
               </div>
-            ))}
-          </div>
-          <div style={{ background: "var(--bg-secondary)", borderRadius: 16, padding: 20, border: "1px solid var(--border)" }}>
-            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16, color: "var(--text)" }}>{t ? t("dash_recent_events") : "Événements récents"}</div>
-            {events.slice(0, 5).map((ev, i) => {
-              const evTotal = expenses.filter(e => e.event_id === ev.id).reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
-              const participants = (ev.event_participants || []).map(p => p.name);
-              const sym = currencySymbol(ev.currency);
-              return (
-                <div key={ev.id} style={{ display: "flex", alignItems: "center", gap: 12, paddingBottom: 12, marginBottom: 12, borderBottom: i < Math.min(events.length, 5) - 1 ? "1px solid var(--border)" : "none" }}>
-                  <div style={{ width: 36, height: 36, borderRadius: 10, background: ev.status === "closed" ? "var(--hover-bg)" : "#f0faf4", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>{ev.status === "closed" ? "🔒" : "🎊"}</div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)" }}>{ev.name}</div>
-                    <div style={{ fontSize: 11, color: "var(--text-sub)", marginTop: 2 }}>{ev.date} · {participants.length} participant{participants.length > 1 ? "s" : ""} · {sym}</div>
-                  </div>
-                  <div style={{ textAlign: "right", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{fmt(evTotal, sym)}</div>
-                    {/* Accès rapide */}
-                    {navigateTo && ev.status === "open" && (
-                      <div style={{ display: "flex", gap: 4 }}>
-                        <button onClick={() => navigateTo("expenses")}
-                          title="Voir les charges" style={{ fontSize: 10, padding: "2px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--hover-bg)", color: "var(--text-muted)", cursor: "pointer", fontFamily: "inherit" }}>
-                          Charges →
-                        </button>
-                        <button onClick={() => navigateTo("balance")}
-                          title="Voir la répartition" style={{ fontSize: 10, padding: "2px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--hover-bg)", color: "var(--text-muted)", cursor: "pointer", fontFamily: "inherit" }}>
-                          Soldes →
-                        </button>
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {evProgression.map(({ ev, participants, settled, pct, total, sym }) => (
+                  <div key={ev.id}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                        <span style={{ fontSize: 14 }}>🎊</span>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.name}</span>
+                        <span style={{ fontSize: 10, color: "var(--text-sub)", flexShrink: 0 }}>{ev.date}</span>
                       </div>
-                    )}
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+                        <span style={{ fontSize: 11, color: "var(--text-sub)" }}>{settled}/{participants.length} soldés</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{fmt(total, sym)}</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: pct === 100 ? "#2E7D32" : "#F57F17" }}>{pct}%</span>
+                      </div>
+                    </div>
+                    <div style={{ background: "var(--border)", borderRadius: 6, height: 6, overflow: "hidden" }}>
+                      <div style={{ background: pct === 100 ? "#2E7D32" : "#F57F17", borderRadius: 6, height: 6, width: `${pct}%`, transition: "width 0.6s ease" }} />
+                    </div>
                   </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Grille basse : top catégories + activité récente ── */}
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
+
+            {/* Top catégories */}
+            <div style={{ background: "var(--bg-secondary)", borderRadius: 16, padding: 20, border: "1px solid var(--border)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>🏷️ Top catégories</div>
+                <button onClick={() => navigateTo && navigateTo("analytics")} style={{ fontSize: 11, color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>Analyses →</button>
+              </div>
+              {byCategory.length === 0 ? (
+                <div style={{ color: "var(--text-sub)", fontSize: 13, textAlign: "center", padding: "20px 0" }}>Aucune charge enregistrée</div>
+              ) : byCategory.map(c => (
+                <div key={c.cat} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                  <span style={{ fontSize: 18, flexShrink: 0, width: 26 }}>{CATEGORIES[c.cat].icon}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                      <span style={{ fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.cat}</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", flexShrink: 0, marginLeft: 8 }}>
+                        {grandTotal > 0 ? ((c.total / grandTotal) * 100).toFixed(0) : 0}%
+                      </span>
+                    </div>
+                    <div style={{ background: "var(--border)", borderRadius: 6, height: 5, overflow: "hidden" }}>
+                      <div style={{ background: CATEGORIES[c.cat].accent, borderRadius: 6, height: 5, width: `${grandTotal > 0 ? (c.total / grandTotal) * 100 : 0}%`, transition: "width 0.5s" }} />
+                    </div>
+                  </div>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", flexShrink: 0, minWidth: 48, textAlign: "right" }}>{fmt(c.total)}</span>
                 </div>
-              );
-            })}
+              ))}
+            </div>
+
+            {/* Activité récente */}
+            <div style={{ background: "var(--bg-secondary)", borderRadius: 16, padding: 20, border: "1px solid var(--border)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>🕐 Activité récente</div>
+                <button onClick={() => navigateTo && navigateTo("expenses")} style={{ fontSize: 11, color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>Toutes →</button>
+              </div>
+              {recentExpenses.length === 0 ? (
+                <div style={{ color: "var(--text-sub)", fontSize: 13, textAlign: "center", padding: "20px 0" }}>Aucune charge récente</div>
+              ) : recentExpenses.map((ex, i) => {
+                const ev = events.find(e => e.id === ex.event_id);
+                const cat = CATEGORIES[ex.category];
+                const total = ex.qty * (ex.unit_price ?? 0);
+                const sym = currencySymbol(ev?.currency);
+                return (
+                  <div key={ex.id} style={{ display: "flex", alignItems: "center", gap: 10, paddingBottom: 12, marginBottom: 12, borderBottom: i < recentExpenses.length - 1 ? "1px solid var(--border)" : "none" }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 10, background: cat?.color || "#f5f5f5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}>{cat?.icon || "🧾"}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ex.detail || "—"}</div>
+                      <div style={{ fontSize: 10, color: "var(--text-sub)", marginTop: 2 }}>{ev?.name} · {ex.is_unpaid ? "⏳ Non réglée" : `par ${ex.paid_by}`}</div>
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", flexShrink: 0 }}>{fmt(total, sym)}</div>
+                  </div>
+                );
+              })}
+            </div>
+
           </div>
-        </div>
+        </>
       )}
     </div>
   );
@@ -2379,8 +2475,10 @@ function GuestEditExpenseForm({ expense, events, onSubmit, onCancel, saving }) {
   );
 }
 function Analytics({ events, expenses, contributions, isMobile, t }) {
+  const [tab, setTab] = useState("all"); // "all" | "event" | "charges" | "personal"
   const [sel, setSel] = useState(events[0]?.id || "");
-  const [viewMode, setViewMode] = useState("event"); // "event" | "personal"
+
+  // ── Données événement sélectionné ─────────────────────────
   const ev = events.find(e => e.id === sel);
   const evExp = expenses.filter(e => e.event_id === sel);
   const sym = currencySymbol(ev?.currency);
@@ -2390,9 +2488,33 @@ function Analytics({ events, expenses, contributions, isMobile, t }) {
   (contributions[sel] || []).forEach(c => { evContribMap[c.participant] = c.amount; });
   const byCategory = Object.keys(CATEGORIES).map(cat => ({
     cat, total: evExp.filter(e => e.category === cat).reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0)
-  })).filter(c => c.total > 0);
+  })).filter(c => c.total > 0).sort((a, b) => b.total - a.total);
 
-  // Statistiques personnelles — tous événements confondus
+  // ── Données tous événements (onglet "Tous") ───────────────
+  const allTotal = expenses.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
+  const evRows = events.map(ev => {
+    const exps = expenses.filter(e => e.event_id === ev.id);
+    const total = exps.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
+    const parts = (ev.event_participants || []).map(p => p.name);
+    const contribs = {};
+    (contributions[ev.id] || []).forEach(c => { contribs[c.participant] = c.amount; });
+    const settled = parts.filter(p => isSettled(computeNetBalance(exps, contribs, p))).length;
+    const pct = parts.length > 0 ? Math.round((settled / parts.length) * 100) : 0;
+    return { ev, total, parts, settled, pct, expCount: exps.length, sym: currencySymbol(ev.currency) };
+  });
+
+  // ── Données par charge (onglet "Par charge") ──────────────
+  const allByCat = Object.keys(CATEGORIES).map(cat => {
+    const catExps = expenses.filter(e => e.category === cat);
+    const total = catExps.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
+    const count = catExps.length;
+    const avg = count > 0 ? total / count : 0;
+    const max = catExps.reduce((m, e) => Math.max(m, e.qty * (e.unit_price ?? 0)), 0);
+    return { cat, total, count, avg, max };
+  }).filter(c => c.count > 0).sort((a, b) => b.total - a.total);
+  const topExpenses = [...expenses].sort((a, b) => (b.qty * (b.unit_price ?? 0)) - (a.qty * (a.unit_price ?? 0))).slice(0, 8);
+
+  // ── Données par participant ───────────────────────────────
   const allParticipants = [...new Set(events.flatMap(e => (e.event_participants || []).map(p => p.name)))].sort();
   const [selParticipant, setSelParticipant] = useState(allParticipants[0] || "");
 
@@ -2417,45 +2539,286 @@ function Analytics({ events, expenses, contributions, isMobile, t }) {
     ).sort((a, b) => b[1] - a[1])[0];
     return { pEvents, byEv, totalOwed, totalPaid, totalAdvanced, expenseCount, netGlobal: totalPaid - totalOwed, favCat };
   };
-
   const ps = selParticipant ? personalStats(selParticipant) : null;
 
   const allCurrencies = [...new Set(events.map(e => e.currency))];
   const mixedCurrencies = allCurrencies.length > 1;
 
+  const TABS = [
+    { key: "all",      label: "🌐 Tous" },
+    { key: "event",    label: "📊 Par événement" },
+    { key: "charges",  label: "🏷️ Par charge" },
+    { key: "personal", label: "👤 Par participant" },
+  ];
+
+  const TabBar = () => (
+    <div style={{ display: "flex", background: "var(--hover-bg)", borderRadius: 12, padding: 3, gap: 2, flexWrap: "wrap" }}>
+      {TABS.map(tb => (
+        <button key={tb.key} onClick={() => setTab(tb.key)}
+          style={{ padding: isMobile ? "6px 10px" : "7px 14px", borderRadius: 9, border: "none", background: tab === tb.key ? "#0F0F0F" : "transparent", color: tab === tb.key ? "#fff" : "var(--text-muted)", fontSize: isMobile ? 11 : 12, fontWeight: tab === tb.key ? 700 : 400, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s", whiteSpace: "nowrap" }}>
+          {tb.label}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
+      {/* ── Header ── */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
         <div>
-          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2 }}>{t ? t("ana_title") : "Analyses"}</h2>
-          <p style={{ color: "#888", fontSize: 12 }}>{t ? t("ana_subtitle") : "Statistiques détaillées par événement"}</p>
+          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2, color: "var(--text)" }}>{t ? t("ana_title") : "Analyses"}</h2>
+          <p style={{ color: "var(--text-sub)", fontSize: 12 }}>{t ? t("ana_subtitle") : "Statistiques détaillées"}</p>
         </div>
-        {/* Tabs Vue événement / Vue personnelle */}
-        <div style={{ display: "flex", background: "#f5f5f5", borderRadius: 10, padding: 3, gap: 2 }}>
-          {[{ key: "event", label: "📊 Par événement" }, { key: "personal", label: "👤 Par participant" }].map(tab => (
-            <button key={tab.key} onClick={() => setViewMode(tab.key)}
-              style={{ padding: "7px 14px", borderRadius: 8, border: "none", background: viewMode === tab.key ? "#0F0F0F" : "transparent", color: viewMode === tab.key ? "#fff" : "#888", fontSize: 12, fontWeight: viewMode === tab.key ? 700 : 400, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
-              {tab.label}
-            </button>
-          ))}
-        </div>
+        <TabBar />
       </div>
 
       {mixedCurrencies && (
         <div style={{ background: "#FFF8E1", border: "1px solid #FFE082", borderRadius: 12, padding: "11px 16px", marginBottom: 16, fontSize: 13, color: "#E65100" }}>
-          ⚠️ Vos événements utilisent des devises différentes ({allCurrencies.map(currencySymbol).join(", ")}). Les analyses sont affichées séparément par événement.
+          ⚠️ Devises mixtes ({allCurrencies.map(currencySymbol).join(", ")}) — montants non cumulables entre événements.
         </div>
       )}
 
-      {/* ─── VUE PERSONNELLE ─────────────────────────────────── */}
-      {viewMode === "personal" && (
+      {/* ══════════════════════════════════════════════════════
+          ONGLET TOUS
+      ══════════════════════════════════════════════════════ */}
+      {tab === "all" && (
         <div>
+          {/* KPIs globaux */}
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+            <StatCard label="Événements" value={events.length} sub={`${events.filter(e => e.status === "open").length} ouvert(s)`} accent="#0F0F0F" />
+            <StatCard label="Charges totales" value={expenses.length} sub="toutes catégories" accent="#1565C0" />
+            <StatCard label="Participants" value={allParticipants.length} sub="profils uniques" accent="#6A1B9A" />
+            <StatCard label="Budget cumulé" value={fmt(allTotal)} sub="toutes devises" accent="#2E7D32" />
+          </div>
+
+          {/* Tableau synthèse par événement */}
+          <div style={{ background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border)", overflow: "hidden", marginBottom: 20 }}>
+            <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)", fontSize: 14, fontWeight: 700, color: "var(--text)" }}>
+              Synthèse par événement
+            </div>
+            {evRows.length === 0 ? <EmptyState icon="🎊" title="Aucun événement" subtitle="" /> : (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 500 }}>
+                  <thead>
+                    <tr style={{ background: "var(--hover-bg)" }}>
+                      {["Événement", "Date", "Participants", "Charges", "Budget", "Progression"].map(h => (
+                        <th key={h} style={{ padding: "10px 16px", fontSize: 10, fontWeight: 700, color: "var(--text-sub)", textAlign: "left", textTransform: "uppercase", letterSpacing: 0.7, whiteSpace: "nowrap" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {evRows.map(({ ev, total, parts, settled, pct, expCount, sym }, i) => (
+                      <tr key={ev.id} style={{ borderBottom: i < evRows.length - 1 ? "1px solid var(--border)" : "none" }}>
+                        <td style={{ padding: "12px 16px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span>{ev.status === "closed" ? "🔒" : "🎊"}</span>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}><Truncate text={ev.name} max={20} /></span>
+                          </div>
+                        </td>
+                        <td style={{ padding: "12px 16px", fontSize: 12, color: "var(--text-sub)", whiteSpace: "nowrap" }}>{ev.date}</td>
+                        <td style={{ padding: "12px 16px", fontSize: 13, color: "var(--text)", textAlign: "center" }}>{parts.length}</td>
+                        <td style={{ padding: "12px 16px", fontSize: 13, color: "var(--text)", textAlign: "center" }}>{expCount}</td>
+                        <td style={{ padding: "12px 16px", fontSize: 13, fontWeight: 700, color: "var(--text)", whiteSpace: "nowrap" }}>{fmt(total, sym)}</td>
+                        <td style={{ padding: "12px 16px", minWidth: 120 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <div style={{ flex: 1, background: "var(--border)", borderRadius: 4, height: 6, overflow: "hidden" }}>
+                              <div style={{ background: pct === 100 ? "#2E7D32" : "#F57F17", height: 6, width: `${pct}%`, borderRadius: 4, transition: "width 0.5s" }} />
+                            </div>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: pct === 100 ? "#2E7D32" : "#F57F17", flexShrink: 0 }}>{pct}%</span>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Top catégories global */}
+          <div style={{ background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border)", padding: 20 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 16 }}>Top catégories — tous événements</div>
+            {allByCat.slice(0, 6).map(c => (
+              <div key={c.cat} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                <span style={{ fontSize: 18, width: 26, flexShrink: 0 }}>{CATEGORIES[c.cat].icon}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                    <span style={{ fontSize: 12, color: "var(--text)" }}>{c.cat}</span>
+                    <span style={{ fontSize: 11, color: "var(--text-sub)", flexShrink: 0, marginLeft: 8 }}>{c.count} charge{c.count > 1 ? "s" : ""}</span>
+                  </div>
+                  <div style={{ background: "var(--border)", borderRadius: 6, height: 6, overflow: "hidden" }}>
+                    <div style={{ background: CATEGORIES[c.cat].accent, borderRadius: 6, height: 6, width: `${allTotal > 0 ? (c.total / allTotal) * 100 : 0}%`, transition: "width 0.5s" }} />
+                  </div>
+                </div>
+                <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", flexShrink: 0, minWidth: 52, textAlign: "right" }}>{fmt(c.total)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════
+          ONGLET PAR ÉVÉNEMENT
+      ══════════════════════════════════════════════════════ */}
+      {tab === "event" && (
+        <div>
+          {/* Sélecteur événement */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+            {events.map(ev => (
+              <button key={ev.id} onClick={() => setSel(ev.id)}
+                style={{ padding: "7px 14px", borderRadius: 20, border: `1.5px solid ${sel === ev.id ? "#0F0F0F" : "var(--border)"}`, background: sel === ev.id ? "#0F0F0F" : "var(--bg-secondary)", color: sel === ev.id ? "#fff" : "var(--text-muted)", fontSize: 12, cursor: "pointer", fontWeight: sel === ev.id ? 700 : 400, transition: "all 0.15s" }}>
+                {ev.status === "closed" ? "🔒 " : ""}<Truncate text={ev.name} max={20} />
+                <span style={{ marginLeft: 4, opacity: 0.6, fontSize: 10 }}>({currencySymbol(ev.currency)})</span>
+              </button>
+            ))}
+          </div>
+
+          {!ev ? (
+            <EmptyState icon="📊" title="Sélectionnez un événement" subtitle="Choisissez un événement pour voir ses statistiques." />
+          ) : (
+            <>
+              {/* KPIs événement */}
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+                <StatCard label="Budget collectif" value={fmt(budget, sym)} sub={`${evExp.length} charge${evExp.length > 1 ? "s" : ""}`} accent="#0F0F0F" />
+                <StatCard label="Participants" value={participants.length} sub={`Moy. ${fmt(participants.length > 0 ? budget / participants.length : 0, sym)}/p.`} accent="#1565C0" />
+                <StatCard label="Charge max" value={fmt(evExp.reduce((m, e) => Math.max(m, e.qty * (e.unit_price ?? 0)), 0), sym)} sub="dépense unitaire la plus élevée" accent="#F57F17" />
+                <StatCard label="Statut" value={ev.status === "closed" ? "Bouclé 🔒" : "Ouvert ✓"} sub={`${ev.date} · ${sym}`} accent={ev.status === "closed" ? "#999" : "#2E7D32"} />
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
+                {/* Répartition par catégorie */}
+                <div style={{ background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border)", padding: 20 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16, color: "var(--text)" }}>Répartition par catégorie</div>
+                  {byCategory.length === 0 ? <EmptyState icon="🧾" title="Aucune charge" subtitle="" /> : byCategory.map(c => (
+                    <div key={c.cat} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                      <span style={{ fontSize: 18, flexShrink: 0, width: 26 }}>{CATEGORIES[c.cat].icon}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                          <span style={{ fontSize: 12, color: "var(--text)" }}>{c.cat}</span>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", flexShrink: 0 }}>{fmt(c.total, sym)} <span style={{ color: "var(--text-sub)", fontWeight: 400 }}>({budget > 0 ? ((c.total / budget) * 100).toFixed(0) : 0}%)</span></span>
+                        </div>
+                        <div style={{ background: "var(--border)", borderRadius: 6, height: 7, overflow: "hidden" }}>
+                          <div style={{ background: CATEGORIES[c.cat].accent, borderRadius: 6, height: 7, width: `${budget > 0 ? (c.total / budget) * 100 : 0}%`, transition: "width 0.5s ease" }} />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Part due + progression par participant */}
+                <div style={{ background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border)", padding: 20 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16, color: "var(--text)" }}>Part due par participant</div>
+                  {participants.length === 0 ? <EmptyState icon="👥" title="Aucun participant" subtitle="" /> : participants.map(p => {
+                    const owed = computeOwed(evExp, p);
+                    const paid = evContribMap[p] || 0;
+                    const pct = owed > 0 ? Math.min((paid / owed) * 100, 100) : 100;
+                    const net = paid - owed;
+                    const settled = isSettled(net);
+                    const status = settleStatus(net, owed > 0);
+                    return (
+                      <div key={p} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+                        <Avatar name={p} size={28} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p}</span>
+                            <span style={{ fontSize: 11, color: status.color, fontWeight: 700, flexShrink: 0, marginLeft: 4 }}>
+                              {settled ? "✓ Soldé" : `${fmt(paid, sym)} / ${fmt(owed, sym)}`}
+                            </span>
+                          </div>
+                          <div style={{ background: "var(--border)", borderRadius: 6, height: 6, overflow: "hidden" }}>
+                            <div style={{ background: status.color, borderRadius: 6, height: 6, width: `${pct}%`, transition: "width 0.4s ease" }} />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════
+          ONGLET PAR CHARGE
+      ══════════════════════════════════════════════════════ */}
+      {tab === "charges" && (
+        <div>
+          {/* KPIs charges */}
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+            <StatCard label="Total charges" value={expenses.length} sub="enregistrées" accent="#0F0F0F" />
+            <StatCard label="Montant total" value={fmt(allTotal)} sub="toutes devises" accent="#1565C0" />
+            <StatCard label="Moyenne/charge" value={fmt(expenses.length > 0 ? allTotal / expenses.length : 0)} sub="par dépense" accent="#F57F17" />
+            <StatCard label="Catégories actives" value={allByCat.length} sub={`sur ${Object.keys(CATEGORIES).length} disponibles`} accent="#2E7D32" />
+          </div>
+
+          {/* Barres horizontales par catégorie */}
+          <div style={{ background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border)", padding: 20, marginBottom: 16 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 16 }}>Volume par catégorie</div>
+            {allByCat.map(c => (
+              <div key={c.cat} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+                <span style={{ fontSize: 18, width: 26, flexShrink: 0 }}>{CATEGORIES[c.cat].icon}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{c.cat}</span>
+                    <div style={{ display: "flex", gap: 12, fontSize: 11, color: "var(--text-sub)", flexShrink: 0 }}>
+                      <span>{c.count} charge{c.count > 1 ? "s" : ""}</span>
+                      <span>moy. {fmt(c.avg)}</span>
+                      <span style={{ fontWeight: 700, color: "var(--text)" }}>{fmt(c.total)}</span>
+                    </div>
+                  </div>
+                  <div style={{ background: "var(--border)", borderRadius: 6, height: 8, overflow: "hidden" }}>
+                    <div style={{ background: CATEGORIES[c.cat].accent, borderRadius: 6, height: 8, width: `${allTotal > 0 ? (c.total / allTotal) * 100 : 0}%`, transition: "width 0.5s" }} />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Top 8 charges */}
+          <div style={{ background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border)", overflow: "hidden" }}>
+            <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)", fontSize: 14, fontWeight: 700, color: "var(--text)" }}>
+              Top charges par montant
+            </div>
+            {topExpenses.map((ex, i) => {
+              const cat = CATEGORIES[ex.category];
+              const evItem = events.find(e => e.id === ex.event_id);
+              const total = ex.qty * (ex.unit_price ?? 0);
+              const evSym = currencySymbol(evItem?.currency);
+              const maxTotal = topExpenses[0] ? topExpenses[0].qty * (topExpenses[0].unit_price ?? 0) : 1;
+              return (
+                <div key={ex.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 20px", borderBottom: i < topExpenses.length - 1 ? "1px solid var(--border)" : "none" }}>
+                  <span style={{ fontSize: 16, color: "var(--text-sub)", fontWeight: 700, width: 20, flexShrink: 0 }}>#{i + 1}</span>
+                  <span style={{ fontSize: 18, flexShrink: 0 }}>{cat?.icon || "🧾"}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ex.detail || "—"}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+                      <div style={{ flex: 1, background: "var(--border)", borderRadius: 4, height: 4, overflow: "hidden" }}>
+                        <div style={{ background: cat?.accent || "#aaa", height: 4, width: `${(total / maxTotal) * 100}%`, borderRadius: 4, transition: "width 0.4s" }} />
+                      </div>
+                      <span style={{ fontSize: 10, color: "var(--text-sub)", flexShrink: 0 }}>{evItem?.name}</span>
+                    </div>
+                  </div>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", flexShrink: 0 }}>{fmt(total, evSym)}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════
+          ONGLET PAR PARTICIPANT
+      ══════════════════════════════════════════════════════ */}
+      {tab === "personal" && (
+        <div>
+          {/* Sélecteur participant */}
           <div style={{ marginBottom: 20 }}>
-            <label style={S.label}>Sélectionner un participant</label>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {allParticipants.map(p => (
                 <button key={p} onClick={() => setSelParticipant(p)}
-                  style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", borderRadius: 20, border: `1.5px solid ${selParticipant === p ? "#0F0F0F" : "#e0e0e0"}`, background: selParticipant === p ? "#0F0F0F" : "#fff", color: selParticipant === p ? "#fff" : "#555", fontSize: 13, cursor: "pointer", fontWeight: selParticipant === p ? 700 : 400, transition: "all 0.15s" }}>
+                  style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", borderRadius: 20, border: `1.5px solid ${selParticipant === p ? "#0F0F0F" : "var(--border)"}`, background: selParticipant === p ? "#0F0F0F" : "var(--bg-secondary)", color: selParticipant === p ? "#fff" : "var(--text-muted)", fontSize: 13, cursor: "pointer", fontWeight: selParticipant === p ? 700 : 400, transition: "all 0.15s" }}>
                   <Avatar name={p} size={20} />
                   {p}
                 </button>
@@ -2463,118 +2826,68 @@ function Analytics({ events, expenses, contributions, isMobile, t }) {
             </div>
           </div>
 
-          {ps && (
+          {ps ? (
             <div>
-              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 14, marginBottom: 20 }}>
-                <StatCard label="Part due totale" value={fmt(ps.totalOwed)} sub={`sur ${ps.expenseCount} charge(s)`} accent="#C62828" />
-                <StatCard label="Total avancé" value={fmt(ps.totalAdvanced)} sub="charges payées en avance" accent="#1565C0" />
+              {/* KPIs participant */}
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+                <StatCard label="Part due totale" value={fmt(ps.totalOwed)} sub={`${ps.expenseCount} charge(s)`} accent="#C62828" />
+                <StatCard label="Total avancé" value={fmt(ps.totalAdvanced)} sub="payé pour les autres" accent="#1565C0" />
                 <StatCard label="Solde global" value={`${ps.netGlobal >= 0 ? "+" : ""}${fmt(ps.netGlobal)}`} sub={ps.netGlobal >= 0 ? "à recevoir" : "à rembourser"} accent={ps.netGlobal >= 0 ? "#2E7D32" : "#C62828"} />
-                <StatCard label="Événements" value={ps.pEvents.length} sub={ps.favCat ? `Catégorie fav: ${ps.favCat[0]}` : "Aucune charge"} accent="#6A1B9A" />
+                <StatCard label="Événements" value={ps.pEvents.length} sub={ps.favCat ? `Fav: ${ps.favCat[0]}` : "—"} accent="#6A1B9A" />
               </div>
 
-              <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #eee", overflow: "hidden" }}>
-                <div style={{ padding: "14px 18px", borderBottom: "1px solid #f0f0f0", fontSize: 14, fontWeight: 700 }}>
+              {/* Catégorie favorite */}
+              {ps.favCat && (
+                <div style={{ background: "var(--bg-secondary)", borderRadius: 14, border: "1px solid var(--border)", padding: "14px 18px", marginBottom: 16, display: "flex", alignItems: "center", gap: 14 }}>
+                  <span style={{ fontSize: 28 }}>{CATEGORIES[ps.favCat[0]]?.icon || "🏷️"}</span>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Catégorie préférée : {ps.favCat[0]}</div>
+                    <div style={{ fontSize: 12, color: "var(--text-sub)" }}>{ps.favCat[1]} charge{ps.favCat[1] > 1 ? "s" : ""} dans cette catégorie</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Détail par événement */}
+              <div style={{ background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border)", overflow: "hidden" }}>
+                <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)", fontSize: 14, fontWeight: 700, color: "var(--text)" }}>
                   Détail par événement
                 </div>
                 {ps.byEv.map(({ ev, owed, paid, advanced, net }) => {
                   const evSym = currencySymbol(ev.currency);
                   const hasCharges = owed > 0;
                   const status = settleStatus(net, hasCharges);
+                  const pct = owed > 0 ? Math.min((paid / owed) * 100, 100) : 100;
                   return (
-                    <div key={ev.id} style={{ padding: "14px 18px", borderBottom: "1px solid #f5f5f5", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                      <div style={{ fontSize: 20 }}>{ev.status === "closed" ? "🔒" : "🎊"}</div>
-                      <div style={{ flex: 1, minWidth: 140 }}>
-                        <div style={{ fontSize: 13, fontWeight: 700 }}><Truncate text={ev.name} max={25} /></div>
-                        <div style={{ fontSize: 11, color: "#aaa" }}>{ev.date} · {evSym}</div>
+                    <div key={ev.id} style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: hasCharges ? 8 : 0, flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 16 }}>{ev.status === "closed" ? "🔒" : "🎊"}</span>
+                        <div style={{ flex: 1, minWidth: 100 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}><Truncate text={ev.name} max={25} /></div>
+                          <div style={{ fontSize: 11, color: "var(--text-sub)" }}>{ev.date} · {evSym}</div>
+                        </div>
+                        {hasCharges && (
+                          <div style={{ fontSize: 11, color: "var(--text-sub)" }}>
+                            Doit {fmt(owed, evSym)} · Avancé {fmt(advanced, evSym)}
+                          </div>
+                        )}
+                        <span style={{ padding: "4px 10px", borderRadius: 20, background: status.bg, color: status.color, fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                          {status.label}
+                        </span>
                       </div>
-                      <div style={{ fontSize: 12, color: "#555" }}>
-                        {hasCharges ? `Doit ${fmt(owed, evSym)} · Avancé ${fmt(advanced, evSym)}` : "Non impliqué dans les charges"}
-                      </div>
-                      <span style={{ padding: "4px 10px", borderRadius: 20, background: status.bg, color: status.color, fontSize: 11, fontWeight: 700 }}>
-                        {status.label}
-                      </span>
+                      {hasCharges && (
+                        <div style={{ background: "var(--border)", borderRadius: 4, height: 5, overflow: "hidden" }}>
+                          <div style={{ background: status.color, height: 5, width: `${pct}%`, borderRadius: 4, transition: "width 0.4s" }} />
+                        </div>
+                      )}
                     </div>
                   );
                 })}
               </div>
             </div>
+          ) : (
+            <EmptyState icon="👤" title="Sélectionnez un participant" subtitle="Choisissez un participant pour voir ses statistiques." />
           )}
-          {!ps && <EmptyState icon="👤" title="Sélectionnez un participant" subtitle="Choisissez un participant pour voir ses statistiques." />}
         </div>
-      )}
-
-      {/* ─── VUE PAR ÉVÉNEMENT ───────────────────────────────── */}
-      {viewMode === "event" && (
-        <>
-          <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
-            {events.map(ev => (
-              <button key={ev.id} onClick={() => setSel(ev.id)} style={{ padding: "7px 14px", borderRadius: 20, border: `1.5px solid ${sel === ev.id ? "#0F0F0F" : "#e0e0e0"}`, background: sel === ev.id ? "#0F0F0F" : "#fff", color: sel === ev.id ? "#fff" : "#555", fontSize: 12, cursor: "pointer", fontWeight: sel === ev.id ? 700 : 400, transition: "all 0.15s" }}>
-                {ev.status === "closed" ? "🔒 " : ""}<Truncate text={ev.name} max={20} />
-                <span style={{ marginLeft: 4, opacity: 0.6, fontSize: 10 }}>({currencySymbol(ev.currency)})</span>
-              </button>
-            ))}
-          </div>
-
-      {!ev ? (
-        <EmptyState icon="📊" title="Sélectionnez un événement" subtitle="Choisissez un événement pour voir ses statistiques." />
-      ) : (
-        <>
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 14, marginBottom: 20 }}>
-            <StatCard label="Budget collectif" value={fmt(budget, sym)} sub={`${evExp.length} charge${evExp.length > 1 ? "s" : ""} enregistrées`} accent="#0F0F0F" />
-            <StatCard label="Participants" value={participants.length} sub={`Part moy. ${fmt(participants.length > 0 ? budget / participants.length : 0, sym)}/p.`} accent="#1565C0" />
-            <div style={{ gridColumn: isMobile ? "1 / -1" : "auto" }}>
-              <StatCard label="Statut" value={ev.status === "closed" ? "Bouclé 🔒" : "Ouvert"} sub={`Date : ${ev.date} · Devise : ${sym}`} accent={ev.status === "closed" ? "#999" : "#2E7D32"} />
-            </div>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
-            <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #eee", padding: 20 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Répartition par catégorie</div>
-              {byCategory.length === 0 ? <EmptyState icon="🧾" title="Aucune charge" subtitle="" /> : byCategory.map(c => (
-                <div key={c.cat} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-                  <span style={{ fontSize: 18, flexShrink: 0 }}>{CATEGORIES[c.cat].icon}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                      <span style={{ fontSize: 12 }}>{c.cat}</span>
-                      <span style={{ fontSize: 12, fontWeight: 700 }}>{fmt(c.total, sym)} ({budget > 0 ? ((c.total / budget) * 100).toFixed(0) : 0}%)</span>
-                    </div>
-                    <div style={{ background: "#f0f0f0", borderRadius: 6, height: 7, overflow: "hidden" }}>
-                      <div style={{ background: CATEGORIES[c.cat].accent, borderRadius: 6, height: 7, width: `${budget > 0 ? (c.total / budget) * 100 : 0}%`, transition: "width 0.5s ease" }} />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #eee", padding: 20 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Part due par participant</div>
-              {participants.length === 0 ? <EmptyState icon="👥" title="Aucun participant" subtitle="" /> : participants.map(p => {
-                const owed = computeOwed(evExp, p);
-                const paid = evContribMap[p] || 0;
-                const pct = owed > 0 ? Math.min((paid / owed) * 100, 100) : 100;
-                const net = paid - owed;
-                const settled = isSettled(net);
-                const status = settleStatus(net, owed > 0);
-                return (
-                  <div key={p} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-                    <Avatar name={p} size={28} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                        <span style={{ fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p}</span>
-                        <span style={{ fontSize: 11, color: status.color, fontWeight: 700, flexShrink: 0 }}>
-                          {settled ? "✓ Soldé" : `${fmt(paid, sym)} / ${fmt(owed, sym)}`}
-                        </span>
-                      </div>
-                      <div style={{ background: "#f0f0f0", borderRadius: 6, height: 6, overflow: "hidden" }}>
-                        <div style={{ background: status.color, borderRadius: 6, height: 6, width: `${pct}%`, transition: "width 0.4s ease" }} />
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </>
-      )}
-      </>
       )}
     </div>
   );
