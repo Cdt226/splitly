@@ -243,8 +243,8 @@ function EmptyState({ icon, title, subtitle, action }) {
   return (
     <div style={{ textAlign: "center", padding: "48px 24px" }}>
       <div style={{ fontSize: 48, marginBottom: 16 }}>{icon}</div>
-      <div style={{ fontSize: 16, fontWeight: 700, color: "#333", marginBottom: 8 }}>{title}</div>
-      <div style={{ fontSize: 13, color: "#aaa", marginBottom: action ? 20 : 0, maxWidth: 280, margin: "0 auto" }}>{subtitle}</div>
+      <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>{title}</div>
+      <div style={{ fontSize: 13, color: "var(--text-sub)", marginBottom: action ? 20 : 0, maxWidth: 280, margin: "0 auto" }}>{subtitle}</div>
       {action && <div style={{ marginTop: 20 }}>{action}</div>}
     </div>
   );
@@ -322,11 +322,11 @@ function ParticipantToggle({ people, selected, onChange, label }) {
 
 function Modal({ title, onClose, children, size = 500 }) {
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={{ background: "#fff", borderRadius: 18, padding: 28, width: "100%", maxWidth: size, maxHeight: "90vh", overflow: "auto", boxShadow: "0 24px 80px rgba(0,0,0,0.25)" }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ background: "var(--bg-secondary)", borderRadius: 18, padding: 28, width: "100%", maxWidth: size, maxHeight: "90vh", overflow: "auto", boxShadow: "0 24px 80px rgba(0,0,0,0.35)", border: "1px solid var(--border)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 22 }}>
-          <div style={{ fontSize: 17, fontWeight: 700 }}>{title}</div>
-          <button onClick={onClose} style={{ background: "#f5f5f5", border: "none", borderRadius: "50%", width: 32, height: 32, cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center", color: "#666" }}>×</button>
+          <div style={{ fontSize: 17, fontWeight: 700, color: "var(--text)" }}>{title}</div>
+          <button onClick={onClose} style={{ background: "var(--hover-bg)", border: "none", borderRadius: "50%", width: 32, height: 32, cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)" }}>×</button>
         </div>
         {children}
       </div>
@@ -359,12 +359,12 @@ function Spinner({ fullscreen = true }) {
   return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#f4f4f4" }}>{content}</div>;
 }
 
-function StatCard({ label, value, sub, color = "#f8f8f8", accent }) {
+function StatCard({ label, value, sub, color, accent }) {
   return (
-    <div style={{ background: color, borderRadius: 14, padding: "18px 20px", border: "1px solid #eee", borderLeft: accent ? `4px solid ${accent}` : undefined }}>
-      <div style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: 0.9, marginBottom: 6, fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: 24, fontWeight: 700, fontFamily: "'Playfair Display', serif", letterSpacing: -0.5, marginBottom: 4 }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: "#aaa" }}>{sub}</div>}
+    <div style={{ background: "var(--stat-bg)", borderRadius: 14, padding: "18px 20px", border: "1px solid var(--border)", borderLeft: accent ? `4px solid ${accent}` : undefined }}>
+      <div style={{ fontSize: 10, color: "var(--text-sub)", textTransform: "uppercase", letterSpacing: 0.9, marginBottom: 6, fontWeight: 600 }}>{label}</div>
+      <div style={{ fontSize: 24, fontWeight: 700, fontFamily: "'Playfair Display', serif", letterSpacing: -0.5, marginBottom: 4, color: "var(--text)" }}>{value}</div>
+      {sub && <div style={{ fontSize: 11, color: "var(--text-sub)" }}>{sub}</div>}
     </div>
   );
 }
@@ -874,15 +874,66 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
     </button>
   );
 
-  const UserFooter = () => (
+  const UserFooter = () => {
+    const { dark, toggle } = useTheme();
+    const [pushEnabled, setPushEnabled] = useState(Notification.permission === "granted");
+
+    const handlePushToggle = async () => {
+      if (!("Notification" in window) || !("serviceWorker" in navigator)) {
+        addToast("Notifications push non supportées sur ce navigateur.", "warning");
+        return;
+      }
+      if (Notification.permission === "granted") {
+        // Déjà activé — informer
+        addToast("Notifications push déjà activées.", "info");
+        return;
+      }
+      const permission = await Notification.requestPermission();
+      if (permission === "granted") {
+        try {
+          const reg = await navigator.serviceWorker.ready;
+          const sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjZJgGjtHZKhOFaVTFn1vLqKNQ8A", // clé VAPID publique exemple
+          });
+          await fetch("/api/push-subscribe", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ subscription: sub, userId: user.id }),
+          });
+          setPushEnabled(true);
+          addToast("🔔 Notifications push activées !", "success");
+        } catch (e) {
+          addToast("Impossible d'activer les notifications push.", "error");
+        }
+      } else {
+        addToast("Notifications push refusées. Autorisez-les dans les paramètres du navigateur.", "warning");
+      }
+    };
+
+    return (
     <div style={{ padding: "14px 16px", borderTop: "1px solid #1e1e1e", flexShrink: 0 }}>
-      {/* Sélecteur de langue professionnel */}
-      <div style={{ marginBottom: 12 }}>
+      {/* Sélecteur de langue */}
+      <div style={{ marginBottom: 10 }}>
         <div style={{ fontSize: 10, color: "#555", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
           🌐 {lang === "fr" ? "Langue" : lang === "en" ? "Language" : "Idioma"}
         </div>
         <LanguageMenu lang={lang} setLang={setLang} dark={true} />
       </div>
+      {/* Toggle mode sombre */}
+      <button onClick={toggle}
+        style={{ width: "100%", marginBottom: 8, padding: "8px 12px", borderRadius: 9, border: "1px solid #2a2a2a", background: "rgba(255,255,255,0.05)", color: "#aaa", fontSize: 12, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" }}>
+        <span>{dark ? "☀️ Mode clair" : "🌙 Mode sombre"}</span>
+        <div style={{ width: 32, height: 18, borderRadius: 9, background: dark ? "#fff" : "#333", position: "relative", transition: "background 0.2s" }}>
+          <div style={{ position: "absolute", top: 2, left: dark ? 14 : 2, width: 14, height: 14, borderRadius: "50%", background: dark ? "#333" : "#fff", transition: "left 0.2s" }} />
+        </div>
+      </button>
+      {/* Toggle notifications push */}
+      <button onClick={handlePushToggle}
+        style={{ width: "100%", marginBottom: 10, padding: "8px 12px", borderRadius: 9, border: "1px solid #2a2a2a", background: pushEnabled ? "rgba(46,125,50,0.15)" : "rgba(255,255,255,0.05)", color: pushEnabled ? "#4CAF50" : "#aaa", fontSize: 12, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 8 }}>
+        <span>{pushEnabled ? "🔔 Notifications activées" : "🔕 Activer les notifications"}</span>
+      </button>
+      {/* Profil */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
         <Avatar name={user?.user_metadata?.full_name?.[0] || user?.email?.[0] || "U"} size={30} />
         <div style={{ overflow: "hidden", flex: 1, minWidth: 0 }}>
@@ -893,6 +944,7 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
       <button onClick={onSignOut} style={{ width: "100%", padding: "7px", borderRadius: 8, border: "1px solid #2a2a2a", background: "transparent", color: "#666", fontSize: 11, cursor: "pointer", transition: "all 0.15s", fontFamily: "inherit" }}>{t("nav_logout")}</button>
     </div>
   );
+  };
 
   if (isMobile) return (
     <>
@@ -2696,17 +2748,92 @@ function NotificationsPage({ notifications, events, expenses, pendingActions, us
 // ─── STYLES ───────────────────────────────────────────────────
 const S = {
   label: { display: "block", fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 },
-  input: { width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #e5e5e5", fontSize: 13, outline: "none", background: "#fff", boxSizing: "border-box", color: "#333", transition: "border-color 0.15s", fontFamily: "inherit" },
-  btnDark: { background: "#0F0F0F", color: "#fff", border: "none", borderRadius: 10, padding: "10px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", transition: "opacity 0.15s" },
-  btnGhost: { background: "transparent", color: "#555", border: "1.5px solid #e0e0e0", borderRadius: 10, padding: "10px 20px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
-  card: { background: "#f9f9f9", borderRadius: 16, padding: 20, border: "1px solid #eee", marginBottom: 16 },
-  sectionTitle: { fontSize: 15, fontWeight: 700, marginBottom: 16 },
+  input: { width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid var(--border)", fontSize: 13, outline: "none", background: "var(--input-bg)", boxSizing: "border-box", color: "var(--text)", transition: "border-color 0.15s", fontFamily: "inherit" },
+  btnDark: { background: "var(--btn-dark-bg)", color: "var(--btn-dark-text)", border: "none", borderRadius: 10, padding: "10px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", transition: "opacity 0.15s" },
+  btnGhost: { background: "transparent", color: "var(--text-muted)", border: "1.5px solid var(--border)", borderRadius: 10, padding: "10px 20px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
+  card: { background: "var(--card-bg)", borderRadius: 16, padding: 20, border: "1px solid var(--border)", marginBottom: 16 },
+  sectionTitle: { fontSize: 15, fontWeight: 700, marginBottom: 16, color: "var(--text)" },
 };
+
+// ─── THEME CONTEXT ────────────────────────────────────────────
+const THEME_KEY = "splitly_theme";
+import { createContext, useContext } from "react";
+const ThemeContext = createContext({ dark: false, toggle: () => {} });
+
+function ThemeProvider({ children }) {
+  const [dark, setDark] = useState(() => {
+    try { return localStorage.getItem(THEME_KEY) === "dark"; } catch { return false; }
+  });
+
+  const toggle = useCallback(() => {
+    setDark(d => {
+      const next = !d;
+      try { localStorage.setItem(THEME_KEY, next ? "dark" : "light"); } catch {}
+      return next;
+    });
+  }, []);
+
+  // Injecter les CSS variables selon le thème
+  useEffect(() => {
+    const root = document.documentElement;
+    if (dark) {
+      root.style.setProperty("--bg", "#111");
+      root.style.setProperty("--bg-secondary", "#1a1a1a");
+      root.style.setProperty("--card-bg", "#1e1e1e");
+      root.style.setProperty("--border", "#2a2a2a");
+      root.style.setProperty("--text", "#f0f0f0");
+      root.style.setProperty("--text-muted", "#888");
+      root.style.setProperty("--text-sub", "#666");
+      root.style.setProperty("--input-bg", "#252525");
+      root.style.setProperty("--btn-dark-bg", "#fff");
+      root.style.setProperty("--btn-dark-text", "#0F0F0F");
+      root.style.setProperty("--hover-bg", "#252525");
+      root.style.setProperty("--stat-bg", "#1e1e1e");
+      document.body.style.background = "#111";
+      document.body.style.color = "#f0f0f0";
+    } else {
+      root.style.setProperty("--bg", "#f2f2f2");
+      root.style.setProperty("--bg-secondary", "#fff");
+      root.style.setProperty("--card-bg", "#f9f9f9");
+      root.style.setProperty("--border", "#e5e5e5");
+      root.style.setProperty("--text", "#1a1a1a");
+      root.style.setProperty("--text-muted", "#555");
+      root.style.setProperty("--text-sub", "#aaa");
+      root.style.setProperty("--input-bg", "#fff");
+      root.style.setProperty("--btn-dark-bg", "#0F0F0F");
+      root.style.setProperty("--btn-dark-text", "#fff");
+      root.style.setProperty("--hover-bg", "#f5f5f5");
+      root.style.setProperty("--stat-bg", "#f9f9f9");
+      document.body.style.background = "#f2f2f2";
+      document.body.style.color = "#1a1a1a";
+    }
+  }, [dark]);
+
+  return (
+    <ThemeContext.Provider value={{ dark, toggle }}>
+      <style>{`
+        :root {
+          --bg: #f2f2f2; --bg-secondary: #fff; --card-bg: #f9f9f9;
+          --border: #e5e5e5; --text: #1a1a1a; --text-muted: #555;
+          --text-sub: #aaa; --input-bg: #fff; --btn-dark-bg: #0F0F0F;
+          --btn-dark-text: #fff; --hover-bg: #f5f5f5; --stat-bg: #f9f9f9;
+        }
+        * { box-sizing: border-box; transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease; }
+        body { margin: 0; }
+      `}</style>
+      {children}
+    </ThemeContext.Provider>
+  );
+}
+
+function useTheme() {
+  return useContext(ThemeContext);
+}
 
 // ─── APP RACINE ───────────────────────────────────────────────
 const GUEST_SESSION_KEY = "splitly_guest_email";
 
-export default function App() {
+function AppInner() {
   const isMobile = useIsMobile();
   const [menuOpen, setMenuOpen] = useState(false);
   const [user, setUser] = useState(null);
@@ -2896,13 +3023,13 @@ export default function App() {
   };
 
   return (
-    <div style={{ display: "flex", height: "100vh", width: "100vw", background: "#f2f2f2", fontFamily: "'DM Sans', sans-serif", overflow: "hidden" }}>
+    <div style={{ display: "flex", height: "100vh", width: "100vw", background: "var(--bg)", fontFamily: "'DM Sans', sans-serif", overflow: "hidden" }}>
       <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
       <ToastContainer toasts={toasts} removeToast={removeToast} />
       <Sidebar active={active} setActive={setActive} unreadCount={unreadCount} pendingCount={pendingCount}
         user={user} onSignOut={handleSignOut} isMobile={isMobile} menuOpen={menuOpen} setMenuOpen={setMenuOpen}
         t={t} lang={lang} setLang={setLang} searchQuery={searchQuery} setSearchQuery={setSearchQuery} />
-      <main style={{ flex: 1, overflow: "auto", padding: isMobile ? "72px 16px 80px" : "32px 40px", boxSizing: "border-box", minWidth: 0 }}>
+      <main style={{ flex: 1, overflow: "auto", padding: isMobile ? "72px 16px 80px" : "32px 40px", boxSizing: "border-box", minWidth: 0, background: "var(--bg)" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto", width: "100%" }}>
           {showSearch ? (
             <div>
@@ -2977,5 +3104,13 @@ export default function App() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ThemeProvider>
+      <AppInner />
+    </ThemeProvider>
   );
 }
