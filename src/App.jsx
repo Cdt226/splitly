@@ -788,7 +788,7 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
         {active === "events" && (
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
-              <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700, color: "var(--text, #0F0F0F)" }}>Événements partagés</h2>
+              <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700, color: "#0F0F0F" }}>Événements partagés</h2>
             </div>
             {events.length === 0 ? (
               <EmptyState icon="🎊" title="Aucun événement" subtitle="Aucun événement n'a encore été partagé avec vous." />
@@ -808,8 +808,11 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
                             <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: ev.event_type === "budget" ? "#FFF8E1" : "#F3E5F5", color: ev.event_type === "budget" ? "#F57F17" : "#6A1B9A", fontWeight: 700 }}>
                               {ev.event_type === "budget" ? "🏦 Budget" : "💸 Split"}
                             </span>
+                            <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: ev.status === "closed" ? "#f0f0f0" : "#E8F5E9", color: ev.status === "closed" ? "#888" : "#2E7D32", fontWeight: 700 }}>
+                              {ev.status === "closed" ? "🔒 Bouclé" : "✓ Ouvert"}
+                            </span>
                           </div>
-                          <div style={{ fontSize: 11, color: "#888", marginBottom: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          <div style={{ fontSize: 11, color: "#888", marginBottom: 8 }}>
                             {ev.date} · {currencySymbol(ev.currency)} · {participants.length} participants
                           </div>
                           <AvatarStack names={participants} size={22} />
@@ -817,7 +820,6 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
                         <div style={{ textAlign: "right", flexShrink: 0 }}>
                           <div style={{ fontSize: 16, fontWeight: 700, fontFamily: "'Playfair Display', serif" }}>{fmt(evTotal, currencySymbol(ev.currency))}</div>
                           <div style={{ fontSize: 10, color: "#aaa" }}>{ev.event_type === "budget" ? "dépenses" : "budget"}</div>
-                          {/* PDF si droits */}
                           {can(ev.id, "export_pdf") && ev.event_type !== "budget" && (
                             <button onClick={() => {
                               const evExp = expenses.filter(e => e.event_id === ev.id);
@@ -830,12 +832,16 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
                         </div>
                       </div>
                       {/* Droits sur cet événement */}
-                      <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #f0f0f0", display: "flex", alignItems: "center", gap: 8 }}>
+                      <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #f0f0f0", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                         <span style={{ fontSize: 10, color: "#aaa" }}>Vos droits :</span>
                         {myPerms.length === 0
                           ? <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "#f5f5f5", color: "#888", fontWeight: 600 }}>👁 Lecture seule</span>
                           : myPerms.map(p => { const info = ALL_PERMISSIONS[p]; return info ? <span key={p} style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: info.bg, color: info.color, fontWeight: 700 }}>{info.icon} {info.label}</span> : null; })
                         }
+                        <button onClick={() => { setFilterEventId(ev.id); setActive("contributions"); }}
+                          style={{ marginLeft: "auto", fontSize: 10, padding: "3px 10px", borderRadius: 8, border: "1.5px solid #eee", background: "#fafafa", color: "#555", cursor: "pointer", fontWeight: 600 }}>
+                          {ev.event_type === "budget" ? "💰 Cotisations →" : "⊜ Répartition →"}
+                        </button>
                       </div>
                     </div>
                   );
@@ -849,33 +855,48 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
         {active === "expenses" && (
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-              <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700, color: "var(--text, #0F0F0F)" }}>Charges</h2>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700, color: "#0F0F0F" }}>Charges</h2>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                 <EventSelector />
-                {/* Ajouter charge — selon droits */}
-                {can(filterEventId, "add_expense") && selectedEv?.status === "open" && (
-                  <button onClick={() => setShowAddExpense(!showAddExpense)} style={S.btnDark}>
+                {selectedEv?.status === "open" && (
+                  <button onClick={() => {
+                    if (can(filterEventId, "add_expense")) {
+                      setShowAddExpense(!showAddExpense);
+                    } else {
+                      addToast("Vous n'avez pas le droit d'ajouter des charges. Votre demande sera envoyée à l'admin.", "info");
+                      setShowAddExpense(!showAddExpense);
+                    }
+                  }} style={S.btnDark}>
                     {showAddExpense ? "× Fermer" : "➕ Ajouter"}
                   </button>
                 )}
               </div>
             </div>
 
-            {showAddExpense && can(filterEventId, "add_expense") && (
+            {showAddExpense && (
               <GuestExpenseForm
                 events={events.filter(e => e.id === filterEventId)}
-                onSubmit={submitAction}
+                onSubmit={(actionType, data, evId) => {
+                  if (can(evId, "add_expense")) {
+                    submitAction(actionType, data, evId);
+                  } else {
+                    submitAction(actionType, { ...data, needs_approval: true }, evId);
+                  }
+                }}
                 onCancel={() => setShowAddExpense(false)}
                 saving={saving}
                 isBudget={isBudget}
+                canDirect={can(filterEventId, "add_expense")}
               />
             )}
 
-            {editingExpense && can(filterEventId, "edit_expense") && (
+            {editingExpense && (
               <GuestEditExpenseForm
                 expense={editingExpense}
                 events={events}
-                onSubmit={async (data) => { await submitAction("modify_expense", { ...data, expense_id: editingExpense.id }, editingExpense.event_id); }}
+                onSubmit={async (data) => {
+                  await submitAction("modify_expense", { ...data, expense_id: editingExpense.id }, editingExpense.event_id);
+                }}
                 onCancel={() => setEditingExpense(null)}
                 saving={saving}
               />
@@ -903,10 +924,15 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
                         </div>
                         <div style={{ textAlign: "right", flexShrink: 0 }}>
                           <div style={{ fontSize: 15, fontWeight: 700 }}>{fmt(total, sym)}</div>
-                          {/* Modifier — selon droits */}
-                          {can(filterEventId, "edit_expense") && selectedEv?.status === "open" && (
-                            <button onClick={() => setEditingExpense(ex)}
-                              style={{ marginTop: 6, padding: "3px 10px", borderRadius: 8, border: "1.5px solid #FFE082", background: "#FFF8E1", color: "#F57F17", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
+                          {selectedEv?.status === "open" && (
+                            <button onClick={() => {
+                              if (can(filterEventId, "edit_expense")) {
+                                setEditingExpense(ex);
+                              } else {
+                                addToast("Modification soumise à l'approbation de l'admin.", "info");
+                                setEditingExpense(ex);
+                              }
+                            }} style={{ marginTop: 6, padding: "3px 10px", borderRadius: 8, border: "1.5px solid #FFE082", background: "#FFF8E1", color: "#F57F17", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
                               ✏️ Modifier
                             </button>
                           )}
@@ -924,54 +950,28 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
         {active === "contributions" && (
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-              <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700, color: "var(--text, #0F0F0F)" }}>
+              <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700, color: "#0F0F0F" }}>
                 {isBudget ? "💰 Cotisations" : "⊜ Répartition"}
               </h2>
               <EventSelector />
             </div>
 
-            {/* Budget → Cotisations */}
+            {/* Budget → vue cotisations identique admin */}
             {isBudget ? (
-              <div>
-                {/* Ajouter cotisation — selon droits */}
-                {can(filterEventId, "add_cotisation") && selectedEv?.status === "open" && (
-                  <div style={{ marginBottom: 14 }}>
-                    <GuestCotisationForm
-                      ev={selectedEv}
-                      onSubmit={(data) => submitAction("add_cotisation", data, filterEventId)}
-                      saving={saving}
-                    />
-                  </div>
-                )}
-
-                {evCotisations.length === 0 ? (
-                  <EmptyState icon="💰" title="Aucune cotisation" subtitle="Aucune cotisation enregistrée pour cet événement." />
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {evCotisations.map(cot => (
-                      <div key={cot.id} style={{ background: "#fff", borderRadius: 12, padding: "12px 16px", border: "1px solid #eee", display: "flex", alignItems: "center", gap: 10 }}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cot.participant_name}</div>
-                          <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
-                            <span style={{ fontSize: 11, padding: "2px 7px", borderRadius: 20, background: cot.forme === "nature" ? "#E8F5E9" : "#E3F2FD", color: cot.forme === "nature" ? "#2E7D32" : "#1565C0", fontWeight: 700 }}>
-                              {cot.forme === "nature" ? "🌿 Nature" : "💵 Espèces"}
-                            </span>
-                            <span style={{ fontSize: 11, padding: "2px 7px", borderRadius: 20, background: cot.statut === "paye" ? "#E8F5E9" : "#FFEBEE", color: cot.statut === "paye" ? "#2E7D32" : "#C62828", fontWeight: 700 }}>
-                              {cot.statut === "paye" ? "✓ Payé" : "✗ Impayé"}
-                            </span>
-                          </div>
-                        </div>
-                        <div style={{ fontSize: 15, fontWeight: 700, color: "#0F0F0F", flexShrink: 0 }}>{fmt(cot.montant, sym)}</div>
-                      </div>
-                    ))}
-                    {/* Bilan rapide */}
-                    <div style={{ background: "#f5f5f5", borderRadius: 12, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
-                      <span style={{ fontSize: 12, color: "#888", fontWeight: 600 }}>Total collecté</span>
-                      <span style={{ fontSize: 16, fontWeight: 700, color: "#2E7D32" }}>{fmt(evCotisations.filter(c => c.statut === "paye").reduce((s, c) => s + c.montant, 0), sym)}</span>
-                    </div>
-                  </div>
-                )}
-              </div>
+              <GuestCotisationsView
+                ev={selectedEv}
+                cotisations={evCotisations}
+                sym={sym}
+                participants={evParticipants}
+                can={can}
+                filterEventId={filterEventId}
+                submitAction={submitAction}
+                saving={saving}
+                isMobile={isMobile}
+                addToast={addToast}
+                onReload={loadGuest}
+                guestEmail={guestEmail}
+              />
             ) : (
               /* Split → Répartition */
               <GuestBalanceSection ev={selectedEv} evExp={evExpenses} evContribMap={evContribs} sym={sym} />
@@ -1100,7 +1100,252 @@ function GuestCotisationForm({ ev, onSubmit, saving }) {
   );
 }
 
-// Section répartition (vue invité — Split)
+// Vue cotisations invité — identique à l'admin, droits vérifiés à l'action
+function GuestCotisationsView({ ev, cotisations, sym, participants, can, filterEventId, submitAction, saving, isMobile, addToast, onReload, guestEmail }) {
+  const [showForm, setShowForm] = useState(false);
+  const [formParticipant, setFormParticipant] = useState("");
+  const [formMontant, setFormMontant] = useState("");
+  const [formForme, setFormForme] = useState("especes");
+  const [formDesc, setFormDesc] = useState("");
+  const [montantMode, setMontantMode] = useState(ev?.cotisation_cible > 0 ? "minimal" : "libre");
+  const [showAddParticipant, setShowAddParticipant] = useState(false);
+  const [newParticipant, setNewParticipant] = useState("");
+
+  const cotisationCible = ev?.cotisation_cible || 0;
+  const totalCollecte = cotisations.filter(c => c.statut === "paye").reduce((s, c) => s + c.montant, 0);
+  const totalEspeces = cotisations.filter(c => c.forme === "especes" && c.statut === "paye").reduce((s, c) => s + c.montant, 0);
+  const totalNature = cotisations.filter(c => c.forme === "nature").reduce((s, c) => s + c.montant, 0);
+  const cible = cotisationCible > 0 ? cotisationCible * participants.length : 0;
+  const pctCollecte = cible > 0 ? Math.min((totalCollecte / cible) * 100, 100) : 0;
+  const participantsAvecCot = new Set(cotisations.map(c => c.participant_name));
+  const participantsSansCot = participants.filter(p => !participantsAvecCot.has(p));
+
+  const getMontant = () => montantMode === "minimal" ? cotisationCible : Number(formMontant) || 0;
+
+  const handleAddCotisation = (participantName) => {
+    const montant = getMontant();
+    if (montant <= 0) { addToast("Montant requis.", "warning"); return; }
+    const data = { participant_name: participantName || formParticipant, montant, forme: formForme, statut: montant > 0 ? "paye" : "impaye", description: formDesc, event_id: filterEventId };
+    if (can(filterEventId, "add_cotisation")) {
+      submitAction("add_cotisation", data, filterEventId);
+    } else {
+      submitAction("add_cotisation", { ...data, needs_approval: true }, filterEventId);
+      addToast("Demande envoyée à l'admin pour approbation.", "info");
+    }
+    setShowForm(false);
+    setFormParticipant(""); setFormMontant(""); setFormDesc("");
+  };
+
+  const handleEditCotisation = (cot) => {
+    if (can(filterEventId, "edit_cotisation")) {
+      submitAction("edit_cotisation", { cotisation_id: cot.id, montant: cot.montant, forme: cot.forme, description: cot.description }, filterEventId);
+    } else {
+      addToast("Vous n'avez pas le droit de modifier les cotisations. Contactez l'admin.", "warning");
+    }
+  };
+
+  const handleDeleteCotisation = (cot) => {
+    addToast("La suppression de cotisations n'est pas autorisée en mode invité. Contactez l'admin.", "warning");
+  };
+
+  const handleAddParticipantAction = () => {
+    if (!newParticipant.trim()) return;
+    if (can(filterEventId, "add_participant")) {
+      submitAction("add_participant", { name: newParticipant.trim() }, filterEventId);
+    } else {
+      addToast("Demande d'ajout de participant envoyée à l'admin.", "info");
+      submitAction("add_participant", { name: newParticipant.trim(), needs_approval: true }, filterEventId);
+    }
+    setNewParticipant(""); setShowAddParticipant(false);
+  };
+
+  const formeBadge = (forme) => forme === "nature"
+    ? { bg: "#E8F5E9", color: "#2E7D32", label: "🌿 Nature" }
+    : { bg: "#E3F2FD", color: "#1565C0", label: "💵 Espèces" };
+  const statutBadge = (statut) => ({
+    paye:    { bg: "#E8F5E9", color: "#2E7D32",  label: "✓ Payé" },
+    partiel: { bg: "#FFF8E1", color: "#F57F17",  label: "~ Partiel" },
+    impaye:  { bg: "#FFEBEE", color: "#C62828",  label: "✗ Impayé" },
+  })[statut] || { bg: "#f5f5f5", color: "#888", label: statut };
+
+  return (
+    <div>
+      {/* KPIs */}
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 12, marginBottom: 16 }}>
+        <StatCard label="Total collecté" value={fmt(totalCollecte, sym)} sub={`${cotisations.filter(c => c.statut === "paye").length} cotisation(s)`} accent="#2E7D32" />
+        <StatCard label="En espèces" value={fmt(totalEspeces, sym)} sub="virements + cash" accent="#1565C0" />
+        <StatCard label="En nature" value={fmt(totalNature, sym)} sub="valorisation" accent="#6A1B9A" />
+        <StatCard label="Cotisation cible" value={ev?.cotisation_cible > 0 ? fmt(cible, sym) : "Libre"} sub={ev?.cotisation_cible > 0 ? `${fmt(ev.cotisation_cible, sym)}/pers.` : "montant libre"} accent="#F57F17" />
+      </div>
+
+      {/* Barre progression */}
+      {cible > 0 && (
+        <div style={{ background: "#f5f5f5", borderRadius: 12, padding: "14px 18px", marginBottom: 16, border: "1px solid #eee" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 700 }}>Progression collecte</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: pctCollecte >= 100 ? "#2E7D32" : "#F57F17" }}>{fmt(totalCollecte, sym)} / {fmt(cible, sym)} ({pctCollecte.toFixed(0)}%)</span>
+          </div>
+          <div style={{ background: "#e0e0e0", borderRadius: 6, height: 8, overflow: "hidden" }}>
+            <div style={{ background: pctCollecte >= 100 ? "#2E7D32" : "#F57F17", height: 8, width: `${pctCollecte}%`, borderRadius: 6, transition: "width 0.5s" }} />
+          </div>
+        </div>
+      )}
+
+      {/* Alerte participants sans cotisation */}
+      {participantsSansCot.length > 0 && (
+        <div style={{ background: "#FFF8E1", border: "1px solid #FFE082", borderRadius: 10, padding: "10px 16px", marginBottom: 16, fontSize: 12 }}>
+          <span style={{ fontWeight: 700, color: "#F57F17" }}>⚠️ {participantsSansCot.length} participant(s) sans cotisation : </span>
+          <span style={{ color: "#E65100" }}>{participantsSansCot.join(", ")}</span>
+        </div>
+      )}
+
+      {/* Bouton ajouter participant */}
+      <div style={{ marginBottom: 16 }}>
+        {!showAddParticipant ? (
+          <button onClick={() => setShowAddParticipant(true)} style={{ ...S.btnGhost, fontSize: 12, padding: "7px 14px" }}>
+            👤 + Ajouter un participant {!can(filterEventId, "add_participant") && <span style={{ fontSize: 10, color: "#aaa", marginLeft: 4 }}>(demande approbation)</span>}
+          </button>
+        ) : (
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexWrap: "wrap" }}>
+            <input style={{ ...S.input, flex: 1, minWidth: 180 }} placeholder="Prénom du participant"
+              value={newParticipant} onChange={e => setNewParticipant(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleAddParticipantAction()} maxLength={35} />
+            <button onClick={handleAddParticipantAction} style={S.btnDark}>
+              {can(filterEventId, "add_participant") ? "+ Ajouter" : "📤 Soumettre"}
+            </button>
+            <button onClick={() => { setShowAddParticipant(false); setNewParticipant(""); }} style={S.btnGhost}>Annuler</button>
+          </div>
+        )}
+      </div>
+
+      {/* Formulaire cotisation individuel */}
+      {showForm && (
+        <div style={{ background: "#fff", border: "1.5px solid #1565C0", borderRadius: 14, padding: "16px 18px", marginBottom: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: "#1565C0" }}>
+            ➕ Cotisation pour {formParticipant}
+            {!can(filterEventId, "add_cotisation") && <span style={{ fontSize: 11, color: "#F57F17", marginLeft: 8, fontWeight: 400 }}>— sera soumise à l'admin</span>}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10, marginBottom: 12 }}>
+            <div>
+              <label style={S.label}>Montant ({sym}) *</label>
+              {cotisationCible > 0 ? (
+                <div>
+                  <div style={{ display: "flex", background: "#f5f5f5", borderRadius: 9, padding: 3, gap: 2, marginBottom: 6 }}>
+                    <button onClick={() => setMontantMode("minimal")} style={{ flex: 1, padding: "6px 8px", borderRadius: 7, border: "none", background: montantMode === "minimal" ? "#2E7D32" : "transparent", color: montantMode === "minimal" ? "#fff" : "#666", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                      ✓ Minimal ({fmt(cotisationCible, sym)})
+                    </button>
+                    <button onClick={() => setMontantMode("libre")} style={{ flex: 1, padding: "6px 8px", borderRadius: 7, border: "none", background: montantMode === "libre" ? "#1565C0" : "transparent", color: montantMode === "libre" ? "#fff" : "#666", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                      Autre montant
+                    </button>
+                  </div>
+                  {montantMode === "libre" && <input type="number" min={cotisationCible} step="0.01" style={S.input} placeholder={`Min. ${fmt(cotisationCible, sym)}`} value={formMontant} onChange={e => setFormMontant(e.target.value)} />}
+                  {montantMode === "minimal" && <div style={{ fontSize: 12, color: "#2E7D32", fontWeight: 700, padding: "8px 12px", background: "#E8F5E9", borderRadius: 8 }}>Montant : {fmt(cotisationCible, sym)}</div>}
+                </div>
+              ) : (
+                <input type="number" min="0.01" step="0.01" style={S.input} placeholder="Ex: 50" value={formMontant} onChange={e => setFormMontant(e.target.value)} />
+              )}
+            </div>
+            <div>
+              <label style={S.label}>Forme</label>
+              <select style={S.input} value={formForme} onChange={e => setFormForme(e.target.value)}>
+                <option value="especes">💵 Espèces (cash / virement)</option>
+                <option value="nature">🌿 En nature (bien ou service)</option>
+              </select>
+            </div>
+            <div style={{ gridColumn: isMobile ? "auto" : "1 / -1" }}>
+              <label style={S.label}>Description (optionnel)</label>
+              <input style={S.input} placeholder="Ex: Virement du 12/05" value={formDesc} onChange={e => setFormDesc(e.target.value)} />
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => handleAddCotisation(formParticipant)} disabled={saving || getMontant() <= 0}
+              style={{ ...S.btnDark, opacity: getMontant() <= 0 ? 0.5 : 1 }}>
+              {saving ? "..." : can(filterEventId, "add_cotisation") ? "Enregistrer" : "📤 Soumettre à l'admin"}
+            </button>
+            <button onClick={() => { setShowForm(false); setFormParticipant(""); }} style={S.btnGhost}>Annuler</button>
+          </div>
+        </div>
+      )}
+
+      {/* Liste participants + cotisations — identique admin */}
+      {participants.length === 0 ? (
+        <EmptyState icon="👥" title="Aucun participant" subtitle="Aucun participant dans cet événement." />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {participants.map(p => {
+            const cotP = cotisations.filter(c => c.participant_name === p);
+            const totalP = cotP.reduce((s, c) => s + c.montant, 0);
+            const hasCot = cotP.length > 0;
+            const allPaid = cotP.every(c => c.statut === "paye");
+            return (
+              <div key={p} style={{ background: "#fff", borderRadius: 14, border: `1px solid ${!hasCot ? "#FFE082" : allPaid ? "#C8E6C9" : "#eee"}`, overflow: "hidden" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px" }}>
+                  <Avatar name={p} size={34} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p}</div>
+                    <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>
+                      {hasCot ? `${cotP.length} cotisation(s) · ${fmt(totalP, sym)}` : "Aucune cotisation"}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                    <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 20, background: !hasCot ? "#FFF8E1" : allPaid ? "#E8F5E9" : "#FFEBEE", color: !hasCot ? "#F57F17" : allPaid ? "#2E7D32" : "#C62828", fontWeight: 700 }}>
+                      {!hasCot ? "⏳ En attente" : allPaid ? "✓ Soldé" : "~ Partiel"}
+                    </span>
+                    {ev?.status === "open" && (
+                      <button onClick={() => {
+                        setFormParticipant(p);
+                        setMontantMode(cotisationCible > 0 ? "minimal" : "libre");
+                        setFormMontant(""); setFormForme("especes"); setFormDesc("");
+                        setShowForm(true);
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      }} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 8, border: "1.5px solid #eee", background: "#f9f9f9", color: "#555", cursor: "pointer", fontWeight: 600, flexShrink: 0 }}>
+                        {can(filterEventId, "add_cotisation") ? "+ Cotisation" : "📤 + Cotisation"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {cotP.length > 0 && (
+                  <div style={{ borderTop: "1px solid #f0f0f0" }}>
+                    {cotP.map((cot, i) => {
+                      const fb = formeBadge(cot.forme);
+                      const sb = statutBadge(cot.statut);
+                      return (
+                        <div key={cot.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", borderBottom: i < cotP.length - 1 ? "1px solid #f0f0f0" : "none", background: "#fafafa" }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                              <span style={{ fontSize: 12, padding: "2px 8px", borderRadius: 20, background: fb.bg, color: fb.color, fontWeight: 600 }}>{fb.label}</span>
+                              <span style={{ fontSize: 12, padding: "2px 8px", borderRadius: 20, background: sb.bg, color: sb.color, fontWeight: 600 }}>{sb.label}</span>
+                            </div>
+                            {cot.description && <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>💬 {cot.description}</div>}
+                          </div>
+                          <div style={{ fontSize: 14, fontWeight: 700, flexShrink: 0 }}>{fmt(cot.montant, sym)}</div>
+                          {ev?.status === "open" && (
+                            <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                              <button onClick={() => handleEditCotisation(cot)}
+                                title={can(filterEventId, "edit_cotisation") ? "Modifier" : "Soumettre modification à l'admin"}
+                                style={{ padding: "4px 8px", borderRadius: 7, border: "1.5px solid #FFE082", background: "#FFF8E1", color: "#F57F17", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
+                                {can(filterEventId, "edit_cotisation") ? "✏️" : "📤"}
+                              </button>
+                              <button onClick={() => handleDeleteCotisation(cot)}
+                                title="Suppression non autorisée en mode invité"
+                                style={{ padding: "4px 8px", borderRadius: 7, border: "1.5px solid #eee", background: "#f5f5f5", color: "#aaa", fontSize: 11, cursor: "not-allowed", fontWeight: 600 }}>
+                                🗑
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 function GuestBalanceSection({ ev, evExp, evContribMap, sym }) {
   const participants = (ev?.event_participants || []).map(p => p.name);
   if (!ev || participants.length === 0) return <EmptyState icon="👥" title="Aucun participant" subtitle="Aucune donnée disponible." />;
