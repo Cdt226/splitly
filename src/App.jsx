@@ -10,6 +10,7 @@ import {
   fetchHistory, invalidateHistory,
   fetchNotifications, markAllNotificationsRead, deleteNotification,
   fetchInvitations, sendInvitation, removeInvitation, updateInvitationRole,
+  updateInvitationPermissions, fetchInvitationPermissions, requestPermissions,
   submitPendingAction, fetchAllPendingActions, approvePendingAction, rejectPendingAction,
   sendGuestCode, verifyGuestCode,
   subscribeToNotifications, unsubscribe,
@@ -534,15 +535,29 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
   const [contributions, setContributions] = useState({});
   const [active, setActive] = useState("events");
   const [loading, setLoading] = useState(true);
-  const [pendingForm, setPendingForm] = useState(false); // false | "add" | "edit"
+  const [pendingForm, setPendingForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
   const [selectedEventPdf, setSelectedEventPdf] = useState("");
+  const [permissionsMap, setPermissionsMap] = useState({}); // { eventId: [perms] }
+  const [showRequestPerms, setShowRequestPerms] = useState(false);
+  const [requestEventId, setRequestEventId] = useState("");
+  const [requestedPerms, setRequestedPerms] = useState([]);
+  const [requestSaving, setRequestSaving] = useState(false);
 
   const loadGuest = useCallback(async () => {
     setLoading(true);
-    const { data: invitations } = await supabase.from('invitations').select('event_id, role, status').eq('email', guestEmail);
+    const { data: invitations } = await supabase
+      .from('invitations')
+      .select('event_id, role, status, permissions')
+      .eq('email', guestEmail);
     if (!invitations || invitations.length === 0) { setLoading(false); return; }
+
+    // Build permissions map
+    const pMap = {};
+    invitations.forEach(i => { pMap[i.event_id] = i.permissions || ["read_only"]; });
+    setPermissionsMap(pMap);
+
     const eventIds = invitations.map(i => i.event_id);
     const { data: evData } = await supabase.from('events').select('*, event_participants(name)').in('id', eventIds);
     if (!evData) { setLoading(false); return; }
@@ -559,11 +574,27 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
 
   useEffect(() => { loadGuest(); }, [loadGuest]);
 
-  const handleRequestAction = async (actionType, actionData, eventId) => {
+  // Check if guest has permission for an action on a specific event
+  const can = (eventId, perm) => {
+    const perms = permissionsMap[eventId] || ["read_only"];
+    return perms.includes(perm);
+  };
+
+  const handleDirectAction = async (actionType, actionData, eventId) => {
     setSaving(true);
     await submitPendingAction({ eventId, guestEmail, actionType, actionData });
     setSaving(false); setPendingForm(false);
-    addToast("Demande envoyée à l'admin. Elle sera exécutée dès approbation.", "info");
+    addToast("Action soumise — en attente d'approbation de l'admin.", "info");
+  };
+
+  const handleRequestPerms = async () => {
+    if (!requestEventId || requestedPerms.length === 0) return;
+    setRequestSaving(true);
+    await requestPermissions(requestEventId, guestEmail, requestedPerms);
+    setRequestSaving(false);
+    setShowRequestPerms(false);
+    setRequestedPerms([]);
+    addToast("Demande de droits envoyée à l'admin.", "success");
   };
 
   if (loading) return <Spinner />;
@@ -577,14 +608,66 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh", background: "#f4f4f4" }}>
       <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+      {/* Header */}
       <div style={{ background: "#0F0F0F", padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 100 }}>
         <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, color: "#fff", cursor: "pointer" }} onClick={() => setActive("events")}>SplitLy</div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ background: "#1565C0", color: "#fff", fontSize: 11, padding: "3px 10px", borderRadius: 20, fontWeight: 600 }}>👤 Invité</span>
           {!isMobile && <span style={{ color: "#666", fontSize: 12 }}>{guestEmail}</span>}
+          <button onClick={() => setShowRequestPerms(true)} style={{ background: "#FFF8E1", border: "1px solid #FFE082", color: "#F57F17", fontSize: 11, padding: "5px 10px", borderRadius: 8, cursor: "pointer", fontWeight: 600 }}>🔐 Droits</button>
           <button onClick={onSignOut} style={{ background: "none", border: "1px solid #333", color: "#aaa", fontSize: 11, padding: "5px 12px", borderRadius: 8, cursor: "pointer" }}>Quitter</button>
         </div>
       </div>
+
+      {/* Modal demande de droits */}
+      {showRequestPerms && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 9000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: 24, maxWidth: 480, width: "100%", maxHeight: "80vh", overflowY: "auto" }}>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>🔐 Demander des droits</div>
+            <div style={{ fontSize: 12, color: "#888", marginBottom: 16 }}>L'admin sera notifié et pourra accepter ou refuser votre demande.</div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, display: "block", marginBottom: 6 }}>Événement</label>
+              <select style={{ ...S.input }} value={requestEventId} onChange={e => setRequestEventId(e.target.value)}>
+                <option value="">Sélectionner...</option>
+                {events.map(ev => <option key={ev.id} value={ev.id}>{ev.event_type === "budget" ? "🏦 " : "💸 "}{ev.name}</option>)}
+              </select>
+            </div>
+            {requestEventId && (
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, display: "block", marginBottom: 8 }}>Droits demandés</label>
+                {(() => {
+                  const ev = events.find(e => e.id === requestEventId);
+                  const myPerms = permissionsMap[requestEventId] || ["read_only"];
+                  const available = getAvailablePermissions(ev?.event_type || "split").filter(p => !myPerms.includes(p.key));
+                  return available.length === 0 ? (
+                    <div style={{ fontSize: 13, color: "#2E7D32", background: "#E8F5E9", borderRadius: 8, padding: "10px 14px" }}>✓ Vous avez déjà tous les droits disponibles.</div>
+                  ) : available.map(p => (
+                    <label key={p.key} onClick={() => setRequestedPerms(prev => prev.includes(p.key) ? prev.filter(x => x !== p.key) : [...prev, p.key])}
+                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 9, border: `1.5px solid ${requestedPerms.includes(p.key) ? p.color : "#e0e0e0"}`, background: requestedPerms.includes(p.key) ? p.bg : "#fafafa", cursor: "pointer", marginBottom: 6, transition: "all 0.15s" }}>
+                      <div style={{ width: 16, height: 16, borderRadius: 4, border: `2px solid ${requestedPerms.includes(p.key) ? p.color : "#ccc"}`, background: requestedPerms.includes(p.key) ? p.color : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                        {requestedPerms.includes(p.key) && <span style={{ color: "#fff", fontSize: 10 }}>✓</span>}
+                      </div>
+                      <span style={{ fontSize: 13 }}>{p.icon}</span>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>{p.label}</div>
+                        <div style={{ fontSize: 11, color: "#888" }}>{p.desc}</div>
+                      </div>
+                    </label>
+                  ));
+                })()}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={handleRequestPerms} disabled={requestSaving || !requestEventId || requestedPerms.length === 0}
+                style={{ ...S.btnDark, flex: 1, justifyContent: "center", display: "flex", opacity: (!requestEventId || requestedPerms.length === 0) ? 0.5 : 1 }}>
+                {requestSaving ? "..." : "Envoyer la demande"}
+              </button>
+              <button onClick={() => { setShowRequestPerms(false); setRequestedPerms([]); }} style={{ ...S.btnGhost, flex: 1, justifyContent: "center", display: "flex" }}>Annuler</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div style={{ background: "#fff", borderBottom: "1px solid #eee", display: "flex", overflowX: "auto", position: "sticky", top: 56, zIndex: 99 }}>
         {navItems.map(n => (
@@ -596,7 +679,7 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
 
       <main style={{ flex: 1, padding: isMobile ? "20px 16px 32px" : "28px 32px", maxWidth: 860, width: "100%", margin: "0 auto", boxSizing: "border-box" }}>
         <div style={{ background: "#E3F2FD", border: "1px solid #90CAF9", borderRadius: 12, padding: "11px 16px", marginBottom: 20, fontSize: 13, color: "#1565C0" }}>
-          👁 Mode consultation. Pour ajouter une charge, soumettez une demande à l'admin.
+          👁 Mode invité — vos droits varient selon les événements. Cliquez sur <strong>🔐 Droits</strong> pour demander des accès supplémentaires.
         </div>
 
         {active === "events" && (
@@ -3575,18 +3658,47 @@ function History({ events, history, user, reload, isMobile, addToast }) {
 }
 
 // ─── INVITATIONS ──────────────────────────────────────────────
+// ─── PERMISSIONS ──────────────────────────────────────────────
+const ALL_PERMISSIONS = {
+  read_only:           { label: "Lecture seule",           icon: "👁",  desc: "Consulter uniquement", color: "#888",    bg: "#f5f5f5", split: true, budget: true },
+  add_expense:         { label: "Ajouter charge",          icon: "➕",  desc: "Créer de nouvelles charges", color: "#1565C0", bg: "#E3F2FD", split: true, budget: true },
+  edit_expense:        { label: "Modifier charge",         icon: "✏️",  desc: "Modifier les charges existantes", color: "#F57F17", bg: "#FFF8E1", split: true, budget: true },
+  delete_expense:      { label: "Supprimer charge",        icon: "🗑",  desc: "Supprimer des charges", color: "#C62828", bg: "#FFEBEE", split: true, budget: true },
+  add_participant:     { label: "Ajouter participant",     icon: "👤+", desc: "Ajouter des participants", color: "#2E7D32", bg: "#E8F5E9", split: true, budget: true },
+  remove_participant:  { label: "Supprimer participant",   icon: "👤-", desc: "Retirer des participants", color: "#C62828", bg: "#FFEBEE", split: true, budget: true },
+  add_cotisation:      { label: "Ajouter cotisation",      icon: "💰+", desc: "Créer des cotisations", color: "#6A1B9A", bg: "#F3E5F5", split: false, budget: true },
+  edit_cotisation:     { label: "Modifier cotisation",     icon: "💰✏", desc: "Modifier les cotisations", color: "#6A1B9A", bg: "#F3E5F5", split: false, budget: true },
+  export_pdf:          { label: "Exporter PDF",            icon: "📄",  desc: "Générer des PDF", color: "#0F0F0F", bg: "#f0f0f0", split: true, budget: true },
+};
+
+function getAvailablePermissions(eventType) {
+  return Object.entries(ALL_PERMISSIONS)
+    .filter(([, p]) => eventType === "budget" ? p.budget : p.split)
+    .map(([key, p]) => ({ key, ...p }));
+}
+
+function hasPermission(permissions, perm) {
+  if (!permissions) return false;
+  return Array.isArray(permissions) ? permissions.includes(perm) : false;
+}
+
+// ─── INVITE ───────────────────────────────────────────────────
 function Invite({ events, user, isMobile, addToast }) {
   const [email, setEmail] = useState("");
   const [selectedEvents, setSelectedEvents] = useState([]);
-  const [role, setRole] = useState("read");
+  const [permissions, setPermissions] = useState(["read_only"]);
   const [invitations, setInvitations] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [editingPerms, setEditingPerms] = useState(null); // inv object
+  const [editPerms, setEditPerms] = useState([]);
+  const [applyToAll, setApplyToAll] = useState(false);
+  const [savingPerms, setSavingPerms] = useState(false);
 
   const loadInvites = async () => {
     const all = [];
     for (const ev of events) {
       const { data } = await fetchInvitations(ev.id);
-      if (data) all.push(...data.map(i => ({ ...i, eventName: ev.name })));
+      if (data) all.push(...data.map(i => ({ ...i, eventName: ev.name, eventType: ev.event_type })));
     }
     setInvitations(all);
   };
@@ -3599,8 +3711,10 @@ function Invite({ events, user, isMobile, addToast }) {
     if (!emailRegex.test(email)) { addToast("Format d'email invalide.", "warning"); return; }
     if (selectedEvents.length === 0) { addToast("Sélectionnez au moins un événement.", "warning"); return; }
     setSaving(true);
-    for (const evId of selectedEvents) await sendInvitation({ eventId: evId, email, role, invitedBy: user.id });
-    setEmail(""); setSelectedEvents([]); setRole("read");
+    for (const evId of selectedEvents) {
+      await sendInvitation({ eventId: evId, email, role: permissions.includes("read_only") && permissions.length === 1 ? "read" : "edit", invitedBy: user.id, permissions });
+    }
+    setEmail(""); setSelectedEvents([]); setPermissions(["read_only"]);
     await loadInvites();
     setSaving(false);
     addToast(`Invitation envoyée à ${email}.`, "success");
@@ -3612,41 +3726,126 @@ function Invite({ events, user, isMobile, addToast }) {
     addToast("Accès retiré.", "info");
   };
 
-  const handleToggleRole = async (inv) => {
-    const newRole = inv.role === "read" ? "edit" : "read";
-    await updateInvitationRole(inv.event_id, inv.email, newRole);
+  const openEditPerms = (inv) => {
+    setEditingPerms(inv);
+    setEditPerms(inv.permissions || ["read_only"]);
+    setApplyToAll(false);
+  };
+
+  const handleSavePerms = async () => {
+    setSavingPerms(true);
+    await updateInvitationPermissions(editingPerms.event_id, editingPerms.email, editPerms, applyToAll);
     await loadInvites();
-    addToast(`Rôle de ${inv.email} mis à jour.`, "success");
+    setSavingPerms(false);
+    setEditingPerms(null);
+    addToast(`Droits de ${editingPerms.email} mis à jour.`, "success");
+  };
+
+  const togglePerm = (perms, setPerms, key) => {
+    if (key === "read_only") {
+      setPerms(["read_only"]);
+      return;
+    }
+    const without = perms.filter(p => p !== "read_only");
+    if (without.includes(key)) {
+      const next = without.filter(p => p !== key);
+      setPerms(next.length === 0 ? ["read_only"] : next);
+    } else {
+      setPerms([...without, key]);
+    }
+  };
+
+  const PermBadge = ({ perm }) => {
+    const p = ALL_PERMISSIONS[perm];
+    if (!p) return null;
+    return (
+      <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: p.bg, color: p.color, fontWeight: 700, border: `1px solid ${p.color}22`, whiteSpace: "nowrap" }}>
+        {p.icon} {p.label}
+      </span>
+    );
   };
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 4 }}>Invitations</h2>
-      <p style={{ color: "#888", fontSize: 12, marginBottom: 20 }}>Gérez l'accès de vos invités aux événements</p>
+      {/* Modal édition permissions */}
+      {editingPerms && (
+        <Modal title={`🔐 Droits de ${editingPerms.email}`} onClose={() => setEditingPerms(null)}>
+          <div style={{ fontSize: 12, color: "var(--text-sub)", marginBottom: 16 }}>
+            Événement : <strong>{editingPerms.eventName}</strong>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+            {getAvailablePermissions(editingPerms.eventType || "split").map(p => (
+              <label key={p.key} onClick={() => togglePerm(editPerms, setEditPerms, p.key)}
+                style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderRadius: 10, border: `1.5px solid ${editPerms.includes(p.key) ? p.color : "var(--border)"}`, background: editPerms.includes(p.key) ? p.bg : "var(--bg-secondary)", cursor: "pointer", transition: "all 0.15s" }}>
+                <div style={{ width: 18, height: 18, borderRadius: 5, border: `2px solid ${editPerms.includes(p.key) ? p.color : "#ccc"}`, background: editPerms.includes(p.key) ? p.color : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  {editPerms.includes(p.key) && <span style={{ color: "#fff", fontSize: 11 }}>✓</span>}
+                </div>
+                <span style={{ fontSize: 14 }}>{p.icon}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{p.label}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-sub)" }}>{p.desc}</div>
+                </div>
+              </label>
+            ))}
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, background: applyToAll ? "#FFF8E1" : "var(--hover-bg)", border: `1.5px solid ${applyToAll ? "#FFE082" : "var(--border)"}`, cursor: "pointer", marginBottom: 16, fontSize: 13 }}
+            onClick={() => setApplyToAll(!applyToAll)}>
+            <div style={{ width: 18, height: 18, borderRadius: 5, border: `2px solid ${applyToAll ? "#F57F17" : "#ccc"}`, background: applyToAll ? "#F57F17" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              {applyToAll && <span style={{ color: "#fff", fontSize: 11 }}>✓</span>}
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, color: applyToAll ? "#F57F17" : "var(--text)" }}>Appliquer à tous mes événements</div>
+              <div style={{ fontSize: 11, color: "var(--text-sub)" }}>Y compris les futurs événements auxquels cet invité sera invité</div>
+            </div>
+          </label>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={handleSavePerms} disabled={savingPerms} style={{ ...S.btnDark, flex: 1, justifyContent: "center", display: "flex" }}>{savingPerms ? "..." : "✓ Enregistrer"}</button>
+            <button onClick={() => setEditingPerms(null)} style={{ ...S.btnGhost, flex: 1, justifyContent: "center", display: "flex" }}>Annuler</button>
+          </div>
+        </Modal>
+      )}
 
+      <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 4, color: "var(--text)" }}>Invitations</h2>
+      <p style={{ color: "var(--text-sub)", fontSize: 12, marginBottom: 20 }}>Gérez l'accès et les droits de vos invités</p>
+
+      {/* Formulaire invitation */}
       <div style={S.card}>
         <div style={S.sectionTitle}>✉️ Inviter quelqu'un</div>
-        <div style={{ background: "#E8F5E9", borderRadius: 10, padding: "11px 16px", marginBottom: 16, fontSize: 13, color: "#2E7D32" }}>
-          L'invité recevra un code d'accès par email pour se connecter en mode invité.
-        </div>
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 14 }}>
-          <div><label style={S.label}>Email de l'invité</label><input style={S.input} type="email" placeholder="ami@example.com" value={email} onChange={e => setEmail(e.target.value)} /></div>
-          <div><label style={S.label}>Niveau d'accès</label>
-            <select style={S.input} value={role} onChange={e => setRole(e.target.value)}>
-              <option value="read">👁 Lecture seule</option>
-              <option value="edit">✏️ Peut soumettre des charges</option>
-            </select>
+          <div><label style={S.label}>Email de l'invité</label>
+            <input style={S.input} type="email" placeholder="ami@example.com" value={email} onChange={e => setEmail(e.target.value)} />
           </div>
         </div>
+
+        {/* Permissions à l'invitation */}
+        <div style={{ marginBottom: 16 }}>
+          <label style={S.label}>Droits accordés</label>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 8, marginTop: 8 }}>
+            {Object.entries(ALL_PERMISSIONS).map(([key, p]) => (
+              <label key={key} onClick={() => togglePerm(permissions, setPermissions, key)}
+                style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 10, border: `1.5px solid ${permissions.includes(key) ? p.color : "var(--border)"}`, background: permissions.includes(key) ? p.bg : "var(--bg-secondary)", cursor: "pointer", transition: "all 0.15s" }}>
+                <div style={{ width: 16, height: 16, borderRadius: 4, border: `2px solid ${permissions.includes(key) ? p.color : "#ccc"}`, background: permissions.includes(key) ? p.color : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  {permissions.includes(key) && <span style={{ color: "#fff", fontSize: 10 }}>✓</span>}
+                </div>
+                <span style={{ fontSize: 11 }}>{p.icon}</span>
+                <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text)", flex: 1 }}>{p.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {/* Événements */}
         <div style={{ marginBottom: 16 }}>
           <label style={S.label}>Événements accessibles</label>
           {events.length === 0 ? <div style={{ color: "#aaa", fontSize: 13, padding: "8px 0" }}>Aucun événement créé</div> : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
               {events.map(ev => (
-                <label key={ev.id} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontSize: 13, padding: "8px 12px", borderRadius: 10, background: selectedEvents.includes(ev.id) ? "#f0faf4" : "#fafafa", border: `1px solid ${selectedEvents.includes(ev.id) ? "#c8e6c9" : "#eee"}`, transition: "all 0.15s" }}>
+                <label key={ev.id} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontSize: 13, padding: "8px 12px", borderRadius: 10, background: selectedEvents.includes(ev.id) ? "#f0faf4" : "var(--hover-bg)", border: `1px solid ${selectedEvents.includes(ev.id) ? "#c8e6c9" : "var(--border)"}`, transition: "all 0.15s" }}>
                   <input type="checkbox" checked={selectedEvents.includes(ev.id)} onChange={() => setSelectedEvents(s => s.includes(ev.id) ? s.filter(x => x !== ev.id) : [...s, ev.id])} />
-                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.name}</span>
-                  <span style={{ color: "#aaa", fontSize: 11, flexShrink: 0 }}>{ev.date}</span>
+                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {ev.event_type === "budget" ? "🏦 " : "💸 "}{ev.name}
+                  </span>
+                  <span style={{ color: "var(--text-sub)", fontSize: 11, flexShrink: 0 }}>{ev.date}</span>
                 </label>
               ))}
             </div>
@@ -3655,32 +3854,42 @@ function Invite({ events, user, isMobile, addToast }) {
         <button onClick={handleSend} disabled={saving} style={S.btnDark}>{saving ? "Envoi..." : "Envoyer l'invitation ✉️"}</button>
       </div>
 
-      <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #eee", overflow: "hidden" }}>
-        <div style={{ padding: "14px 18px", borderBottom: "1px solid #f0f0f0", fontSize: 14, fontWeight: 700 }}>
+      {/* Liste invités */}
+      <div style={{ background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border)", overflow: "hidden" }}>
+        <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)", fontSize: 14, fontWeight: 700, color: "var(--text)" }}>
           Invités ({invitations.length})
         </div>
         {invitations.length === 0 ? (
           <EmptyState icon="👥" title="Aucun invité" subtitle="Invitez des personnes à consulter vos événements." />
-        ) : (
-          invitations.map((inv, i) => (
-            <div key={inv.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", borderBottom: i < invitations.length - 1 ? "1px solid #f5f5f5" : "none", flexWrap: "wrap", gap: 10 }}>
+        ) : invitations.map((inv, i) => (
+          <div key={inv.id} style={{ padding: "13px 18px", borderBottom: i < invitations.length - 1 ? "1px solid var(--border)" : "none" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
               <Avatar name={inv.email[0]} size={32} />
-              <div style={{ flex: 1, minWidth: 120 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{inv.email}</div>
-                <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}><Truncate text={inv.eventName} max={25} /></div>
+              <div style={{ flex: 1, minWidth: 100 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)" }}>{inv.email}</div>
+                <div style={{ fontSize: 11, color: "var(--text-sub)", marginTop: 2, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span>{inv.event_type === "budget" ? "🏦" : "💸"}</span>
+                  <Truncate text={inv.eventName} max={22} />
+                </div>
               </div>
               <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: inv.status === "accepted" ? "#E8F5E9" : "#FFF8E1", color: inv.status === "accepted" ? "#2E7D32" : "#F57F17", flexShrink: 0 }}>
                 {inv.status === "accepted" ? "✓ Accepté" : "⏳ En attente"}
               </span>
-              <button onClick={() => handleToggleRole(inv)} style={{ padding: "4px 10px", borderRadius: 8, border: `1.5px solid ${inv.role === "edit" ? "#90CAF9" : "#e0e0e0"}`, background: inv.role === "edit" ? "#E3F2FD" : "#fff", color: inv.role === "edit" ? "#1565C0" : "#666", fontSize: 11, cursor: "pointer", fontWeight: 600, flexShrink: 0 }}>
-                {inv.role === "edit" ? "✏️ Éditeur" : "👁 Lecture"}
+              <button onClick={() => openEditPerms(inv)}
+                style={{ padding: "5px 12px", borderRadius: 8, border: "1.5px solid #BBDEFB", background: "#E3F2FD", color: "#1565C0", fontSize: 11, cursor: "pointer", fontWeight: 700, flexShrink: 0 }}>
+                🔐 Droits
               </button>
-              <button onClick={() => handleRemove(inv)} style={{ padding: "4px 10px", borderRadius: 8, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 11, cursor: "pointer", fontWeight: 700, flexShrink: 0 }}>
+              <button onClick={() => handleRemove(inv)}
+                style={{ padding: "5px 10px", borderRadius: 8, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 11, cursor: "pointer", fontWeight: 700, flexShrink: 0 }}>
                 Retirer
               </button>
             </div>
-          ))
-        )}
+            {/* Badges permissions */}
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", paddingLeft: 42 }}>
+              {(inv.permissions || ["read_only"]).map(p => <PermBadge key={p} perm={p} />)}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -3692,7 +3901,19 @@ function NotificationsPage({ notifications, events, expenses, pendingActions, us
 
   const handleApprove = async (action) => {
     setSaving(action.id);
-    // S'assurer que la structure est correcte pour approvePendingAction
+    if (action.action_type === "request_permissions") {
+      // Accorder les permissions demandées
+      const existing = await fetchInvitationPermissions(action.event_id, action.guest_email);
+      const currentPerms = existing.data || ["read_only"];
+      const requested = action.action_data?.requested || [];
+      const newPerms = [...new Set([...currentPerms.filter(p => p !== "read_only"), ...requested])];
+      await updateInvitationPermissions(action.event_id, action.guest_email, newPerms);
+      await rejectPendingAction(action.id, user.id); // close the pending action
+      addToast(`Droits accordés à ${action.guest_email}.`, "success");
+      await reload();
+      setSaving(null);
+      return;
+    }
     const { error } = await approvePendingAction(action.id, user.id, {
       action_type: action.action_type,
       action_data: action.action_data,
@@ -3735,6 +3956,44 @@ function NotificationsPage({ notifications, events, expenses, pendingActions, us
           {pendingActions.map(action => {
             const ev = events.find(e => e.id === action.event_id);
             const data = action.action_data;
+            const isPermRequest = action.action_type === "request_permissions";
+
+            if (isPermRequest) {
+              return (
+                <div key={action.id} style={{ background: "#FFF8E1", borderRadius: 14, padding: "16px 18px", border: "1.5px solid #FFE082", marginBottom: 12 }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 12 }}>
+                    <div style={{ fontSize: 24, flexShrink: 0 }}>🔐</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "#F57F17", marginBottom: 6 }}>
+                        {action.guest_email} demande des droits sur "{data?.event_name || ev?.name}"
+                      </div>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+                        {(data?.requested || []).map(p => {
+                          const pInfo = ALL_PERMISSIONS[p];
+                          return pInfo ? (
+                            <span key={p} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 20, background: pInfo.bg, color: pInfo.color, fontWeight: 700 }}>
+                              {pInfo.icon} {pInfo.label}
+                            </span>
+                          ) : null;
+                        })}
+                      </div>
+                      <div style={{ fontSize: 10, color: "#aaa" }}>{new Date(action.created_at).toLocaleString("fr-FR")}</div>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => handleApprove(action)} disabled={saving === action.id}
+                      style={{ ...S.btnDark, background: "#2E7D32", padding: "7px 16px", fontSize: 12, flex: 1, justifyContent: "center", display: "flex" }}>
+                      {saving === action.id ? "..." : "✓ Accorder les droits"}
+                    </button>
+                    <button onClick={() => handleReject(action)} disabled={saving === action.id}
+                      style={{ padding: "7px 16px", borderRadius: 9, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 12, cursor: "pointer", fontWeight: 700, flex: 1, fontFamily: "inherit" }}>
+                      ✗ Refuser
+                    </button>
+                  </div>
+                </div>
+              );
+            }
+
             const total = ((data?.qty || 0) * (data?.unit || 0)).toFixed(2);
             const isModify = action.action_type === "modify_expense";
             const originalExp = expenses.find(e => e.id === data?.expense_id);

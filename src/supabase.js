@@ -431,10 +431,11 @@ export async function fetchInvitations(eventId) {
   return { data, error };
 }
 
-export async function sendInvitation({ eventId, email, role, invitedBy }) {
+export async function sendInvitation({ eventId, email, role, invitedBy, permissions }) {
+  const perms = permissions || ["read_only"];
   const { data, error } = await supabase
     .from('invitations')
-    .upsert({ event_id: eventId, email, role, invited_by: invitedBy, status: 'pending' }, { onConflict: 'event_id,email' })
+    .upsert({ event_id: eventId, email, role, invited_by: invitedBy, status: 'pending', permissions: perms }, { onConflict: 'event_id,email' })
     .select().single();
   return { data, error };
 }
@@ -451,6 +452,50 @@ export async function removeInvitation(eventId, email) {
 
 export async function updateInvitationRole(eventId, email, role) {
   const { error } = await supabase.from('invitations').update({ role }).eq('event_id', eventId).eq('email', email);
+  return { error };
+}
+
+export async function updateInvitationPermissions(eventId, email, permissions, applyToAll = false) {
+  if (applyToAll) {
+    // Appliquer à toutes les invitations de cet email
+    const { error } = await supabase.from('invitations').update({ permissions }).eq('email', email);
+    return { error };
+  }
+  const { error } = await supabase.from('invitations').update({ permissions }).eq('event_id', eventId).eq('email', email);
+  return { error };
+}
+
+export async function fetchInvitationPermissions(eventId, email) {
+  const { data, error } = await supabase
+    .from('invitations')
+    .select('permissions')
+    .eq('event_id', eventId)
+    .eq('email', email)
+    .single();
+  return { data: data?.permissions || ["read_only"], error };
+}
+
+export async function requestPermissions(eventId, guestEmail, requestedPermissions) {
+  // Crée une notification pour l'admin via pending_actions
+  const { data: ev } = await supabase.from('events').select('admin_id, name').eq('id', eventId).single();
+  if (!ev) return { error: new Error("Événement introuvable") };
+  const { error } = await supabase.from('pending_actions').insert({
+    event_id: eventId,
+    guest_email: guestEmail,
+    action_type: 'request_permissions',
+    action_data: { requested: requestedPermissions, event_name: ev.name },
+    status: 'pending',
+  });
+  // Notifier l'admin
+  if (!error) {
+    await supabase.from('notifications').insert({
+      user_id: ev.admin_id,
+      type: 'permission_request',
+      title: `Demande de droits`,
+      message: `${guestEmail} demande des droits supplémentaires sur "${ev.name}"`,
+      data: { event_id: eventId, guest_email: guestEmail, requested: requestedPermissions },
+    });
+  }
   return { error };
 }
 
