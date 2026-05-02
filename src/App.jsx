@@ -1228,7 +1228,7 @@ function saveTemplates(templates) {
 
 function Events({ events, expenses, contributions, user, reload, isMobile, addToast, t }) {
   const [showNew, setShowNew] = useState(false);
-  const [form, setForm] = useState({ name: "", date: "", currency: "EUR €", participants: [] });
+  const [form, setForm] = useState({ name: "", date: "", currency: "EUR €", participants: [], event_type: "split", cotisation_cible: "", nombre_invites: "" });
   const [loading, setLoading] = useState(false);
   const [confirm, setConfirm] = useState(null);
   const [managingEv, setManagingEv] = useState(null);
@@ -1277,19 +1277,24 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
   };
 
   const handleCreate = async () => {
-    // Validations
     if (!form.name.trim()) { addToast("Le nom de l'événement est obligatoire.", "warning"); return; }
     if (form.name.trim().length > MAX_NAME_LENGTH) { addToast(`Le nom ne peut pas dépasser ${MAX_NAME_LENGTH} caractères.`, "warning"); return; }
     if (!form.date) { addToast("La date est obligatoire.", "warning"); return; }
-    if (form.participants.length < 2) { addToast("Minimum 2 participants requis.", "warning"); return; }
+    if (form.participants.length < 1) { addToast("Minimum 1 participant requis.", "warning"); return; }
     if (form.participants.length > MAX_PARTICIPANTS) { addToast(`Maximum ${MAX_PARTICIPANTS} participants par événement.`, "warning"); return; }
     setLoading(true);
-    const { error } = await createEvent(form, form.participants, user.id);
+    const eventData = {
+      ...form,
+      event_type: form.event_type || "split",
+      cotisation_cible: form.event_type === "budget" ? (parseFloat(form.cotisation_cible) || 0) : 0,
+      nombre_invites: form.event_type === "budget" ? (parseInt(form.nombre_invites) || 0) : 0,
+    };
+    const { error } = await createEvent(eventData, form.participants, user.id);
     if (!error) {
       await reload();
-      setForm({ name: "", date: "", currency: "EUR €", participants: [] });
+      setForm({ name: "", date: "", currency: "EUR €", participants: [], event_type: "split", cotisation_cible: "", nombre_invites: "" });
       setShowNew(false);
-      addToast("Événement créé avec succès !", "success");
+      addToast(`Événement ${form.event_type === "budget" ? "Budget" : "Split"} créé avec succès !`, "success");
     } else {
       addToast("Erreur lors de la création : " + error.message, "error");
     }
@@ -1554,23 +1559,63 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
       {showNew && (
         <div style={{ ...S.card, marginBottom: 16 }}>
           <div style={S.sectionTitle}>Créer un événement</div>
+
+          {/* ── Sélection du type ── */}
+          <div style={{ marginBottom: 20 }}>
+            <label style={S.label}>Type d'événement</label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 8 }}>
+              {[
+                { key: "split", icon: "💸", title: "Split", desc: "Répartition des dépenses entre participants" },
+                { key: "budget", icon: "🏦", title: "Budget", desc: "Gestion des recettes et dépenses d'un événement commun" },
+              ].map(opt => (
+                <div key={opt.key} onClick={() => setForm({ ...form, event_type: opt.key })}
+                  style={{ padding: "14px 16px", borderRadius: 12, border: `2px solid ${form.event_type === opt.key ? "#0F0F0F" : "var(--border)"}`, background: form.event_type === opt.key ? "#0F0F0F" : "var(--bg-secondary)", cursor: "pointer", transition: "all 0.15s" }}>
+                  <div style={{ fontSize: 22, marginBottom: 6 }}>{opt.icon}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: form.event_type === opt.key ? "#fff" : "var(--text)", marginBottom: 4 }}>{opt.title}</div>
+                  <div style={{ fontSize: 11, color: form.event_type === opt.key ? "rgba(255,255,255,0.65)" : "var(--text-sub)", lineHeight: 1.5 }}>{opt.desc}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Champs communs ── */}
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 14 }}>
-            <div><label style={S.label}>Nom de l'événement</label><input style={S.input} placeholder="Ex: Soirée chez Marc" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} maxLength={50} /></div>
+            <div><label style={S.label}>Nom de l'événement</label><input style={S.input} placeholder="Ex: Fête de fin d'année" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} maxLength={50} /></div>
             <div><label style={S.label}>Date</label><input type="date" style={S.input} value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
             <div style={{ gridColumn: isMobile ? "auto" : "1 / -1" }}>
-              <label style={S.label}>Monnaie</label>
+              <label style={S.label}>Devise</label>
               <select style={{ ...S.input, maxWidth: 220 }} value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value })}>
                 {CURRENCIES.map(c => <option key={c}>{c}</option>)}
               </select>
             </div>
           </div>
+
+          {/* ── Champs spécifiques Budget ── */}
+          {form.event_type === "budget" && (
+            <div style={{ background: "#FFF8E1", border: "1px solid #FFE082", borderRadius: 12, padding: "14px 16px", marginBottom: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#F57F17", marginBottom: 12 }}>🏦 Options Budget</div>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
+                <div>
+                  <label style={S.label}>Cotisation cible par participant <span style={{ color: "#aaa", fontWeight: 400 }}>(optionnel)</span></label>
+                  <input type="number" min="0" step="0.01" style={S.input} placeholder="Ex: 50" value={form.cotisation_cible} onChange={e => setForm({ ...form, cotisation_cible: e.target.value })} />
+                </div>
+                <div>
+                  <label style={S.label}>Nombre d'invités attendus <span style={{ color: "#aaa", fontWeight: 400 }}>(optionnel)</span></label>
+                  <input type="number" min="0" step="1" style={S.input} placeholder="Ex: 100" value={form.nombre_invites} onChange={e => setForm({ ...form, nombre_invites: e.target.value })} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Participants ── */}
           <div style={{ marginBottom: 18 }}>
             <ParticipantInput participants={form.participants} onChange={p => setForm({ ...form, participants: p })} />
           </div>
+
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={handleCreate} disabled={loading || form.participants.length < 2}
-              style={{ ...S.btnDark, opacity: form.participants.length < 2 ? 0.5 : 1 }}>
-              {loading ? "Création..." : "Créer l'événement"}
+            <button onClick={handleCreate} disabled={loading || form.participants.length < 1}
+              style={{ ...S.btnDark, opacity: form.participants.length < 1 ? 0.5 : 1 }}>
+              {loading ? "Création..." : `Créer l'événement ${form.event_type === "budget" ? "🏦" : "💸"}`}
             </button>
             <button onClick={() => setShowNew(false)} style={S.btnGhost}>Annuler</button>
           </div>
@@ -1616,19 +1661,25 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
             const progress = participants.length > 0 ? (settledCount / participants.length) * 100 : 0;
 
             return (
-              <div key={ev.id} style={{ background: "#fff", borderRadius: 16, padding: isMobile ? "16px" : "18px 22px", border: "1px solid #eee", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
+              <div key={ev.id} style={{ background: "var(--bg-secondary)", borderRadius: 16, padding: isMobile ? "16px" : "18px 22px", border: `1px solid ${ev.event_type === "budget" ? "#FFE082" : "var(--border)"}`, boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
                 <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
-                  <div style={{ width: 44, height: 44, borderRadius: 12, background: ev.status === "closed" ? "#f5f5f5" : allSettled ? "#E8F5E9" : "#f0faf4", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>
-                    {ev.status === "closed" ? "🔒" : "🎊"}
+                  <div style={{ width: 44, height: 44, borderRadius: 12, background: ev.status === "closed" ? "var(--hover-bg)" : ev.event_type === "budget" ? "#FFF8E1" : "#f0faf4", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>
+                    {ev.status === "closed" ? "🔒" : ev.event_type === "budget" ? "🏦" : "🎊"}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
                       <span style={{ fontSize: 15, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: isMobile ? 140 : 260 }}>{ev.name}</span>
-                      <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: ev.status === "closed" ? "#f0f0f0" : allSettled ? "#E8F5E9" : "#fff8e1", color: ev.status === "closed" ? "#999" : allSettled ? "#2E7D32" : "#F57F17", fontWeight: 700, flexShrink: 0 }}>
+                      <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: ev.status === "closed" ? "var(--hover-bg)" : allSettled ? "#E8F5E9" : "#fff8e1", color: ev.status === "closed" ? "#999" : allSettled ? "#2E7D32" : "#F57F17", fontWeight: 700, flexShrink: 0 }}>
                         {ev.status === "closed" ? "🔒 Bouclé" : allSettled ? "✓ Prêt à boucler" : "En cours"}
                       </span>
+                      <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: ev.event_type === "budget" ? "#FFF8E1" : "#F3E5F5", color: ev.event_type === "budget" ? "#F57F17" : "#6A1B9A", fontWeight: 700, flexShrink: 0, border: `1px solid ${ev.event_type === "budget" ? "#FFE082" : "#CE93D8"}` }}>
+                        {ev.event_type === "budget" ? "🏦 Budget" : "💸 Split"}
+                      </span>
                     </div>
-                    <div style={{ fontSize: 11, color: "#999", marginBottom: 10 }}>📅 {ev.date} · {currencySymbol(ev.currency)} · {evExp.length} charge{evExp.length > 1 ? "s" : ""}</div>
+                    <div style={{ fontSize: 11, color: "var(--text-sub)", marginBottom: 10 }}>
+                      📅 {ev.date} · {currencySymbol(ev.currency)} · {evExp.length} charge{evExp.length > 1 ? "s" : ""}
+                      {ev.event_type === "budget" && ev.nombre_invites > 0 && ` · ${ev.nombre_invites} invités attendus`}
+                    </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: ev.status === "open" ? 12 : 0 }}>
                       <AvatarStack names={participants} size={24} />
                       <button onClick={() => setManagingEv(ev)}
@@ -1639,23 +1690,25 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
                     {ev.status === "open" && (
                       <div>
                         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                          <span style={{ fontSize: 11, color: "#aaa" }}>Progression vers bouclage</span>
+                          <span style={{ fontSize: 11, color: "var(--text-sub)" }}>
+                            {ev.event_type === "budget" ? "Progression collecte" : "Progression vers bouclage"}
+                          </span>
                           <span style={{ fontSize: 11, color: allSettled ? "#2E7D32" : "#F57F17", fontWeight: 700 }}>{settledCount}/{participants.length} soldés</span>
                         </div>
-                        <div style={{ background: "#f0f0f0", borderRadius: 6, height: 6, overflow: "hidden" }}>
-                          <div style={{ background: allSettled ? "#2E7D32" : "#F57F17", borderRadius: 6, height: 6, width: `${progress}%`, transition: "width 0.4s ease" }} />
+                        <div style={{ background: "var(--border)", borderRadius: 6, height: 6, overflow: "hidden" }}>
+                          <div style={{ background: allSettled ? "#2E7D32" : ev.event_type === "budget" ? "#F57F17" : "#F57F17", borderRadius: 6, height: 6, width: `${progress}%`, transition: "width 0.4s ease" }} />
                         </div>
                       </div>
                     )}
                   </div>
                   <div style={{ textAlign: "right", flexShrink: 0 }}>
                     <div style={{ fontSize: 17, fontWeight: 700, fontFamily: "'Playfair Display', serif", marginBottom: 2 }}>{fmt(evTotal, currencySymbol(ev.currency))}</div>
-                    <div style={{ fontSize: 10, color: "#aaa", marginBottom: 10 }}>budget collectif</div>
+                    <div style={{ fontSize: 10, color: "var(--text-sub)", marginBottom: 10 }}>{ev.event_type === "budget" ? "total dépenses" : "budget collectif"}</div>
                     {ev.status === "open" && (
                       <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
                         <button onClick={() => handleSaveTemplate(ev)}
                           title="Sauvegarder comme modèle"
-                          style={{ padding: "5px 12px", borderRadius: 8, border: "1.5px solid #e0e0e0", background: "#fafafa", color: "#555", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
+                          style={{ padding: "5px 12px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--hover-bg)", color: "var(--text-muted)", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
                           📋 Modèle
                         </button>
                         {allSettled && (

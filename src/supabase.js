@@ -205,7 +205,15 @@ export async function fetchEvents(userId) {
 export async function createEvent(event, participants, userId) {
   const { data: ev, error: evErr } = await supabase
     .from('events')
-    .insert({ name: event.name, date: event.date, currency: event.currency, admin_id: userId })
+    .insert({
+      name: event.name,
+      date: event.date,
+      currency: event.currency,
+      admin_id: userId,
+      event_type: event.event_type || 'split',
+      cotisation_cible: event.cotisation_cible || 0,
+      nombre_invites: event.nombre_invites || 0,
+    })
     .select().single();
   if (evErr) return { error: evErr };
   const rows = participants.map(name => ({ event_id: ev.id, name }));
@@ -213,6 +221,70 @@ export async function createEvent(event, participants, userId) {
   if (pErr) return { error: pErr };
   await addHistory({ eventId: ev.id, action: 'Événement créé', actorId: userId, before: null, after: ev });
   return { data: ev, error: null };
+}
+
+// ─── COTISATIONS (Option 2 — Budget) ─────────────────────────
+export async function fetchCotisations(eventId) {
+  const { data, error } = await supabase
+    .from('cotisations')
+    .select('*')
+    .eq('event_id', eventId)
+    .order('created_at', { ascending: true });
+  return { data, error };
+}
+
+export async function createCotisation(cotisation) {
+  const { data, error } = await supabase
+    .from('cotisations')
+    .insert(cotisation)
+    .select().single();
+  return { data, error };
+}
+
+export async function updateCotisation(id, updates) {
+  const { data, error } = await supabase
+    .from('cotisations')
+    .update(updates)
+    .eq('id', id)
+    .select().single();
+  return { data, error };
+}
+
+export async function deleteCotisation(id) {
+  const { error } = await supabase.from('cotisations').delete().eq('id', id);
+  return { error };
+}
+
+// ─── AVANCES (Option 2 — Budget) ─────────────────────────────
+export async function fetchAvances(eventId) {
+  const { data, error } = await supabase
+    .from('avances')
+    .select('*')
+    .eq('event_id', eventId)
+    .order('created_at', { ascending: true });
+  return { data, error };
+}
+
+export async function createAvance(avance) {
+  const { data, error } = await supabase
+    .from('avances')
+    .insert(avance)
+    .select().single();
+  return { data, error };
+}
+
+export async function updateAvance(id, updates) {
+  const { data, error } = await supabase
+    .from('avances')
+    .update(updates)
+    .eq('id', id)
+    .select().single();
+  return { data, error };
+}
+
+export async function deleteAvance(id) {
+  const { error } = await supabase.from('avances').delete().eq('id', id);
+  return { error };
 }
 
 export async function updateEventStatus(eventId, status) {
