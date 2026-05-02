@@ -9,3 +9,6 @@ Service_role_Supabase: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFz
 
 
 Con Secret : 28edc08c47fb1aa407583875e78c20e3
+
+
+https://supabase.com/dashboard/project/okwucwvdmdsepqkkmnug/settings/api-keys/legacy

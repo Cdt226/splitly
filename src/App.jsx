@@ -2046,7 +2046,7 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
         </>
       )}
       </div>
-      </div>
+      )}
     </div>
   );
 }
