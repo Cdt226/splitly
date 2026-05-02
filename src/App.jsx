@@ -1416,18 +1416,26 @@ function EventDetail({ ev, events, expenses, contributions, user, reload, isMobi
 
       {/* Contenu onglets */}
       {activeTab === "charges" && (
-        <Expenses
-          events={events.filter(e => e.id === ev.id)}
-          expenses={expenses}
-          contributions={contributions}
-          user={user}
-          reload={reload}
-          isMobile={isMobile}
-          addToast={addToast}
-          t={t}
-          hideHeader={true}
-          defaultEventId={ev.id}
-        />
+        <>
+          {ev.event_type === "budget" && (
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+              <button onClick={() => exportChargesPDF(ev, evExp)}
+                style={{ ...S.btnGhost, fontSize: 12, padding: "7px 14px" }}>📄 PDF Charges</button>
+            </div>
+          )}
+          <Expenses
+            events={events.filter(e => e.id === ev.id)}
+            expenses={expenses}
+            contributions={contributions}
+            user={user}
+            reload={reload}
+            isMobile={isMobile}
+            addToast={addToast}
+            t={t}
+            hideHeader={true}
+            defaultEventId={ev.id}
+          />
+        </>
       )}
       {activeTab === "cotisations" && isBudget && (
         <CotisationsPage
@@ -1495,6 +1503,7 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
   const [sortEvents, setSortEvents] = useState("date_desc");
 
   const MAX_PARTICIPANTS = 30;
+  const MAX_PARTICIPANTS_BUDGET = 150;
   const MAX_NAME_LENGTH = 50;
   const MAX_PARTICIPANT_NAME = 30;
 
@@ -1538,7 +1547,8 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
     if (form.name.trim().length > MAX_NAME_LENGTH) { addToast(`Le nom ne peut pas dépasser ${MAX_NAME_LENGTH} caractères.`, "warning"); return; }
     if (!form.date) { addToast("La date est obligatoire.", "warning"); return; }
     if (form.participants.length < 1) { addToast("Minimum 1 participant requis.", "warning"); return; }
-    if (form.participants.length > MAX_PARTICIPANTS) { addToast(`Maximum ${MAX_PARTICIPANTS} participants par événement.`, "warning"); return; }
+    const maxP = form.event_type === "budget" ? MAX_PARTICIPANTS_BUDGET : MAX_PARTICIPANTS;
+    if (form.participants.length > maxP) { addToast(`Maximum ${maxP} participants pour un événement ${form.event_type === "budget" ? "Budget" : "Split"}.`, "warning"); return; }
     setLoading(true);
     const eventData = {
       ...form,
@@ -1705,7 +1715,9 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
     if (!name) { addToast("Le prénom ne peut pas être vide.", "warning"); return; }
     if (name.length > MAX_PARTICIPANT_NAME) { addToast(`Le prénom ne peut pas dépasser ${MAX_PARTICIPANT_NAME} caractères.`, "warning"); return; }
     const currentCount = (ev.event_participants || []).length;
-    if (currentCount >= MAX_PARTICIPANTS) { addToast(`Maximum ${MAX_PARTICIPANTS} participants par événement.`, "warning"); return; }
+    if (currentCount >= (ev?.event_type === "budget" ? MAX_PARTICIPANTS_BUDGET : MAX_PARTICIPANTS)) {
+      addToast(`Maximum ${ev?.event_type === "budget" ? MAX_PARTICIPANTS_BUDGET : MAX_PARTICIPANTS} participants atteint.`, "warning"); return;
+    }
     const existing = (ev.event_participants || []).map(p => p.name.toLowerCase());
     if (existing.includes(name.toLowerCase())) { addToast("Ce participant existe déjà.", "warning"); return; }
     await addParticipant(ev.id, name);
@@ -1774,13 +1786,13 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                 <label style={S.label}>Ajouter un participant</label>
-                <span style={{ fontSize: 11, color: (managingEv.event_participants || []).length >= 30 ? "#C62828" : "#aaa", fontWeight: 600 }}>
-                  {(managingEv.event_participants || []).length}/30 participants
+                <span style={{ fontSize: 11, color: (managingEv.event_participants || []).length >= (managingEv.event_type === "budget" ? MAX_PARTICIPANTS_BUDGET : MAX_PARTICIPANTS) ? "#C62828" : "#aaa", fontWeight: 600 }}>
+                  {(managingEv.event_participants || []).length}/{managingEv.event_type === "budget" ? MAX_PARTICIPANTS_BUDGET : MAX_PARTICIPANTS} participants
                 </span>
               </div>
-              {(managingEv.event_participants || []).length >= 30 ? (
+              {(managingEv.event_participants || []).length >= (managingEv.event_type === "budget" ? MAX_PARTICIPANTS_BUDGET : MAX_PARTICIPANTS) ? (
                 <div style={{ background: "#fff5f5", border: "1px solid #ffcdd2", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#C62828" }}>
-                  ⚠️ Maximum 30 participants atteint.
+                  ⚠️ Maximum {managingEv.event_type === "budget" ? MAX_PARTICIPANTS_BUDGET : MAX_PARTICIPANTS} participants atteint.
                 </div>
               ) : (
                 <div style={{ display: "flex", gap: 8 }}>
@@ -2051,6 +2063,77 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
   );
 }
 
+// ─── EXPORT PDF CHARGES ──────────────────────────────────────
+function exportChargesPDF(ev, evExpenses) {
+  const sym = currencySymbol(ev.currency);
+  const fmt2 = n => `${Number(n || 0).toFixed(2)} ${sym}`;
+  const total = evExpenses.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
+  const byCategory = Object.keys(CATEGORIES).map(cat => ({
+    cat, total: evExpenses.filter(e => e.category === cat).reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0)
+  })).filter(c => c.total > 0).sort((a, b) => b.total - a.total);
+
+  const rows = evExpenses.map(ex => {
+    const exTotal = ex.qty * (ex.unit_price ?? 0);
+    return `<tr style="border-bottom:1px solid #f0f0f0">
+      <td style="padding:8px 12px">${CATEGORIES[ex.category]?.icon || ""} ${ex.category}</td>
+      <td style="padding:8px 12px">${ex.detail}</td>
+      <td style="padding:8px 12px">${ex.paid_by || "—"}</td>
+      <td style="padding:8px 12px;text-align:right">${ex.qty > 1 ? `${ex.qty} × ${fmt2(ex.unit_price ?? 0)}` : ""}</td>
+      <td style="padding:8px 12px;text-align:right;font-weight:700">${fmt2(exTotal)}</td>
+    </tr>`;
+  }).join("");
+
+  const catRows = byCategory.map(c => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f0f0f0">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:16px">${CATEGORIES[c.cat]?.icon || "🏷️"}</span>
+        <span style="font-size:13px">${c.cat}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:16px">
+        <span style="font-size:12px;color:#888">${total > 0 ? ((c.total / total) * 100).toFixed(0) : 0}%</span>
+        <span style="font-size:13px;font-weight:700">${fmt2(c.total)}</span>
+      </div>
+    </div>`).join("");
+
+  const html = `
+    <html><head><meta charset="utf-8">
+    <style>body{font-family:Arial,sans-serif;margin:0;padding:0;color:#333}table{width:100%;border-collapse:collapse}th{background:#f5f5f5;padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#888}</style>
+    </head><body>
+    <div style="background:linear-gradient(135deg,#0F0F0F,#1a1a2e);padding:28px 32px;color:#fff">
+      <div style="font-size:22px;font-weight:700;margin-bottom:4px">SplitLy — Bilan Charges</div>
+      <div style="font-size:13px;color:rgba(255,255,255,0.6)">${ev.event_type === "budget" ? "🏦" : "🎊"} ${ev.name} · ${ev.date} · ${sym}</div>
+    </div>
+    <div style="padding:24px">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:24px">
+        <div style="background:#FFEBEE;border-radius:10px;padding:14px;border-left:4px solid #C62828">
+          <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Total dépenses</div>
+          <div style="font-size:20px;font-weight:700;color:#C62828">${fmt2(total)}</div>
+        </div>
+        <div style="background:#f5f5f5;border-radius:10px;padding:14px;border-left:4px solid #0F0F0F">
+          <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Nb charges</div>
+          <div style="font-size:20px;font-weight:700">${evExpenses.length}</div>
+        </div>
+        <div style="background:#f5f5f5;border-radius:10px;padding:14px;border-left:4px solid #1565C0">
+          <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Catégories</div>
+          <div style="font-size:20px;font-weight:700">${byCategory.length}</div>
+        </div>
+      </div>
+      ${ev.nombre_invites > 0 ? `<div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:10px;padding:12px 16px;margin-bottom:20px;font-size:13px">💡 Coût par invité : <strong>${fmt2(total / ev.nombre_invites)}</strong> sur ${ev.nombre_invites} invités attendus</div>` : ""}
+      <h3 style="font-size:13px;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:16px">Répartition par catégorie</h3>
+      <div style="margin-bottom:24px">${catRows}</div>
+      <h3 style="font-size:13px;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:12px">Détail des charges</h3>
+      <table>
+        <thead><tr><th>Catégorie</th><th>Désignation</th><th>Responsable</th><th style="text-align:right">Détail</th><th style="text-align:right">Montant</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr style="background:#f5f5f5;font-weight:700"><td colspan="4" style="padding:10px 12px">TOTAL</td><td style="padding:10px 12px;text-align:right;color:#C62828">${fmt2(total)}</td></tr></tfoot>
+      </table>
+      <div style="text-align:center;font-size:11px;color:#aaa;border-top:1px solid #eee;padding-top:16px;margin-top:20px">Généré par SplitLy — splitmeapp.com · ${new Date().toLocaleDateString("fr-FR")}</div>
+    </div></body></html>`;
+
+  const w = window.open("", "_blank");
+  if (w) { w.document.write(html); w.document.close(); }
+}
+
 // ─── CHARGES ──────────────────────────────────────────────────
 function Expenses({ events, expenses, contributions, user, reload, isMobile, addToast, t, hideHeader, defaultEventId }) {
   const [showForm, setShowForm] = useState(false);
@@ -2078,11 +2161,17 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
   const sym = currencySymbol(currentEvent?.currency);
 
   const handleSave = async () => {
-    if (!form.eventId || !form.category || !form.sub || !form.detail || form.included.length === 0) {
+    const isBudgetEvent = currentEvent?.event_type === "budget";
+    // Pour Budget : included = tous les participants automatiquement
+    const finalIncluded = isBudgetEvent ? participants : form.included;
+    if (!form.eventId || !form.category || !form.sub || !form.detail) {
       addToast(t("toast_fill_all"), "warning"); return;
     }
+    if (!isBudgetEvent && finalIncluded.length === 0) {
+      addToast("Sélectionnez au moins une personne.", "warning"); return;
+    }
     if (!unpaid && !form.paidBy) {
-      addToast("Sélectionnez un payeur ou cochez 'Charge non réglée'.", "warning"); return;
+      addToast("Sélectionnez un responsable ou cochez 'Charge non réglée'.", "warning"); return;
     }
     const amountError = validateAmount(form.qty, form.unit);
     if (amountError) { addToast(amountError, "warning"); return; }
@@ -2124,11 +2213,11 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
       }
       // Si wasUnpaid && unpaid → rien à faire
 
-      await updateExpense(editingEx.id, { ...form, qty, unit, is_unpaid: unpaid }, user.id, editingEx);
+      await updateExpense(editingEx.id, { ...form, included: finalIncluded, qty, unit, is_unpaid: unpaid }, user.id, editingEx);
       addToast(t("toast_expense_edited"), "success");
     } else {
       // Nouvelle charge
-      await createExpense({ ...form, qty, unit, is_unpaid: unpaid }, user.id);
+      await createExpense({ ...form, included: finalIncluded, qty, unit, is_unpaid: unpaid }, user.id);
 
       // Créditer le payeur seulement si la charge est réglée
       if (!unpaid) {
@@ -2193,13 +2282,22 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
   return (
     <div>
       {confirm && <ConfirmModal {...confirm} />}
-      {!hideHeader && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+      {!hideHeader && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
         <div>
           <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2 }}>Charges</h2>
           <p style={{ color: "#888", fontSize: 12 }}>{expenses.length} dépense{expenses.length > 1 ? "s" : ""}</p>
         </div>
-        <button onClick={() => { setForm(empty); setEditingEx(null); setShowForm(!showForm); }}
-          style={S.btnDark}>{showForm && !editingEx ? "× Fermer" : "+ Ajouter"}</button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {filterEvent !== "all" && events.find(e => e.id === filterEvent) && (
+            <button onClick={() => {
+              const ev = events.find(e => e.id === filterEvent);
+              const evExp = expenses.filter(e => e.event_id === filterEvent);
+              exportChargesPDF(ev, evExp);
+            }} style={{ ...S.btnGhost, fontSize: 12, padding: "8px 14px" }}>📄 PDF Charges</button>
+          )}
+          <button onClick={() => { setForm(empty); setEditingEx(null); setShowForm(!showForm); }}
+            style={S.btnDark}>{showForm && !editingEx ? "× Fermer" : "+ Ajouter"}</button>
+        </div>
       </div>}
       {hideHeader && <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
         <button onClick={() => { setForm({ ...empty, eventId: defaultEventId || "" }); setEditingEx(null); setShowForm(!showForm); }}
@@ -2353,8 +2451,8 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
               </div>
             </div>
           </div>
-          {currentEvent && (
-            <div style={{ marginBottom: 16, padding: 16, background: "#fafafa", borderRadius: 12, border: "1px solid #f0f0f0" }}>
+          {currentEvent && currentEvent.event_type !== "budget" && (
+            <div style={{ marginBottom: 16, padding: 16, background: "var(--hover-bg)", borderRadius: 12, border: "1px solid var(--border)" }}>
               <ParticipantToggle people={participants} selected={form.included} onChange={p => setForm({ ...form, included: p })} label="Qui partage cette charge ?" />
               {form.included.length > 0 && total > 0 && (
                 <div style={{ marginTop: 12, padding: "10px 14px", background: "#E8F5E9", borderRadius: 10, fontSize: 13, color: "#2E7D32", fontWeight: 600 }}>
@@ -2362,6 +2460,11 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
                 </div>
               )}
               {form.included.length === 0 && <div style={{ marginTop: 8, fontSize: 12, color: "#C62828" }}>⚠️ Sélectionnez au moins une personne</div>}
+            </div>
+          )}
+          {currentEvent && currentEvent.event_type === "budget" && (
+            <div style={{ background: "#E8F5E9", border: "1px solid #C8E6C9", borderRadius: 10, padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "#2E7D32" }}>
+              ✓ Cette charge sera attribuée à l'ensemble des participants de l'événement ({participants.length} personnes).
             </div>
           )}
           {/* Commentaire optionnel */}
@@ -4210,10 +4313,88 @@ function SuperAdminPage({ user, isMobile, addToast }) {
   );
 }
 
+// ─── EXPORT PDF COTISATIONS ───────────────────────────────────
+function exportCotisationsPDF(ev, cotisations) {
+  const sym = currencySymbol(ev.currency);
+  const fmt2 = n => `${Number(n || 0).toFixed(2)} ${sym}`;
+  const totalCollecte = cotisations.filter(c => c.statut === "paye").reduce((s, c) => s + c.montant, 0);
+  const totalNature = cotisations.filter(c => c.forme === "nature").reduce((s, c) => s + c.montant, 0);
+  const totalEspeces = cotisations.filter(c => c.forme === "especes" && c.statut === "paye").reduce((s, c) => s + c.montant, 0);
+  const nbCotisants = new Set(cotisations.filter(c => c.statut === "paye").map(c => c.participant_name)).size;
+  const participants = (ev.event_participants || []).map(p => p.name);
+  const cotisants = new Set(cotisations.filter(c => c.statut === "paye").map(c => c.participant_name));
+  const nonCotisants = participants.filter(p => !cotisants.has(p));
+
+  const rows = cotisations.map(c => `
+    <tr style="border-bottom:1px solid #f0f0f0">
+      <td style="padding:8px 12px;font-weight:600">${c.participant_name}</td>
+      <td style="padding:8px 12px;text-align:center">
+        <span style="background:${c.forme === "nature" ? "#E8F5E9" : "#E3F2FD"};color:${c.forme === "nature" ? "#2E7D32" : "#1565C0"};padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">
+          ${c.forme === "nature" ? "🌿 Nature" : "💵 Espèces"}
+        </span>
+      </td>
+      <td style="padding:8px 12px;text-align:center">
+        <span style="background:${c.statut === "paye" ? "#E8F5E9" : c.statut === "partiel" ? "#FFF8E1" : "#FFEBEE"};color:${c.statut === "paye" ? "#2E7D32" : c.statut === "partiel" ? "#F57F17" : "#C62828"};padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">
+          ${c.statut === "paye" ? "✓ Payé" : c.statut === "partiel" ? "~ Partiel" : "✗ Impayé"}
+        </span>
+      </td>
+      <td style="padding:8px 12px">${c.description || "—"}</td>
+      <td style="padding:8px 12px;text-align:right;font-weight:700">${fmt2(c.montant)}</td>
+    </tr>`).join("");
+
+  const html = `
+    <html><head><meta charset="utf-8">
+    <style>body{font-family:Arial,sans-serif;margin:0;padding:0;color:#333}table{width:100%;border-collapse:collapse}th{background:#f5f5f5;padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#888}@media print{body{margin:0}}</style>
+    </head><body>
+    <div style="background:linear-gradient(135deg,#0F0F0F,#1a1a2e);padding:28px 32px;color:#fff">
+      <div style="font-size:22px;font-weight:700;margin-bottom:4px">SplitLy — Bilan Cotisations</div>
+      <div style="font-size:13px;color:rgba(255,255,255,0.6)">🏦 ${ev.name} · ${ev.date} · ${sym}</div>
+    </div>
+    <div style="padding:24px">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:24px">
+        <div style="background:#E8F5E9;border-radius:10px;padding:14px;border-left:4px solid #2E7D32">
+          <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Total collecté</div>
+          <div style="font-size:20px;font-weight:700;color:#2E7D32">${fmt2(totalCollecte)}</div>
+        </div>
+        <div style="background:#E3F2FD;border-radius:10px;padding:14px;border-left:4px solid #1565C0">
+          <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">En espèces</div>
+          <div style="font-size:20px;font-weight:700;color:#1565C0">${fmt2(totalEspeces)}</div>
+        </div>
+        <div style="background:#E8F5E9;border-radius:10px;padding:14px;border-left:4px solid #6A1B9A">
+          <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">En nature</div>
+          <div style="font-size:20px;font-weight:700;color:#6A1B9A">${fmt2(totalNature)}</div>
+        </div>
+        <div style="background:#f5f5f5;border-radius:10px;padding:14px;border-left:4px solid #0F0F0F">
+          <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Cotisants</div>
+          <div style="font-size:20px;font-weight:700">${nbCotisants} / ${participants.length}</div>
+        </div>
+      </div>
+      ${ev.cotisation_cible > 0 ? `<div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:10px;padding:12px 16px;margin-bottom:20px;font-size:13px">🎯 Cotisation cible : <strong>${fmt2(ev.cotisation_cible)}/participant</strong> · Total cible : <strong>${fmt2(ev.cotisation_cible * participants.length)}</strong> · Progression : <strong>${((totalCollecte / (ev.cotisation_cible * participants.length)) * 100).toFixed(0)}%</strong></div>` : ""}
+      <table style="margin-bottom:20px">
+        <thead><tr><th>Participant</th><th>Forme</th><th>Statut</th><th>Description</th><th style="text-align:right">Montant</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr style="background:#f5f5f5;font-weight:700"><td colspan="4" style="padding:10px 12px">TOTAL COLLECTÉ</td><td style="padding:10px 12px;text-align:right;color:#2E7D32">${fmt2(totalCollecte)}</td></tr></tfoot>
+      </table>
+      ${nonCotisants.length > 0 ? `<div style="background:#FFEBEE;border:1px solid #FFCDD2;border-radius:10px;padding:12px 16px;font-size:13px;color:#C62828">⚠️ Participants sans cotisation (${nonCotisants.length}) : ${nonCotisants.join(", ")}</div>` : `<div style="background:#E8F5E9;border:1px solid #C8E6C9;border-radius:10px;padding:12px 16px;font-size:13px;color:#2E7D32">✓ Tous les participants ont cotisé.</div>`}
+      <div style="text-align:center;font-size:11px;color:#aaa;border-top:1px solid #eee;padding-top:16px;margin-top:20px">Généré par SplitLy — splitmeapp.com · ${new Date().toLocaleDateString("fr-FR")}</div>
+    </div></body></html>`;
+
+  const w = window.open("", "_blank");
+  if (w) { w.document.write(html); w.document.close(); }
+}
+
 // ─── CONTRIBUTIONS PAGE (fusion Balance + Cotisations) ────────
 function ContributionsPage({ events, expenses, contributions, user, reload, isMobile, addToast, t }) {
   const [filterEvent, setFilterEvent] = useState(events[0]?.id || "");
+  const [cotisations, setCotisations] = useState([]);
   const ev = events.find(e => e.id === filterEvent);
+  const isBudget = ev?.event_type === "budget";
+
+  useEffect(() => {
+    if (isBudget && filterEvent) {
+      fetchCotisations(filterEvent).then(({ data }) => setCotisations(data || []));
+    }
+  }, [filterEvent, isBudget]);
 
   return (
     <div>
@@ -4221,24 +4402,36 @@ function ContributionsPage({ events, expenses, contributions, user, reload, isMo
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
         <div>
           <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2, color: "var(--text)" }}>
-            {ev?.event_type === "budget" ? "💰 Cotisations" : "⊜ Répartition"}
+            {isBudget ? "💰 Cotisations" : "⊜ Répartition"}
           </h2>
           <p style={{ color: "var(--text-sub)", fontSize: 12 }}>
-            {ev?.event_type === "budget" ? "Gestion des cotisations et contributions" : "Soldes calculés en temps réel"}
+            {isBudget ? "Gestion des cotisations et contributions" : "Soldes calculés en temps réel"}
           </p>
         </div>
-        <select style={{ ...S.input, width: "auto" }} value={filterEvent} onChange={e => setFilterEvent(e.target.value)}>
-          {events.map(ev => <option key={ev.id} value={ev.id}>{ev.event_type === "budget" ? "🏦 " : "💸 "}{ev.name}</option>)}
-        </select>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <select style={{ ...S.input, width: "auto" }} value={filterEvent} onChange={e => setFilterEvent(e.target.value)}>
+            {events.map(ev => <option key={ev.id} value={ev.id}>{ev.event_type === "budget" ? "🏦 " : "💸 "}{ev.name}</option>)}
+          </select>
+          {isBudget && (
+            <button onClick={() => exportCotisationsPDF(ev, cotisations)}
+              style={{ ...S.btnGhost, fontSize: 12, padding: "8px 14px", whiteSpace: "nowrap" }}>
+              📄 PDF Cotisations
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Routing selon le type */}
-      {ev?.event_type === "budget" ? (
+      {isBudget ? (
         <CotisationsPage
           events={events.filter(e => e.id === filterEvent)}
           expenses={expenses}
           user={user}
-          reload={reload}
+          reload={async () => {
+            await reload();
+            const { data } = await fetchCotisations(filterEvent);
+            setCotisations(data || []);
+          }}
           isMobile={isMobile}
           addToast={addToast}
           t={t}
