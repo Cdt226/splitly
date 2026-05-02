@@ -3479,6 +3479,9 @@ function SuperAdminPage({ user, isMobile, addToast }) {
     }
     setSendingEmail(false);
   };
+
+  // Filtres
+  const filtered = users.filter(u => {
     const q = search.toLowerCase();
     const matchSearch = !q || u.email?.toLowerCase().includes(q) || u.full_name?.toLowerCase().includes(q);
     const matchRole = filterRole === "all" || u.user_role === filterRole;
