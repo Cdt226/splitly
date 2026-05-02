@@ -5131,6 +5131,7 @@ function CotisationsPage({ events, expenses, user, reload, isMobile, addToast, t
   const ev = events.find(e => e.id === filterEvent);
   const sym = currencySymbol(ev?.currency);
   const participants = (ev?.event_participants || []).map(p => p.name);
+  const cotisationCible = ev?.cotisation_cible || 0;
 
   const [cotisations, setCotisations] = useState([]);
   const [loadingCot, setLoadingCot] = useState(false);
@@ -5141,13 +5142,27 @@ function CotisationsPage({ events, expenses, user, reload, isMobile, addToast, t
   const [showAddParticipant, setShowAddParticipant] = useState(false);
   const [newParticipant, setNewParticipant] = useState("");
 
-  // Formulaire cotisation
-  const emptyForm = { participant_name: "", montant: "", forme: "especes", statut: "paye", description: "" };
+  // B3 — Inscription groupée
+  const [showGroupForm, setShowGroupForm] = useState(false);
+  const [groupSelected, setGroupSelected] = useState([]);
+  const [savingGroup, setSavingGroup] = useState(false);
+
+  // B2 — Mode montant : "minimal" | "libre"
+  const [montantMode, setMontantMode] = useState(cotisationCible > 0 ? "minimal" : "libre");
+
+  // Formulaire cotisation (B1: statut supprimé)
+  const emptyForm = { participant_name: "", montant: "", forme: "especes", description: "" };
   const [form, setForm] = useState(emptyForm);
 
-  // Formulaire charge en nature (si forme = nature)
+  // Formulaire charge en nature
   const emptyNatureForm = { category: "Divers", sub: "", detail: "", qty: 1, unit: "", comment: "" };
   const [natureForm, setNatureForm] = useState(emptyNatureForm);
+
+  // Recalculer montantMode quand l'événement change
+  useEffect(() => {
+    setMontantMode(cotisationCible > 0 ? "minimal" : "libre");
+    setGroupSelected([]);
+  }, [filterEvent, cotisationCible]);
 
   // Charger cotisations
   const loadCotisations = async () => {
@@ -5162,9 +5177,23 @@ function CotisationsPage({ events, expenses, user, reload, isMobile, addToast, t
 
   useEffect(() => { loadCotisations(); }, [filterEvent]);
 
+  // B1: Statut automatique selon montant
+  const computeStatut = (montant) => Number(montant) > 0 ? "paye" : "impaye";
+
+  // B2: Montant effectif selon mode
+  const getMontantEffectif = () => {
+    if (montantMode === "minimal" && cotisationCible > 0) return cotisationCible;
+    return Number(form.montant) || 0;
+  };
+
   const handleSave = async () => {
     if (!form.participant_name.trim()) { addToast("Sélectionnez un participant.", "warning"); return; }
-    if (!form.montant || isNaN(form.montant) || Number(form.montant) <= 0) { addToast("Montant invalide.", "warning"); return; }
+    const montantEffectif = getMontantEffectif();
+    if (!montantEffectif || montantEffectif <= 0) { addToast("Le montant doit être supérieur à 0.", "warning"); return; }
+    // B2: Validation montant libre >= cible si cible définie
+    if (montantMode === "libre" && cotisationCible > 0 && montantEffectif < cotisationCible) {
+      addToast(`Le montant doit être au moins égal à la cotisation cible (${fmt(cotisationCible, sym)}).`, "warning"); return;
+    }
     if (form.participant_name.length > 30) { addToast("Nom trop long (max 30 car.).", "warning"); return; }
     if (form.forme === "nature" && !natureForm.detail.trim()) { addToast("Précisez la nature de l'apport.", "warning"); return; }
 
@@ -5172,9 +5201,9 @@ function CotisationsPage({ events, expenses, user, reload, isMobile, addToast, t
     const cotData = {
       event_id: filterEvent,
       participant_name: form.participant_name,
-      montant: Number(form.montant),
+      montant: montantEffectif,
       forme: form.forme,
-      statut: form.statut,
+      statut: computeStatut(montantEffectif), // B1: automatique
       description: form.description,
     };
 
@@ -5184,7 +5213,6 @@ function CotisationsPage({ events, expenses, user, reload, isMobile, addToast, t
         addToast("Cotisation mise à jour.", "success");
       } else {
         const { data: newCot } = await createCotisation(cotData);
-        // Si apport en nature → créer aussi la charge
         if (form.forme === "nature" && newCot) {
           await createExpense({
             eventId: filterEvent,
@@ -5192,7 +5220,7 @@ function CotisationsPage({ events, expenses, user, reload, isMobile, addToast, t
             sub: natureForm.sub || form.participant_name,
             detail: natureForm.detail,
             qty: Number(natureForm.qty) || 1,
-            unit: Number(form.montant),
+            unit: montantEffectif,
             paidBy: form.participant_name,
             included: participants,
             comment: `Apport en nature — cotisation de ${form.participant_name}`,
@@ -5207,10 +5235,38 @@ function CotisationsPage({ events, expenses, user, reload, isMobile, addToast, t
       setEditingCot(null);
       setForm(emptyForm);
       setNatureForm(emptyNatureForm);
+      setMontantMode(cotisationCible > 0 ? "minimal" : "libre");
     } catch (e) {
       addToast("Erreur : " + e.message, "error");
     }
     setSaving(false);
+  };
+
+  // B3: Inscription groupée
+  const handleSaveGroup = async () => {
+    if (groupSelected.length === 0) { addToast("Sélectionnez au moins un participant.", "warning"); return; }
+    if (cotisationCible <= 0) { addToast("La cotisation cible doit être définie.", "warning"); return; }
+    setSavingGroup(true);
+    try {
+      for (const name of groupSelected) {
+        await createCotisation({
+          event_id: filterEvent,
+          participant_name: name,
+          montant: cotisationCible,
+          forme: "especes",
+          statut: "paye", // B1: montant > 0 → paye
+          description: `Cotisation minimale groupée`,
+        });
+      }
+      await loadCotisations();
+      await reload();
+      setShowGroupForm(false);
+      setGroupSelected([]);
+      addToast(`${groupSelected.length} cotisation(s) enregistrée(s) !`, "success");
+    } catch (e) {
+      addToast("Erreur : " + e.message, "error");
+    }
+    setSavingGroup(false);
   };
 
   const handleDelete = (cot) => {
@@ -5272,29 +5328,25 @@ function CotisationsPage({ events, expenses, user, reload, isMobile, addToast, t
       {confirm && <ConfirmModal {...confirm} />}
 
       {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
         <div>
           <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2, color: "var(--text)" }}>💰 Cotisations</h2>
           <p style={{ color: "var(--text-sub)", fontSize: 12 }}>Gestion des cotisations et contributions</p>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <select style={{ ...S.input, width: "auto" }} value={filterEvent} onChange={e => { setFilterEvent(e.target.value); setShowForm(false); }}>
-            {budgetEvents.map(ev => <option key={ev.id} value={ev.id}>🏦 {ev.name}</option>)}
-          </select>
-          <button onClick={() => { setShowForm(!showForm); setEditingCot(null); setForm(emptyForm); }} style={S.btnDark}>
-            {showForm ? "× Fermer" : "+ Ajouter"}
-          </button>
-        </div>
+        <select style={{ ...S.input, width: "auto" }} value={filterEvent} onChange={e => { setFilterEvent(e.target.value); setShowForm(false); setShowGroupForm(false); }}>
+          {budgetEvents.map(ev => <option key={ev.id} value={ev.id}>🏦 {ev.name}</option>)}
+        </select>
       </div>
 
       {/* Info */}
       <div style={{ background: "#E3F2FD", border: "1px solid #BBDEFB", borderRadius: 10, padding: "10px 16px", marginBottom: 16, fontSize: 12, color: "#1565C0" }}>
         ℹ️ Les cotisations sont liées aux participants enregistrés. <strong>Ajoutez d'abord un participant</strong> pour créer sa cotisation.
+        {cotisationCible > 0 && <span> · Cotisation cible : <strong>{fmt(cotisationCible, sym)}</strong>/participant.</span>}
       </div>
 
       {/* KPIs */}
       {ev && (
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 12, marginBottom: 16 }}>
           <StatCard label="Total collecté" value={fmt(totalCollecte, sym)} sub={`${cotisations.filter(c => c.statut === "paye").length} cotisation(s)`} accent="#2E7D32" />
           <StatCard label="En espèces" value={fmt(totalEspeces, sym)} sub="virements + cash" accent="#1565C0" />
           <StatCard label="En nature" value={fmt(totalNature, sym)} sub="valorisation" accent="#6A1B9A" />
@@ -5315,7 +5367,72 @@ function CotisationsPage({ events, expenses, user, reload, isMobile, addToast, t
         </div>
       )}
 
-      {/* Formulaire ajout/modif */}
+      {/* Boutons d'action */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+        <button onClick={() => { setShowForm(!showForm); setShowGroupForm(false); setEditingCot(null); setForm(emptyForm); setMontantMode(cotisationCible > 0 ? "minimal" : "libre"); }}
+          style={S.btnDark}>
+          {showForm ? "× Fermer" : "+ Ajouter"}
+        </button>
+        {/* B3: Inscription groupée — uniquement si cible définie */}
+        {cotisationCible > 0 && !showForm && (
+          <button onClick={() => { setShowGroupForm(!showGroupForm); setGroupSelected([]); }}
+            style={{ ...S.btnGhost, fontSize: 12, padding: "8px 14px" }}>
+            {showGroupForm ? "× Fermer" : `👥 Inscrire en groupe (${fmt(cotisationCible, sym)})`}
+          </button>
+        )}
+      </div>
+
+      {/* B3 — Formulaire inscription groupée */}
+      {showGroupForm && cotisationCible > 0 && (
+        <div style={{ ...S.card, marginBottom: 16, border: "1.5px solid #2E7D32" }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4, color: "var(--text)" }}>👥 Inscription groupée</div>
+          <div style={{ fontSize: 12, color: "var(--text-sub)", marginBottom: 14 }}>
+            Enregistre le montant minimal de <strong>{fmt(cotisationCible, sym)}</strong> pour chaque participant sélectionné (espèces).
+          </div>
+          {/* Participants sans cotisation uniquement */}
+          {(() => {
+            const dejaCotisants = new Set(cotisations.map(c => c.participant_name));
+            const disponibles = participants.filter(p => !dejaCotisants.has(p));
+            if (disponibles.length === 0) return (
+              <div style={{ fontSize: 13, color: "#2E7D32", background: "#E8F5E9", borderRadius: 8, padding: "10px 14px", marginBottom: 12 }}>
+                ✓ Tous les participants ont déjà une cotisation enregistrée.
+              </div>
+            );
+            return (
+              <>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                  <label style={S.label}>Sélectionner les participants ({groupSelected.length}/{disponibles.length})</label>
+                  <button onClick={() => setGroupSelected(groupSelected.length === disponibles.length ? [] : disponibles)}
+                    style={{ fontSize: 11, color: "#1565C0", background: "none", border: "none", cursor: "pointer", fontWeight: 700, fontFamily: "inherit" }}>
+                    {groupSelected.length === disponibles.length ? "Tout désélectionner" : "Tout sélectionner"}
+                  </button>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14, maxHeight: 200, overflowY: "auto" }}>
+                  {disponibles.map(p => (
+                    <label key={p} onClick={() => setGroupSelected(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p])}
+                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 9, border: `1.5px solid ${groupSelected.includes(p) ? "#2E7D32" : "var(--border)"}`, background: groupSelected.includes(p) ? "#E8F5E9" : "var(--hover-bg)", cursor: "pointer", transition: "all 0.15s" }}>
+                      <div style={{ width: 16, height: 16, borderRadius: 4, border: `2px solid ${groupSelected.includes(p) ? "#2E7D32" : "#ccc"}`, background: groupSelected.includes(p) ? "#2E7D32" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                        {groupSelected.includes(p) && <span style={{ color: "#fff", fontSize: 10 }}>✓</span>}
+                      </div>
+                      <span style={{ fontSize: 13, color: "var(--text)", fontWeight: groupSelected.includes(p) ? 700 : 400 }}>{p}</span>
+                      <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 700, color: "#2E7D32" }}>{fmt(cotisationCible, sym)}</span>
+                    </label>
+                  ))}
+                </div>
+              </>
+            );
+          })()}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={handleSaveGroup} disabled={savingGroup || groupSelected.length === 0}
+              style={{ ...S.btnDark, background: "#2E7D32", flex: 1, justifyContent: "center", display: "flex", opacity: groupSelected.length === 0 ? 0.5 : 1 }}>
+              {savingGroup ? "Enregistrement..." : `✓ Enregistrer ${groupSelected.length > 0 ? `(${groupSelected.length} pers.)` : ""}`}
+            </button>
+            <button onClick={() => { setShowGroupForm(false); setGroupSelected([]); }} style={{ ...S.btnGhost, flex: 1, justifyContent: "center", display: "flex" }}>Annuler</button>
+          </div>
+        </div>
+      )}
+
+      {/* Formulaire ajout/modif individuel */}
       {showForm && (
         <div style={{ ...S.card, marginBottom: 16, border: editingCot ? "1.5px solid #F57F17" : "1px solid var(--border)" }}>
           <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16, color: "var(--text)" }}>{editingCot ? "✏️ Modifier la cotisation" : "➕ Nouvelle cotisation"}</div>
@@ -5331,10 +5448,46 @@ function CotisationsPage({ events, expenses, user, reload, isMobile, addToast, t
                 </select>
               )}
             </div>
+
+            {/* B2 — Montant intelligent */}
             <div>
               <label style={S.label}>Montant ({sym}) <span style={{ color: "#C62828" }}>*</span></label>
-              <input type="number" min="0.01" step="0.01" style={S.input} placeholder="Ex: 50" value={form.montant} onChange={e => setForm({ ...form, montant: e.target.value })} />
+              {cotisationCible > 0 ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {/* Boutons mode */}
+                  <div style={{ display: "flex", background: "var(--hover-bg)", borderRadius: 9, padding: 3, gap: 2 }}>
+                    <button onClick={() => setMontantMode("minimal")}
+                      style={{ flex: 1, padding: "6px 8px", borderRadius: 7, border: "none", background: montantMode === "minimal" ? "#2E7D32" : "transparent", color: montantMode === "minimal" ? "#fff" : "var(--text-muted)", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+                      ✓ Minimal ({fmt(cotisationCible, sym)})
+                    </button>
+                    <button onClick={() => setMontantMode("libre")}
+                      style={{ flex: 1, padding: "6px 8px", borderRadius: 7, border: "none", background: montantMode === "libre" ? "#1565C0" : "transparent", color: montantMode === "libre" ? "#fff" : "var(--text-muted)", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                      Autre montant
+                    </button>
+                  </div>
+                  {/* Champ libre uniquement si mode libre */}
+                  {montantMode === "libre" && (
+                    <div>
+                      <input type="number" min={cotisationCible} step="0.01" style={{ ...S.input, borderColor: (Number(form.montant) > 0 && Number(form.montant) < cotisationCible) ? "#C62828" : undefined }}
+                        placeholder={`Min. ${fmt(cotisationCible, sym)}`}
+                        value={form.montant}
+                        onChange={e => setForm({ ...form, montant: e.target.value })} />
+                      {Number(form.montant) > 0 && Number(form.montant) < cotisationCible && (
+                        <div style={{ fontSize: 11, color: "#C62828", marginTop: 3 }}>⚠️ Doit être ≥ {fmt(cotisationCible, sym)}</div>
+                      )}
+                    </div>
+                  )}
+                  {montantMode === "minimal" && (
+                    <div style={{ fontSize: 12, color: "#2E7D32", fontWeight: 700, padding: "8px 12px", background: "#E8F5E9", borderRadius: 8 }}>
+                      Montant : {fmt(cotisationCible, sym)}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <input type="number" min="0.01" step="0.01" style={S.input} placeholder="Ex: 50" value={form.montant} onChange={e => setForm({ ...form, montant: e.target.value })} />
+              )}
             </div>
+
             <div>
               <label style={S.label}>Forme</label>
               <select style={S.input} value={form.forme} onChange={e => setForm({ ...form, forme: e.target.value })}>
@@ -5342,14 +5495,16 @@ function CotisationsPage({ events, expenses, user, reload, isMobile, addToast, t
                 <option value="nature">🌿 En nature (bien ou service)</option>
               </select>
             </div>
+
+            {/* B1 — Statut automatique affiché mais non modifiable */}
             <div>
-              <label style={S.label}>Statut paiement</label>
-              <select style={S.input} value={form.statut} onChange={e => setForm({ ...form, statut: e.target.value })}>
-                <option value="paye">✓ Payé</option>
-                <option value="partiel">~ Partiellement payé</option>
-                <option value="impaye">✗ Impayé</option>
-              </select>
+              <label style={S.label}>Statut (automatique)</label>
+              <div style={{ ...S.input, background: "var(--hover-bg)", display: "flex", alignItems: "center", gap: 8, color: "var(--text-sub)", fontSize: 13 }}>
+                <span style={{ fontSize: 14 }}>{getMontantEffectif() > 0 ? "✅" : "❌"}</span>
+                {getMontantEffectif() > 0 ? "Payé automatiquement" : "Impayé (montant = 0)"}
+              </div>
             </div>
+
             <div style={{ gridColumn: isMobile ? "auto" : "1 / -1" }}>
               <label style={S.label}>Description <span style={{ color: "#aaa", fontWeight: 400 }}>(optionnel)</span></label>
               <input style={S.input} placeholder="Ex: Virement du 12/05" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />
@@ -5466,7 +5621,7 @@ function CotisationsPage({ events, expenses, user, reload, isMobile, addToast, t
                           </div>
                           <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", flexShrink: 0 }}>{fmt(cot.montant, sym)}</div>
                           <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                            <button onClick={() => { setEditingCot(cot); setForm({ participant_name: cot.participant_name, montant: cot.montant, forme: cot.forme, statut: cot.statut, description: cot.description || "" }); setShowForm(true); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+                            <button onClick={() => { setEditingCot(cot); setForm({ participant_name: cot.participant_name, montant: cot.montant, forme: cot.forme, description: cot.description || "" }); setMontantMode("libre"); setShowForm(true); setShowGroupForm(false); window.scrollTo({ top: 0, behavior: "smooth" }); }}
                               style={{ padding: "4px 8px", borderRadius: 7, border: "1.5px solid #FFE082", background: "#FFF8E1", color: "#F57F17", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>✏️</button>
                             <button onClick={() => handleDelete(cot)}
                               style={{ padding: "4px 8px", borderRadius: 7, border: "1.5px solid #FFCDD2", background: "#FFEBEE", color: "#C62828", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>🗑</button>
