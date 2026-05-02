@@ -865,34 +865,25 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
 
   // Utilisateur normal : nav complète
   const userNav = [
-    { key: "dashboard",     icon: "◈", label: t("nav_dashboard") },
-    { key: "events",        icon: "◉", label: t("nav_events") },
-    { key: "expenses",      icon: "◫", label: t("nav_expenses") },
-    { key: "balance",       icon: "⊜", label: t("nav_balance") },
-    { key: "analytics",     icon: "◐", label: t("nav_analytics") },
-    ...(hasBudgetEvents ? [{ key: "cotisations", icon: "💰", label: "Cotisations" }] : []),
-    { key: "history",       icon: "◷", label: t("nav_history") },
-    { key: "invite",        icon: "◎", label: t("nav_invite") },
-    { key: "notifications", icon: "◬", label: t("nav_notifications"), badge: totalBadge },
-    { key: "settings",      icon: "⚙", label: t("nav_settings") || "Paramètres" },
+    { key: "dashboard",       icon: "◈", label: t("nav_dashboard") },
+    { key: "events",          icon: "◉", label: t("nav_events") },
+    { key: "expenses",        icon: "◫", label: t("nav_expenses") },
+    { key: "contributions",   icon: "⊜", label: "Contributions" },
+    { key: "analytics",       icon: "◐", label: t("nav_analytics") },
+    { key: "history",         icon: "◷", label: t("nav_history") },
+    { key: "invite",          icon: "◎", label: t("nav_invite") },
+    { key: "notifications",   icon: "◬", label: t("nav_notifications"), badge: totalBadge },
+    { key: "settings",        icon: "⚙", label: t("nav_settings") || "Paramètres" },
   ];
 
-  // Bottom nav mobile : 5 onglets adaptés selon contexte
-  const mobileNav = hasBudgetEvents
-    ? [
-        { key: "dashboard",    icon: "◈", label: t("nav_dashboard") },
-        { key: "events",       icon: "◉", label: t("nav_events") },
-        { key: "cotisations",  icon: "💰", label: "Cotisations" },
-        { key: "balance",      icon: "⊜", label: "Caisse" },
-        { key: "analytics",    icon: "◐", label: t("nav_analytics") },
-      ]
-    : [
-        { key: "dashboard",    icon: "◈", label: t("nav_dashboard") },
-        { key: "events",       icon: "◉", label: t("nav_events") },
-        { key: "expenses",     icon: "◫", label: t("nav_expenses") },
-        { key: "balance",      icon: "⊜", label: t("nav_balance") },
-        { key: "analytics",    icon: "◐", label: t("nav_analytics") },
-      ];
+  // Bottom nav mobile : 5 onglets fixes
+  const mobileNav = [
+    { key: "dashboard",      icon: "◈", label: t("nav_dashboard") },
+    { key: "events",         icon: "◉", label: t("nav_events") },
+    { key: "expenses",       icon: "◫", label: t("nav_expenses") },
+    { key: "contributions",  icon: "⊜", label: "Contributions" },
+    { key: "analytics",      icon: "◐", label: t("nav_analytics") },
+  ];
 
   const nav = isAdmin ? adminNav : userNav;
 
@@ -1236,6 +1227,252 @@ function Dashboard({ events, expenses, contributions, user, isMobile, navigateTo
   );
 }
 
+// ─── EXPORT PDF BUDGET ───────────────────────────────────────
+async function exportBudgetPDF(ev, expenses, cotisations) {
+  const sym = currencySymbol(ev.currency);
+  const fmt2 = n => `${Number(n || 0).toFixed(2)} ${sym}`;
+  const evExp = expenses.filter(e => e.event_id === ev.id);
+  const totalDepenses = evExp.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
+  const totalRecettes = cotisations.filter(c => c.statut === "paye").reduce((s, c) => s + c.montant, 0);
+  const solde = totalRecettes - totalDepenses;
+  const byCategory = Object.keys(CATEGORIES).map(cat => ({
+    cat, total: evExp.filter(e => e.category === cat).reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0)
+  })).filter(c => c.total > 0).sort((a, b) => b.total - a.total);
+
+  const cotisationsRows = cotisations.map(c => `
+    <tr style="border-bottom:1px solid #f0f0f0">
+      <td style="padding:8px 12px;font-weight:600">${c.participant_name}</td>
+      <td style="padding:8px 12px;text-align:center">
+        <span style="background:${c.forme === "nature" ? "#E8F5E9" : "#E3F2FD"};color:${c.forme === "nature" ? "#2E7D32" : "#1565C0"};padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">
+          ${c.forme === "nature" ? "🌿 Nature" : "💵 Espèces"}
+        </span>
+      </td>
+      <td style="padding:8px 12px;text-align:center">
+        <span style="background:${c.statut === "paye" ? "#E8F5E9" : "#FFEBEE"};color:${c.statut === "paye" ? "#2E7D32" : "#C62828"};padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">
+          ${c.statut === "paye" ? "✓ Payé" : c.statut === "partiel" ? "~ Partiel" : "✗ Impayé"}
+        </span>
+      </td>
+      <td style="padding:8px 12px;text-align:right;font-weight:700">${fmt2(c.montant)}</td>
+    </tr>`).join("");
+
+  const depensesRows = evExp.map(ex => `
+    <tr style="border-bottom:1px solid #f0f0f0">
+      <td style="padding:8px 12px">${CATEGORIES[ex.category]?.icon || ""} ${ex.category}</td>
+      <td style="padding:8px 12px">${ex.detail}</td>
+      <td style="padding:8px 12px">${ex.paid_by || "—"}</td>
+      <td style="padding:8px 12px;text-align:right;font-weight:700">${fmt2(ex.qty * (ex.unit_price ?? 0))}</td>
+    </tr>`).join("");
+
+  const catRows = byCategory.map(c => `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+      <span style="font-size:18px">${CATEGORIES[c.cat]?.icon || "🏷️"}</span>
+      <div style="flex:1">
+        <div style="display:flex;justify-content:space-between;margin-bottom:3px">
+          <span style="font-size:13px">${c.cat}</span>
+          <span style="font-size:13px;font-weight:700">${fmt2(c.total)} (${totalDepenses > 0 ? ((c.total / totalDepenses) * 100).toFixed(0) : 0}%)</span>
+        </div>
+        <div style="background:#f0f0f0;border-radius:4px;height:5px">
+          <div style="background:#F57F17;height:5px;border-radius:4px;width:${totalDepenses > 0 ? (c.total / totalDepenses) * 100 : 0}%"></div>
+        </div>
+      </div>
+    </div>`).join("");
+
+  const html = `
+    <html><head><meta charset="utf-8">
+    <style>body{font-family:Arial,sans-serif;margin:0;padding:0;color:#333}table{width:100%;border-collapse:collapse}th{background:#f5f5f5;padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#888}</style>
+    </head><body>
+    <div style="background:linear-gradient(135deg,#0F0F0F,#1a1a2e);padding:32px;color:#fff">
+      <div style="font-size:26px;font-weight:700;margin-bottom:6px">SplitLy</div>
+      <div style="font-size:13px;color:rgba(255,255,255,0.6)">Bilan financier — Événement Budget</div>
+    </div>
+    <div style="padding:28px">
+      <h2 style="font-size:22px;margin-bottom:4px">🏦 ${ev.name}</h2>
+      <div style="font-size:13px;color:#888;margin-bottom:28px">${ev.date} · ${sym} · ${(ev.event_participants || []).length} participants · ${ev.nombre_invites > 0 ? ev.nombre_invites + " invités attendus" : ""}</div>
+
+      <!-- KPIs -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:28px">
+        <div style="background:#E8F5E9;border-radius:12px;padding:16px;border-left:4px solid #2E7D32">
+          <div style="font-size:11px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Total recettes</div>
+          <div style="font-size:22px;font-weight:700;color:#2E7D32">${fmt2(totalRecettes)}</div>
+        </div>
+        <div style="background:#FFEBEE;border-radius:12px;padding:16px;border-left:4px solid #C62828">
+          <div style="font-size:11px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Total dépenses</div>
+          <div style="font-size:22px;font-weight:700;color:#C62828">${fmt2(totalDepenses)}</div>
+        </div>
+        <div style="background:${solde >= 0 ? "#E8F5E9" : "#FFEBEE"};border-radius:12px;padding:16px;border-left:4px solid ${solde >= 0 ? "#2E7D32" : "#C62828"}">
+          <div style="font-size:11px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Solde</div>
+          <div style="font-size:22px;font-weight:700;color:${solde >= 0 ? "#2E7D32" : "#C62828"}">${solde >= 0 ? "+" : ""}${fmt2(solde)}</div>
+        </div>
+      </div>
+      ${ev.nombre_invites > 0 ? `<div style="background:#f5f5f5;border-radius:10px;padding:12px 16px;margin-bottom:24px;font-size:13px">💡 Coût par invité : <strong>${fmt2(totalDepenses / ev.nombre_invites)}</strong> · Cotisation moyenne : <strong>${fmt2(cotisations.length > 0 ? totalRecettes / cotisations.length : 0)}</strong></div>` : ""}
+
+      <!-- Recettes -->
+      <h3 style="font-size:14px;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:12px">💰 Cotisations (${cotisations.length})</h3>
+      <table style="margin-bottom:24px">
+        <thead><tr><th>Participant</th><th>Forme</th><th>Statut</th><th style="text-align:right">Montant</th></tr></thead>
+        <tbody>${cotisationsRows}</tbody>
+        <tfoot><tr style="background:#f5f5f5;font-weight:700"><td colspan="3" style="padding:10px 12px">TOTAL RECETTES</td><td style="padding:10px 12px;text-align:right;color:#2E7D32">${fmt2(totalRecettes)}</td></tr></tfoot>
+      </table>
+
+      <!-- Dépenses -->
+      <h3 style="font-size:14px;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:12px">💸 Dépenses (${evExp.length})</h3>
+      <table style="margin-bottom:24px">
+        <thead><tr><th>Catégorie</th><th>Désignation</th><th>Responsable</th><th style="text-align:right">Montant</th></tr></thead>
+        <tbody>${depensesRows}</tbody>
+        <tfoot><tr style="background:#f5f5f5;font-weight:700"><td colspan="3" style="padding:10px 12px">TOTAL DÉPENSES</td><td style="padding:10px 12px;text-align:right;color:#C62828">${fmt2(totalDepenses)}</td></tr></tfoot>
+      </table>
+
+      <!-- Par catégorie -->
+      <h3 style="font-size:14px;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:16px">📊 Répartition par catégorie</h3>
+      <div style="margin-bottom:24px">${catRows}</div>
+
+      <div style="text-align:center;font-size:11px;color:#aaa;border-top:1px solid #eee;padding-top:16px;margin-top:24px">Généré par SplitLy — splitmeapp.com · ${new Date().toLocaleDateString("fr-FR")}</div>
+    </div></body></html>`;
+
+  const w = window.open("", "_blank");
+  if (w) { w.document.write(html); w.document.close(); }
+}
+
+// ─── EVENT DETAIL (drill-down) ────────────────────────────────
+function EventDetail({ ev, events, expenses, contributions, user, reload, isMobile, addToast, t, onBack }) {
+  const [activeTab, setActiveTab] = useState("charges");
+  const [cotisations, setCotisations] = useState([]);
+
+  const evExp = expenses.filter(e => e.event_id === ev.id);
+  const participants = (ev.event_participants || []).map(p => p.name);
+  const sym = currencySymbol(ev.currency);
+  const totalDepenses = evExp.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
+  const isBudget = ev.event_type === "budget";
+
+  useEffect(() => {
+    if (isBudget) {
+      fetchCotisations(ev.id).then(({ data }) => setCotisations(data || []));
+    }
+  }, [ev.id, isBudget]);
+
+  const tabs = isBudget
+    ? [
+        { key: "charges",      icon: "◫", label: "Charges" },
+        { key: "cotisations",  icon: "💰", label: "Cotisations" },
+        { key: "analyses",     icon: "◐", label: "Analyses" },
+      ]
+    : [
+        { key: "charges",      icon: "◫", label: "Charges" },
+        { key: "repartition",  icon: "⊜", label: "Répartition" },
+        { key: "analyses",     icon: "◐", label: "Analyses" },
+      ];
+
+  return (
+    <div>
+      {/* Header avec retour */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
+        <button onClick={onBack} style={{ background: "var(--hover-bg)", border: "1px solid var(--border)", borderRadius: 10, padding: "8px 14px", fontSize: 13, cursor: "pointer", color: "var(--text)", fontFamily: "inherit", fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+          ← Retour
+        </button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 18 }}>{isBudget ? "🏦" : "🎊"}</span>
+            <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 18 : 22, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", margin: 0 }}>{ev.name}</h2>
+            <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: isBudget ? "#FFF8E1" : "#F3E5F5", color: isBudget ? "#F57F17" : "#6A1B9A", fontWeight: 700, flexShrink: 0, border: `1px solid ${isBudget ? "#FFE082" : "#CE93D8"}` }}>
+              {isBudget ? "Budget" : "Split"}
+            </span>
+            <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: ev.status === "closed" ? "var(--hover-bg)" : "#E8F5E9", color: ev.status === "closed" ? "#999" : "#2E7D32", fontWeight: 700, flexShrink: 0 }}>
+              {ev.status === "closed" ? "🔒 Bouclé" : "✓ Ouvert"}
+            </span>
+          </div>
+          <div style={{ fontSize: 11, color: "var(--text-sub)", marginTop: 4 }}>
+            {ev.date} · {sym} · {participants.length} participant{participants.length > 1 ? "s" : ""} · {evExp.length} charge{evExp.length > 1 ? "s" : ""}
+            {isBudget && ev.nombre_invites > 0 && ` · ${ev.nombre_invites} invités attendus`}
+          </div>
+        </div>
+        {/* Bouton PDF Budget */}
+        {isBudget && (
+          <button onClick={() => exportBudgetPDF(ev, expenses, cotisations)}
+            style={{ ...S.btnGhost, fontSize: 11, padding: "7px 12px", flexShrink: 0, whiteSpace: "nowrap" }}>
+            📄 Bilan PDF
+          </button>
+        )}
+      </div>
+
+      {/* KPIs rapides */}
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 10, marginBottom: 20 }}>
+        <StatCard label="Budget" value={fmt(totalDepenses, sym)} sub={`${evExp.length} charge(s)`} accent="#0F0F0F" />
+        <StatCard label="Participants" value={participants.length} sub="inscrits" accent="#1565C0" />
+        {isBudget && <StatCard label="Collecté" value={fmt(cotisations.filter(c => c.statut === "paye").reduce((s, c) => s + c.montant, 0), sym)} sub="cotisations" accent="#2E7D32" />}
+        {isBudget && ev.nombre_invites > 0 && <StatCard label="Invités" value={ev.nombre_invites} sub="attendus" accent="#F57F17" />}
+        {!isBudget && <StatCard label="Devise" value={sym} sub={ev.currency} accent="#6A1B9A" />}
+        {!isBudget && <StatCard label="Statut" value={ev.status === "closed" ? "Bouclé" : "Ouvert"} sub={ev.date} accent={ev.status === "closed" ? "#999" : "#2E7D32"} />}
+      </div>
+
+      {/* Onglets */}
+      <div style={{ display: "flex", background: "var(--hover-bg)", borderRadius: 12, padding: 3, gap: 2, marginBottom: 20, flexWrap: "wrap" }}>
+        {tabs.map(tab => (
+          <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+            style={{ padding: "8px 16px", borderRadius: 9, border: "none", background: activeTab === tab.key ? "#0F0F0F" : "transparent", color: activeTab === tab.key ? "#fff" : "var(--text-muted)", fontSize: 12, fontWeight: activeTab === tab.key ? 700 : 400, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s", display: "flex", alignItems: "center", gap: 6 }}>
+            <span>{tab.icon}</span> {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Contenu onglets */}
+      {activeTab === "charges" && (
+        <Expenses
+          events={events.filter(e => e.id === ev.id)}
+          expenses={expenses}
+          contributions={contributions}
+          user={user}
+          reload={reload}
+          isMobile={isMobile}
+          addToast={addToast}
+          t={t}
+          hideHeader={true}
+          defaultEventId={ev.id}
+        />
+      )}
+      {activeTab === "cotisations" && isBudget && (
+        <CotisationsPage
+          events={events.filter(e => e.id === ev.id)}
+          expenses={expenses}
+          user={user}
+          reload={async () => {
+            await reload();
+            const { data } = await fetchCotisations(ev.id);
+            setCotisations(data || []);
+          }}
+          isMobile={isMobile}
+          addToast={addToast}
+          t={t}
+          hideHeader={true}
+        />
+      )}
+      {activeTab === "repartition" && !isBudget && (
+        <Balance
+          events={events.filter(e => e.id === ev.id)}
+          expenses={expenses}
+          contributions={contributions}
+          user={user}
+          reload={reload}
+          isMobile={isMobile}
+          addToast={addToast}
+          t={t}
+          hideHeader={true}
+          initialEvent={ev.id}
+        />
+      )}
+      {activeTab === "analyses" && (
+        <Analytics
+          events={events.filter(e => e.id === ev.id)}
+          expenses={expenses}
+          contributions={contributions}
+          isMobile={isMobile}
+          t={t}
+          defaultTab={isBudget ? "charges" : "event"}
+        />
+      )}
+    </div>
+  );
+}
+
 // ─── ÉVÉNEMENTS ───────────────────────────────────────────────
 const TEMPLATES_KEY = "splitly_templates";
 
@@ -1478,6 +1715,8 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
     setManagingEv(events.find(e => e.id === ev.id) || ev);
   };
 
+  const [selectedEvent, setSelectedEvent] = useState(null); // null = liste, ev = détail
+
   const handleRemoveParticipant = (ev, name) => {
     setConfirm({
       message: `Retirer "${name}" de "${ev.name}" ? Les calculs seront recalculés.`,
@@ -1494,6 +1733,26 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
   return (
     <div>
       {confirm && <ConfirmModal {...confirm} />}
+
+      {/* ── Vue détail événement (drill-down) ── */}
+      {selectedEvent && (
+        <EventDetail
+          ev={selectedEvent}
+          events={events}
+          expenses={expenses}
+          contributions={contributions}
+          user={user}
+          reload={reload}
+          isMobile={isMobile}
+          addToast={addToast}
+          t={t}
+          onBack={() => setSelectedEvent(null)}
+        />
+      )}
+
+      {/* ── Vue liste événements ── */}
+      {!selectedEvent && (
+      <div>
       {managingEv && (
         <Modal title={`Participants — ${managingEv.name}`} onClose={() => { setManagingEv(null); setNewParticipant(""); }}>
           <div style={{ marginBottom: 16 }}>
@@ -1701,7 +1960,11 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
             const progress = participants.length > 0 ? (settledCount / participants.length) * 100 : 0;
 
             return (
-              <div key={ev.id} style={{ background: "var(--bg-secondary)", borderRadius: 16, padding: isMobile ? "14px" : "18px 22px", border: `1px solid ${ev.event_type === "budget" ? "#FFE082" : "var(--border)"}`, boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
+              <div key={ev.id} onClick={() => setSelectedEvent(ev)}
+                style={{ background: "var(--bg-secondary)", borderRadius: 16, padding: isMobile ? "14px" : "18px 22px", border: `1px solid ${ev.event_type === "budget" ? "#FFE082" : "var(--border)"}`, boxShadow: "0 2px 8px rgba(0,0,0,0.04)", cursor: "pointer", transition: "box-shadow 0.15s" }}
+                onMouseEnter={e => e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.1)"}
+                onMouseLeave={e => e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.04)"}
+              >
                 <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
                   {/* Icône */}
                   <div style={{ width: 40, height: 40, borderRadius: 12, background: ev.status === "closed" ? "var(--hover-bg)" : ev.event_type === "budget" ? "#FFF8E1" : "#f0faf4", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>
@@ -1730,7 +1993,7 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
                     {/* Ligne 3 : Participants + gérer */}
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: ev.status === "open" ? 10 : 0 }}>
                       <AvatarStack names={participants} size={22} />
-                      <button onClick={() => setManagingEv(ev)}
+                      <button onClick={e => { e.stopPropagation(); setManagingEv(ev); }}
                         style={{ fontSize: 11, color: "#1565C0", background: "#E3F2FD", border: "none", borderRadius: 8, padding: "3px 10px", cursor: "pointer", fontWeight: 600, flexShrink: 0 }}>
                         👥 Gérer
                       </button>
@@ -1759,17 +2022,17 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
                       <div style={{ fontSize: 10, color: "var(--text-sub)" }}>{ev.event_type === "budget" ? "dépenses" : "budget"}</div>
                     </div>
                     {ev.status === "open" && (
-                      <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 4, alignItems: "flex-end" }}>
-                        <button onClick={() => handleSaveTemplate(ev)} title="Modèle"
+                      <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 4, alignItems: "flex-end" }} onClick={e => e.stopPropagation()}>
+                        <button onClick={e => { e.stopPropagation(); handleSaveTemplate(ev); }} title="Modèle"
                           style={{ padding: isMobile ? "4px 8px" : "5px 12px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--hover-bg)", color: "var(--text-muted)", fontSize: 11, cursor: "pointer", fontWeight: 600, whiteSpace: "nowrap" }}>
                           📋
                         </button>
                         {allSettled && (
-                          <button onClick={() => handleClose(ev)} style={{ ...S.btnDark, padding: isMobile ? "4px 8px" : "5px 12px", fontSize: 11, background: "#2E7D32", borderRadius: 8, whiteSpace: "nowrap" }}>
+                          <button onClick={e => { e.stopPropagation(); handleClose(ev); }} style={{ ...S.btnDark, padding: isMobile ? "4px 8px" : "5px 12px", fontSize: 11, background: "#2E7D32", borderRadius: 8, whiteSpace: "nowrap" }}>
                             🔒
                           </button>
                         )}
-                        <button onClick={() => handleDelete(ev)} style={{ padding: isMobile ? "4px 8px" : "5px 12px", borderRadius: 8, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 11, cursor: "pointer", fontWeight: 600, whiteSpace: "nowrap" }}>
+                        <button onClick={e => { e.stopPropagation(); handleDelete(ev); }} style={{ padding: isMobile ? "4px 8px" : "5px 12px", borderRadius: 8, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 11, cursor: "pointer", fontWeight: 600, whiteSpace: "nowrap" }}>
                           🗑
                         </button>
                       </div>
@@ -1782,14 +2045,16 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
           </div>
         </>
       )}
+    </div> {/* fin liste */}
+    </div> {/* fin !selectedEvent */}
     </div>
   );
 }
 
 // ─── CHARGES ──────────────────────────────────────────────────
-function Expenses({ events, expenses, contributions, user, reload, isMobile, addToast, t }) {
+function Expenses({ events, expenses, contributions, user, reload, isMobile, addToast, t, hideHeader, defaultEventId }) {
   const [showForm, setShowForm] = useState(false);
-  const [filterEvent, setFilterEvent] = useState("all");
+  const [filterEvent, setFilterEvent] = useState(defaultEventId || "all");
   const [filterCategory, setFilterCategory] = useState("all");
   const [sortBy, setSortBy] = useState("date_desc");
   const [searchText, setSearchText] = useState("");
@@ -1797,7 +2062,7 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
   const [confirm, setConfirm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [unpaid, setUnpaid] = useState(false);
-  const empty = { eventId: "", category: "", sub: "", detail: "", qty: 1, unit: "", paidBy: "", included: [], comment: "" };
+  const empty = { eventId: defaultEventId || "", category: "", sub: "", detail: "", qty: 1, unit: "", paidBy: "", included: [], comment: "", acompteRecu: "" };
   const [form, setForm] = useState(empty);
 
   const handleEventChange = (evId) => {
@@ -1810,6 +2075,7 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
   const participants = (currentEvent?.event_participants || []).map(p => p.name);
   const total = (Number(form.qty) || 0) * (Number(form.unit) || 0);
   const sharePerPerson = form.included.length > 0 ? total / form.included.length : 0;
+  const sym = currencySymbol(currentEvent?.currency);
 
   const handleSave = async () => {
     if (!form.eventId || !form.category || !form.sub || !form.detail || form.included.length === 0) {
@@ -1927,14 +2193,18 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
   return (
     <div>
       {confirm && <ConfirmModal {...confirm} />}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+      {!hideHeader && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <div>
           <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2 }}>Charges</h2>
           <p style={{ color: "#888", fontSize: 12 }}>{expenses.length} dépense{expenses.length > 1 ? "s" : ""}</p>
         </div>
         <button onClick={() => { setForm(empty); setEditingEx(null); setShowForm(!showForm); }}
           style={S.btnDark}>{showForm && !editingEx ? "× Fermer" : "+ Ajouter"}</button>
-      </div>
+      </div>}
+      {hideHeader && <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+        <button onClick={() => { setForm({ ...empty, eventId: defaultEventId || "" }); setEditingEx(null); setShowForm(!showForm); }}
+          style={S.btnDark}>{showForm && !editingEx ? "× Fermer" : "+ Ajouter une charge"}</button>
+      </div>}
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
         {/* Recherche texte */}
@@ -1987,20 +2257,29 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
       )}
 
       {showForm && (
-        <div style={{ ...S.card, marginBottom: 16, border: editingEx ? "1.5px solid #F57F17" : "1px solid #eee" }}>
+        <div style={{ ...S.card, marginBottom: 16, border: editingEx ? "1.5px solid #F57F17" : "1px solid var(--border)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <div style={S.sectionTitle}>{editingEx ? "✏️ Modifier la charge" : "➕ Nouvelle charge"}</div>
             {editingEx && <span style={{ fontSize: 11, color: "#F57F17", fontWeight: 600 }}>Mode édition</span>}
           </div>
+
+          {/* Bandeau Budget */}
+          {currentEvent?.event_type === "budget" && (
+            <div style={{ background: "#FFF8E1", border: "1px solid #FFE082", borderRadius: 10, padding: "10px 14px", marginBottom: 14, fontSize: 12, color: "#F57F17" }}>
+              🏦 <strong>Événement Budget</strong> — Le "Responsable" est la personne qui effectue la dépense. Précisez l'acompte reçu de la caisse si applicable.
+            </div>
+          )}
+
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
-            <div><label style={S.label}>Événement</label>
-              <select style={S.input} value={form.eventId} onChange={e => handleEventChange(e.target.value)} disabled={!!editingEx}>
+            <div>
+              <label style={S.label}>Événement</label>
+              <select style={S.input} value={form.eventId} onChange={e => handleEventChange(e.target.value)} disabled={!!editingEx || !!defaultEventId}>
                 <option value="">Sélectionner...</option>
-                {events.filter(e => e.status === "open").map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
+                {events.filter(e => e.status === "open").map(ev => <option key={ev.id} value={ev.id}>{ev.event_type === "budget" ? "🏦 " : "💸 "}{ev.name}</option>)}
               </select>
             </div>
             <div>
-              <label style={S.label}>Payé par</label>
+              <label style={S.label}>{currentEvent?.event_type === "budget" ? "Responsable de la dépense" : "Payé par"}</label>
               <select style={{ ...S.input, opacity: unpaid ? 0.5 : 1 }} value={form.paidBy} onChange={e => setForm({ ...form, paidBy: e.target.value })} disabled={!currentEvent || unpaid}>
                 <option value="">Sélectionner...</option>
                 {participants.map(p => <option key={p} value={p}>{p}</option>)}
@@ -2008,7 +2287,32 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
             </div>
           </div>
 
-          {/* Toggle charge non réglée */}
+          {/* Acompte reçu — uniquement pour Budget */}
+          {currentEvent?.event_type === "budget" && (
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
+              <div>
+                <label style={S.label}>Acompte reçu de la caisse <span style={{ color: "#aaa", fontWeight: 400 }}>(optionnel)</span></label>
+                <input type="number" min="0" step="0.01" style={S.input} placeholder="Ex: 100"
+                  value={form.acompteRecu} onChange={e => setForm({ ...form, acompteRecu: e.target.value })} />
+                {form.acompteRecu && form.unit && form.qty && (
+                  <div style={{ fontSize: 11, marginTop: 4, fontWeight: 600,
+                    color: (Number(form.acompteRecu) - Number(form.qty) * Number(form.unit)) >= 0 ? "#F57F17" : "#C62828" }}>
+                    {(Number(form.acompteRecu) - Number(form.qty) * Number(form.unit)) >= 0
+                      ? `✓ Reste ${(Number(form.acompteRecu) - Number(form.qty) * Number(form.unit)).toFixed(2)} ${sym} à rendre à la caisse`
+                      : `⚠️ Dépassement de ${Math.abs(Number(form.acompteRecu) - Number(form.qty) * Number(form.unit)).toFixed(2)} ${sym} — caisse doit rembourser`}
+                  </div>
+                )}
+              </div>
+              <div style={{ display: "flex", alignItems: "center" }}>
+                <div style={{ background: "#f5f5f5", borderRadius: 10, padding: "12px 14px", fontSize: 12, color: "#888", width: "100%" }}>
+                  💡 Si aucun acompte n'a été reçu, laissez vide. La caisse devra rembourser intégralement ce responsable.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Toggle charge non réglée — masqué pour Budget */}
+          {currentEvent?.event_type !== "budget" && (
           <div style={{ marginBottom: 14 }}>
             <label style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer", padding: "12px 16px", borderRadius: 12, background: unpaid ? "#FFF8E1" : "#fafafa", border: `1.5px solid ${unpaid ? "#F57F17" : "#eee"}`, transition: "all 0.2s" }}>
               <div style={{ position: "relative", width: 40, height: 22, flexShrink: 0 }} onClick={() => { setUnpaid(!unpaid); if (!unpaid) setForm(f => ({ ...f, paidBy: "" })); }}>
@@ -2016,15 +2320,12 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
                 <div style={{ position: "absolute", top: 3, left: unpaid ? 21 : 3, width: 16, height: 16, background: "#fff", borderRadius: "50%", boxShadow: "0 1px 3px rgba(0,0,0,0.2)", transition: "left 0.2s" }} />
               </div>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: unpaid ? "#E65100" : "#333" }}>
-                  ⏳ Charge non encore réglée
-                </div>
-                <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>
-                  {unpaid ? "Aucune contribution ne sera créditée. À mettre à jour quand quelqu'un paie." : "Décochez si personne n'a encore payé cette charge."}
-                </div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: unpaid ? "#E65100" : "#333" }}>⏳ Charge non encore réglée</div>
+                <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>{unpaid ? "Aucune contribution ne sera créditée." : "Décochez si personne n'a encore payé."}</div>
               </div>
             </label>
           </div>
+          )}
 
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
             <div><label style={S.label}>Catégorie</label>
@@ -2196,8 +2497,8 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
 }
 
 // ─── RÉPARTITION ─────────────────────────────────────────────
-function Balance({ events, expenses, contributions, user, reload, isMobile, addToast, t }) {
-  const [filterEvent, setFilterEvent] = useState(events[0]?.id || "");
+function Balance({ events, expenses, contributions, user, reload, isMobile, addToast, t, initialEvent, hideHeader }) {
+  const [filterEvent, setFilterEvent] = useState(initialEvent || events[0]?.id || "");
   const [settleModal, setSettleModal] = useState(null);
   const [versement, setVersement] = useState({});
   const [saving, setSaving] = useState(false);
@@ -2356,18 +2657,18 @@ function Balance({ events, expenses, contributions, user, reload, isMobile, addT
       )}
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
-        <div>
+        {!hideHeader && <div>
           <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2 }}>
             {ev?.event_type === "budget" ? "🏦 Caisse" : (t ? t("bal_title") : "Répartition")}
           </h2>
           <p style={{ color: "var(--text-sub)", fontSize: 12 }}>
             {ev?.event_type === "budget" ? "Soldes caisse et remboursements responsables" : (t ? t("bal_subtitle") : "Soldes calculés en temps réel")}
           </p>
-        </div>
+        </div>}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <select style={{ ...S.input, width: "auto" }} value={filterEvent} onChange={e => setFilterEvent(e.target.value)}>
+          {!hideHeader && <select style={{ ...S.input, width: "auto" }} value={filterEvent} onChange={e => setFilterEvent(e.target.value)}>
             {events.map(ev => <option key={ev.id} value={ev.id}>{ev.event_type === "budget" ? "🏦 " : "💸 "}{ev.name}</option>)}
-          </select>
+          </select>}
           {ev?.event_type !== "budget" && <>
             <button onClick={handleExportPDF} style={{ ...S.btnGhost, padding: "8px 14px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>{t ? t("bal_pdf") : "📄 PDF"}</button>
             <button onClick={handleExportExcel} style={{ ...S.btnGhost, padding: "8px 14px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>📊 CSV</button>
@@ -2631,8 +2932,8 @@ function GuestEditExpenseForm({ expense, events, onSubmit, onCancel, saving }) {
     </div>
   );
 }
-function Analytics({ events, expenses, contributions, isMobile, t }) {
-  const [tab, setTab] = useState("all"); // "all" | "event" | "charges" | "personal"
+function Analytics({ events, expenses, contributions, isMobile, t, defaultTab }) {
+  const [tab, setTab] = useState(defaultTab || "all"); // "all" | "event" | "charges" | "personal"
   const [sel, setSel] = useState(events[0]?.id || "");
 
   // ── Données événement sélectionné ─────────────────────────
@@ -2771,10 +3072,12 @@ function Analytics({ events, expenses, contributions, isMobile, t }) {
                     {evRows.map(({ ev, total, parts, settled, pct, expCount, sym }, i) => (
                       <tr key={ev.id} style={{ borderBottom: i < evRows.length - 1 ? "1px solid var(--border)" : "none" }}>
                         <td style={{ padding: "12px 16px" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <span>{ev.status === "closed" ? "🔒" : ev.event_type === "budget" ? "🏦" : "🎊"}</span>
-                            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}><Truncate text={ev.name} max={16} /></span>
-                            <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 20, background: ev.event_type === "budget" ? "#FFF8E1" : "#F3E5F5", color: ev.event_type === "budget" ? "#F57F17" : "#6A1B9A", fontWeight: 700, flexShrink: 0 }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <span style={{ flexShrink: 0 }}>{ev.status === "closed" ? "🔒" : ev.event_type === "budget" ? "🏦" : "🎊"}</span>
+                              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><Truncate text={ev.name} max={16} /></span>
+                            </div>
+                            <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 20, background: ev.event_type === "budget" ? "#FFF8E1" : "#F3E5F5", color: ev.event_type === "budget" ? "#F57F17" : "#6A1B9A", fontWeight: 700, width: "fit-content" }}>
                               {ev.event_type === "budget" ? "Budget" : "Split"}
                             </span>
                           </div>
@@ -3907,8 +4210,60 @@ function SuperAdminPage({ user, isMobile, addToast }) {
   );
 }
 
+// ─── CONTRIBUTIONS PAGE (fusion Balance + Cotisations) ────────
+function ContributionsPage({ events, expenses, contributions, user, reload, isMobile, addToast, t }) {
+  const [filterEvent, setFilterEvent] = useState(events[0]?.id || "");
+  const ev = events.find(e => e.id === filterEvent);
+
+  return (
+    <div>
+      {/* Sélecteur événement */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2, color: "var(--text)" }}>
+            {ev?.event_type === "budget" ? "💰 Cotisations" : "⊜ Répartition"}
+          </h2>
+          <p style={{ color: "var(--text-sub)", fontSize: 12 }}>
+            {ev?.event_type === "budget" ? "Gestion des cotisations et contributions" : "Soldes calculés en temps réel"}
+          </p>
+        </div>
+        <select style={{ ...S.input, width: "auto" }} value={filterEvent} onChange={e => setFilterEvent(e.target.value)}>
+          {events.map(ev => <option key={ev.id} value={ev.id}>{ev.event_type === "budget" ? "🏦 " : "💸 "}{ev.name}</option>)}
+        </select>
+      </div>
+
+      {/* Routing selon le type */}
+      {ev?.event_type === "budget" ? (
+        <CotisationsPage
+          events={events.filter(e => e.id === filterEvent)}
+          expenses={expenses}
+          user={user}
+          reload={reload}
+          isMobile={isMobile}
+          addToast={addToast}
+          t={t}
+          hideHeader={true}
+        />
+      ) : (
+        <Balance
+          events={events}
+          expenses={expenses}
+          contributions={contributions}
+          user={user}
+          reload={reload}
+          isMobile={isMobile}
+          addToast={addToast}
+          t={t}
+          initialEvent={filterEvent}
+          hideHeader={true}
+        />
+      )}
+    </div>
+  );
+}
+
 // ─── COTISATIONS PAGE (Phase 4a) ──────────────────────────────
-function CotisationsPage({ events, expenses, user, reload, isMobile, addToast, t }) {
+function CotisationsPage({ events, expenses, user, reload, isMobile, addToast, t, hideHeader }) {
   const budgetEvents = events.filter(e => e.event_type === "budget" && e.status === "open");
   const [filterEvent, setFilterEvent] = useState(budgetEvents[0]?.id || "");
   const ev = events.find(e => e.id === filterEvent);
@@ -4434,6 +4789,7 @@ function AppInner() {
   const NAV_LABELS = {
     dashboard: t("nav_dashboard"), events: t("nav_events"),
     expenses: t("nav_expenses"), balance: t("nav_balance"),
+    contributions: "Contributions",
     analytics: t("nav_analytics"), history: t("nav_history"),
     invite: t("nav_invite"), notifications: t("nav_notifications"),
     settings: t("nav_settings") || "Paramètres",
@@ -4620,6 +4976,8 @@ function AppInner() {
     events:        <Events {...sharedProps} />,
     expenses:      <Expenses {...sharedProps} />,
     balance:       <Balance {...sharedProps} />,
+    contributions: <ContributionsPage {...sharedProps} />,
+    cotisations:   <CotisationsPage events={events} expenses={expenses} user={user} reload={loadAll} isMobile={isMobile} addToast={addToast} t={t} />,
     analytics:     <Analytics {...sharedProps} />,
     history:       <History events={events} history={history} user={user} reload={loadAll} isMobile={isMobile} addToast={addToast} t={t} />,
     invite:        <Invite events={events} user={user} isMobile={isMobile} addToast={addToast} t={t} />,
@@ -4628,7 +4986,6 @@ function AppInner() {
                      onMarkAll={async () => { await markAllNotificationsRead(user.id); await loadAll(); addToast(t("notif_mark_all"), "info"); }}
                      onDismiss={async (id) => { await deleteNotification(id); await loadAll(); }} />,
     settings:      <SettingsPage user={user} onSignOut={handleSignOut} isMobile={isMobile} addToast={addToast} t={t} />,
-    cotisations:   <CotisationsPage events={events} expenses={expenses} user={user} reload={loadAll} isMobile={isMobile} addToast={addToast} t={t} />,
   };
 
   return (
