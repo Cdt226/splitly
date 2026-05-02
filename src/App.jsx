@@ -984,35 +984,6 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
   );
 }
 
-  const loadGuest = useCallback(async () => {
-    setLoading(true);
-    const { data: invitations } = await supabase
-      .from('invitations')
-      .select('event_id, role, status, permissions')
-      .eq('email', guestEmail);
-    if (!invitations || invitations.length === 0) { setLoading(false); return; }
-
-    // Build permissions map
-    const pMap = {};
-    invitations.forEach(i => { pMap[i.event_id] = i.permissions || ["read_only"]; });
-    setPermissionsMap(pMap);
-
-    const eventIds = invitations.map(i => i.event_id);
-    const { data: evData } = await supabase.from('events').select('*, event_participants(name)').in('id', eventIds);
-    if (!evData) { setLoading(false); return; }
-    setEvents(evData);
-    const allExp = [], allContrib = {};
-    for (const ev of evData) {
-      const { data: exData } = await supabase.from('expenses').select('*').eq('event_id', ev.id);
-      if (exData) allExp.push(...exData);
-      const { data: cData } = await supabase.from('contributions').select('*').eq('event_id', ev.id);
-      if (cData) { allContrib[ev.id] = {}; cData.forEach(c => { allContrib[ev.id][c.participant] = c.amount; }); }
-    }
-    setExpenses(allExp); setContributions(allContrib); setLoading(false);
-  }, [guestEmail]);
-
-  useEffect(() => { loadGuest(); }, [loadGuest]);
-
 function GuestExpenseForm({ events, onSubmit, onCancel, saving, isBudget }) {
   const empty = { eventId: events[0]?.id || "", category: "", sub: "", detail: "", qty: 1, unit: "", paidBy: "", included: [] };
   const [form, setForm] = useState(empty);
