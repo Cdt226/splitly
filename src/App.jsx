@@ -2045,8 +2045,8 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
           </div>
         </>
       )}
-    </div> {/* fin liste */}
-    </div> {/* fin !selectedEvent */}
+      </div>
+      </div>
     </div>
   );
 }
