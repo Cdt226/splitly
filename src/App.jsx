@@ -3777,12 +3777,18 @@ function PermissionSummaryBadge({ permissions }) {
 function Invite({ events, user, isMobile, addToast }) {
   const [email, setEmail] = useState("");
   const [selectedEvents, setSelectedEvents] = useState([]);
-  const [permissions, setPermissions] = useState([]); // vide = lecture seule implicite
+  const [permissions, setPermissions] = useState([]);
   const [invitations, setInvitations] = useState([]);
   const [saving, setSaving] = useState(false);
-  const [editingPerms, setEditingPerms] = useState(null);
-  const [editPerms, setEditPerms] = useState([]);
-  const [applyToAll, setApplyToAll] = useState(false);
+
+  // Gestionnaire de droits refonte
+  const [managerEmail, setManagerEmail] = useState(null); // email géré
+  const [managerMode, setManagerMode] = useState("by_event"); // "by_event" | "selection" | "all"
+  const [managerPerms, setManagerPerms] = useState({}); // { eventId: [perms] }
+  const [selectionPerms, setSelectionPerms] = useState([]); // perms communes pour "selection"
+  const [selectionEvents, setSelectionEvents] = useState([]); // events sélectionnés pour "selection"
+  const [allPerms, setAllPerms] = useState([]); // perms pour "all"
+  const [confirmAll, setConfirmAll] = useState(false); // visa fort pour "all"
   const [savingPerms, setSavingPerms] = useState(false);
 
   const loadInvites = async () => {
@@ -3796,6 +3802,13 @@ function Invite({ events, user, isMobile, addToast }) {
 
   useEffect(() => { if (events.length > 0) loadInvites(); }, [events]);
 
+  // Invitations groupées par email
+  const invitationsByEmail = invitations.reduce((acc, inv) => {
+    if (!acc[inv.email]) acc[inv.email] = [];
+    acc[inv.email].push(inv);
+    return acc;
+  }, {});
+
   const handleSend = async () => {
     if (!email) { addToast("Entrez un email.", "warning"); return; }
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -3803,15 +3816,14 @@ function Invite({ events, user, isMobile, addToast }) {
     if (selectedEvents.length === 0) { addToast("Sélectionnez au moins un événement.", "warning"); return; }
     setSaving(true);
     const finalPerms = normalizePerms(permissions);
-    // Vérifier doublons — si TOUS les événements ont déjà cet invité → ouvrir droits
+    // Vérifier doublons
     const existing = invitations.filter(i => i.email === email && selectedEvents.includes(i.event_id));
     if (existing.length > 0 && existing.length === selectedEvents.length) {
       setSaving(false);
       addToast(`${email} est déjà invité sur ces événements. Modifiez ses droits.`, "info");
-      openEditPerms(existing[0]);
+      openManager(email);
       return;
     }
-    // Envoyer seulement pour les événements où l'invitation n'existe pas encore
     for (const evId of selectedEvents) {
       const alreadyExists = invitations.find(i => i.email === email && i.event_id === evId);
       if (!alreadyExists) {
@@ -3830,76 +3842,203 @@ function Invite({ events, user, isMobile, addToast }) {
     addToast("Accès retiré.", "info");
   };
 
-  const openEditPerms = (inv) => {
-    setEditingPerms(inv);
-    setEditPerms(normalizePerms(inv.permissions));
-    setApplyToAll(false);
+  // Ouvrir le gestionnaire de droits pour un email
+  const openManager = (guestEmail) => {
+    const guestInvs = invitations.filter(i => i.email === guestEmail);
+    // Construire la map initiale de perms par event
+    const pMap = {};
+    guestInvs.forEach(i => { pMap[i.event_id] = normalizePerms(i.permissions); });
+    setManagerEmail(guestEmail);
+    setManagerMode("by_event");
+    setManagerPerms(pMap);
+    setSelectionPerms([]);
+    setSelectionEvents([]);
+    setAllPerms([]);
+    setConfirmAll(false);
   };
 
-  const handleSavePerms = async () => {
+  const closeManager = () => {
+    setManagerEmail(null);
+    setConfirmAll(false);
+  };
+
+  const handleSaveManager = async () => {
+    if (!managerEmail) return;
     setSavingPerms(true);
-    await updateInvitationPermissions(editingPerms.event_id, editingPerms.email, editPerms, applyToAll);
-    await loadInvites();
+    const guestInvs = invitations.filter(i => i.email === managerEmail);
+    try {
+      if (managerMode === "by_event") {
+        // Enregistrer chaque événement individuellement
+        for (const inv of guestInvs) {
+          const perms = managerPerms[inv.event_id] || [];
+          await updateInvitationPermissions(inv.event_id, managerEmail, perms, false);
+        }
+        addToast(`Droits mis à jour pour ${managerEmail}.`, "success");
+      } else if (managerMode === "selection") {
+        for (const evId of selectionEvents) {
+          await updateInvitationPermissions(evId, managerEmail, selectionPerms, false);
+        }
+        addToast(`Droits appliqués sur ${selectionEvents.length} événement(s).`, "success");
+      } else if (managerMode === "all") {
+        if (!confirmAll) { addToast("Cochez la confirmation pour appliquer à tous les événements.", "warning"); setSavingPerms(false); return; }
+        // Appliquer à tous (actuels + futurs via applyToAll=true)
+        await updateInvitationPermissions(guestInvs[0]?.event_id, managerEmail, allPerms, true);
+        addToast(`Droits appliqués à TOUS les événements (actuels et futurs) pour ${managerEmail}.`, "success");
+      }
+      await loadInvites();
+      closeManager();
+    } catch (e) { addToast("Erreur : " + e.message, "error"); }
     setSavingPerms(false);
-    setEditingPerms(null);
-    addToast(`Droits de ${editingPerms.email} mis à jour.`, "success");
   };
 
   const togglePerm = (perms, setPerms, key) => {
-    if (perms.includes(key)) {
-      setPerms(perms.filter(p => p !== key));
-    } else {
-      setPerms([...perms, key]);
-    }
+    setPerms(perms.includes(key) ? perms.filter(p => p !== key) : [...perms, key]);
   };
 
   const PermBadge = ({ perm }) => {
-    if (perm === "read_only") return <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: "#f5f5f5", color: "#888", fontWeight: 700 }}>👁 Lecture seule</span>;
+    if (perm === "read_only") return <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "#f5f5f5", color: "#888", fontWeight: 700 }}>👁 Lecture seule</span>;
     const p = ALL_PERMISSIONS[perm];
     if (!p) return null;
-    return (
-      <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: p.bg, color: p.color, fontWeight: 700, border: `1px solid ${p.color}22`, whiteSpace: "nowrap" }}>
-        {p.icon} {p.label}
-      </span>
-    );
+    return <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: p.bg, color: p.color, fontWeight: 700, border: `1px solid ${p.color}22`, whiteSpace: "nowrap" }}>{p.icon} {p.label}</span>;
   };
+
+  // Composant checkboxes de permissions réutilisable
+  const PermCheckboxes = ({ eventType, perms, onToggle }) => (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {getAvailablePermissions(eventType || "split").map(p => (
+        <label key={p.key} onClick={() => onToggle(p.key)}
+          style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 9, border: `1.5px solid ${perms.includes(p.key) ? p.color : "var(--border)"}`, background: perms.includes(p.key) ? p.bg : "var(--bg-secondary)", cursor: "pointer", transition: "all 0.15s" }}>
+          <div style={{ width: 16, height: 16, borderRadius: 4, border: `2px solid ${perms.includes(p.key) ? p.color : "#ccc"}`, background: perms.includes(p.key) ? p.color : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            {perms.includes(p.key) && <span style={{ color: "#fff", fontSize: 10 }}>✓</span>}
+          </div>
+          <span style={{ fontSize: 12 }}>{p.icon}</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{p.label}</div>
+            <div style={{ fontSize: 10, color: "var(--text-sub)" }}>{p.desc}</div>
+          </div>
+        </label>
+      ))}
+      {perms.length === 0 && <div style={{ fontSize: 11, color: "#888", background: "#f5f5f5", borderRadius: 8, padding: "6px 12px" }}>👁 Aucun droit = Lecture seule</div>}
+    </div>
+  );
+
+  // Invités gérés (emails uniques)
+  const uniqueEmails = Object.keys(invitationsByEmail);
+  // Événements de l'invité géré (pour les modes selection/all)
+  const managerInvs = managerEmail ? invitations.filter(i => i.email === managerEmail) : [];
 
   return (
     <div>
-      {/* Modal édition permissions */}
-      {editingPerms && (
-        <Modal title={`🔐 Droits de ${editingPerms.email}`} onClose={() => setEditingPerms(null)}>
-          <div style={{ fontSize: 12, color: "var(--text-sub)", marginBottom: 16 }}>
-            Événement : <strong>{editingPerms.eventName}</strong>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
-            {getAvailablePermissions(editingPerms.eventType || "split").map(p => (
-              <label key={p.key} onClick={() => togglePerm(editPerms, setEditPerms, p.key)}
-                style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderRadius: 10, border: `1.5px solid ${editPerms.includes(p.key) ? p.color : "var(--border)"}`, background: editPerms.includes(p.key) ? p.bg : "var(--bg-secondary)", cursor: "pointer", transition: "all 0.15s" }}>
-                <div style={{ width: 18, height: 18, borderRadius: 5, border: `2px solid ${editPerms.includes(p.key) ? p.color : "#ccc"}`, background: editPerms.includes(p.key) ? p.color : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  {editPerms.includes(p.key) && <span style={{ color: "#fff", fontSize: 11 }}>✓</span>}
-                </div>
-                <span style={{ fontSize: 14 }}>{p.icon}</span>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{p.label}</div>
-                  <div style={{ fontSize: 11, color: "var(--text-sub)" }}>{p.desc}</div>
-                </div>
-              </label>
-            ))}
-          </div>
-          <label style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, background: applyToAll ? "#FFF8E1" : "var(--hover-bg)", border: `1.5px solid ${applyToAll ? "#FFE082" : "var(--border)"}`, cursor: "pointer", marginBottom: 16, fontSize: 13 }}
-            onClick={() => setApplyToAll(!applyToAll)}>
-            <div style={{ width: 18, height: 18, borderRadius: 5, border: `2px solid ${applyToAll ? "#F57F17" : "#ccc"}`, background: applyToAll ? "#F57F17" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              {applyToAll && <span style={{ color: "#fff", fontSize: 11 }}>✓</span>}
+      {/* ─── Modal Gestionnaire de droits ─── */}
+      {managerEmail && (
+        <Modal title={`🔐 Droits de ${managerEmail}`} onClose={closeManager}>
+          <div style={{ maxHeight: "70vh", overflowY: "auto" }}>
+            {/* Sélecteur de mode */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={S.label}>Mode d'application</label>
+              <div style={{ display: "flex", background: "var(--hover-bg)", borderRadius: 10, padding: 3, gap: 2, marginTop: 6 }}>
+                {[
+                  { key: "by_event", label: "Par événement" },
+                  { key: "selection", label: "Sélection" },
+                  { key: "all", label: "⚠️ Tous" },
+                ].map(m => (
+                  <button key={m.key} onClick={() => { setManagerMode(m.key); setConfirmAll(false); }}
+                    style={{ flex: 1, padding: "6px 8px", borderRadius: 8, border: "none", background: managerMode === m.key ? (m.key === "all" ? "#C62828" : "#0F0F0F") : "transparent", color: managerMode === m.key ? "#fff" : "var(--text-muted)", fontSize: 11, fontWeight: managerMode === m.key ? 700 : 400, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", transition: "all 0.15s" }}>
+                    {m.label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div>
-              <div style={{ fontWeight: 700, color: applyToAll ? "#F57F17" : "var(--text)" }}>Appliquer à tous mes événements</div>
-              <div style={{ fontSize: 11, color: "var(--text-sub)" }}>Y compris les futurs événements auxquels cet invité sera invité</div>
-            </div>
-          </label>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={handleSavePerms} disabled={savingPerms} style={{ ...S.btnDark, flex: 1, justifyContent: "center", display: "flex" }}>{savingPerms ? "..." : "✓ Enregistrer"}</button>
-            <button onClick={() => setEditingPerms(null)} style={{ ...S.btnGhost, flex: 1, justifyContent: "center", display: "flex" }}>Annuler</button>
+
+            {/* Mode PAR ÉVÉNEMENT */}
+            {managerMode === "by_event" && (
+              <div>
+                <div style={{ fontSize: 12, color: "var(--text-sub)", marginBottom: 12 }}>Définissez des droits différents pour chaque événement.</div>
+                {managerInvs.map(inv => (
+                  <div key={inv.event_id} style={{ marginBottom: 16, background: "var(--hover-bg)", borderRadius: 12, padding: "12px 14px", border: "1px solid var(--border)" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                      <span>{inv.eventType === "budget" ? "🏦" : "💸"}</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{inv.eventName}</span>
+                    </div>
+                    <PermCheckboxes
+                      eventType={inv.eventType}
+                      perms={managerPerms[inv.event_id] || []}
+                      onToggle={(key) => setManagerPerms(prev => {
+                        const cur = prev[inv.event_id] || [];
+                        return { ...prev, [inv.event_id]: cur.includes(key) ? cur.filter(p => p !== key) : [...cur, key] };
+                      })}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Mode SÉLECTION */}
+            {managerMode === "selection" && (
+              <div>
+                <div style={{ fontSize: 12, color: "var(--text-sub)", marginBottom: 12 }}>Sélectionnez les événements et appliquez les mêmes droits.</div>
+                {/* Choix événements */}
+                <div style={{ marginBottom: 14 }}>
+                  <label style={S.label}>Événements concernés</label>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
+                    {managerInvs.map(inv => (
+                      <label key={inv.event_id} onClick={() => setSelectionEvents(prev => prev.includes(inv.event_id) ? prev.filter(x => x !== inv.event_id) : [...prev, inv.event_id])}
+                        style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 9, border: `1.5px solid ${selectionEvents.includes(inv.event_id) ? "#1565C0" : "var(--border)"}`, background: selectionEvents.includes(inv.event_id) ? "#E3F2FD" : "var(--hover-bg)", cursor: "pointer", transition: "all 0.15s" }}>
+                        <div style={{ width: 16, height: 16, borderRadius: 4, border: `2px solid ${selectionEvents.includes(inv.event_id) ? "#1565C0" : "#ccc"}`, background: selectionEvents.includes(inv.event_id) ? "#1565C0" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          {selectionEvents.includes(inv.event_id) && <span style={{ color: "#fff", fontSize: 10 }}>✓</span>}
+                        </div>
+                        <span>{inv.eventType === "budget" ? "🏦" : "💸"}</span>
+                        <span style={{ fontSize: 13, color: "var(--text)", fontWeight: selectionEvents.includes(inv.event_id) ? 700 : 400 }}>{inv.eventName}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                {/* Droits à appliquer */}
+                {selectionEvents.length > 0 && (
+                  <div>
+                    <label style={{ ...S.label, marginBottom: 8 }}>Droits à appliquer</label>
+                    <PermCheckboxes
+                      eventType={managerInvs.find(i => selectionEvents.includes(i.event_id))?.eventType}
+                      perms={selectionPerms}
+                      onToggle={(key) => togglePerm(selectionPerms, setSelectionPerms, key)}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Mode TOUS */}
+            {managerMode === "all" && (
+              <div>
+                <div style={{ background: "#FFEBEE", border: "1px solid #FFCDD2", borderRadius: 10, padding: "12px 14px", marginBottom: 14, fontSize: 12, color: "#C62828" }}>
+                  ⚠️ <strong>Attention :</strong> Ces droits s'appliqueront à <strong>TOUS les événements actuels ET futurs</strong> créés par vous auxquels cet invité sera invité.
+                </div>
+                <PermCheckboxes
+                  eventType="split"
+                  perms={allPerms}
+                  onToggle={(key) => togglePerm(allPerms, setAllPerms, key)}
+                />
+                {/* Visa fort */}
+                <label onClick={() => setConfirmAll(!confirmAll)}
+                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, background: confirmAll ? "#FFEBEE" : "var(--hover-bg)", border: `1.5px solid ${confirmAll ? "#C62828" : "var(--border)"}`, cursor: "pointer", marginTop: 14, transition: "all 0.15s" }}>
+                  <div style={{ width: 18, height: 18, borderRadius: 5, border: `2px solid ${confirmAll ? "#C62828" : "#ccc"}`, background: confirmAll ? "#C62828" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    {confirmAll && <span style={{ color: "#fff", fontSize: 11 }}>✓</span>}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: confirmAll ? "#C62828" : "var(--text)" }}>Je confirme appliquer ces droits à tous mes événements</div>
+                    <div style={{ fontSize: 11, color: "var(--text-sub)" }}>Cette action affecte les événements existants et futurs</div>
+                  </div>
+                </label>
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+            <button onClick={handleSaveManager} disabled={savingPerms || (managerMode === "all" && !confirmAll) || (managerMode === "selection" && selectionEvents.length === 0)}
+              style={{ ...S.btnDark, flex: 1, justifyContent: "center", display: "flex", background: managerMode === "all" ? "#C62828" : undefined, opacity: (managerMode === "all" && !confirmAll) || (managerMode === "selection" && selectionEvents.length === 0) ? 0.5 : 1 }}>
+              {savingPerms ? "..." : "✓ Enregistrer"}
+            </button>
+            <button onClick={closeManager} style={{ ...S.btnGhost, flex: 1, justifyContent: "center", display: "flex" }}>Annuler</button>
           </div>
         </Modal>
       )}
@@ -3907,16 +4046,17 @@ function Invite({ events, user, isMobile, addToast }) {
       <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 4, color: "var(--text)" }}>Invitations</h2>
       <p style={{ color: "var(--text-sub)", fontSize: 12, marginBottom: 20 }}>Gérez l'accès et les droits de vos invités</p>
 
-      {/* Formulaire invitation */}
+      {/* ─── Formulaire invitation ─── */}
       <div style={S.card}>
         <div style={S.sectionTitle}>✉️ Inviter quelqu'un</div>
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 14 }}>
-          <div><label style={S.label}>Email de l'invité</label>
+          <div>
+            <label style={S.label}>Email de l'invité</label>
             <input style={S.input} type="email" placeholder="ami@example.com" value={email} onChange={e => setEmail(e.target.value)} />
           </div>
         </div>
 
-        {/* Permissions à l'invitation */}
+        {/* Permissions */}
         <div style={{ marginBottom: 16 }}>
           <label style={S.label}>Droits accordés <span style={{ color: "var(--text-sub)", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(lecture seule par défaut)</span></label>
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 8, marginTop: 8 }}>
@@ -3958,49 +4098,60 @@ function Invite({ events, user, isMobile, addToast }) {
         <button onClick={handleSend} disabled={saving} style={S.btnDark}>{saving ? "Envoi..." : "Envoyer l'invitation ✉️"}</button>
       </div>
 
-      {/* Liste invités */}
-      <div style={{ background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border)", overflow: "hidden" }}>
+      {/* ─── Liste invités groupés par email ─── */}
+      <div style={{ background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border)", overflow: "hidden", marginTop: 16 }}>
         <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)", fontSize: 14, fontWeight: 700, color: "var(--text)" }}>
-          Invités ({invitations.length})
+          Invités ({uniqueEmails.length} personne{uniqueEmails.length > 1 ? "s" : ""} · {invitations.length} invitation{invitations.length > 1 ? "s" : ""})
         </div>
-        {invitations.length === 0 ? (
+        {uniqueEmails.length === 0 ? (
           <EmptyState icon="👥" title="Aucun invité" subtitle="Invitez des personnes à consulter vos événements." />
-        ) : invitations.map((inv, i) => (
-          <div key={inv.id} style={{ padding: "13px 18px", borderBottom: i < invitations.length - 1 ? "1px solid var(--border)" : "none" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
-              <Avatar name={inv.email[0]} size={32} />
-              <div style={{ flex: 1, minWidth: 100 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)" }}>{inv.email}</div>
-                <div style={{ fontSize: 11, color: "var(--text-sub)", marginTop: 2, display: "flex", alignItems: "center", gap: 6 }}>
-                  <span>{inv.event_type === "budget" ? "🏦" : "💸"}</span>
-                  <Truncate text={inv.eventName} max={22} />
+        ) : uniqueEmails.map((guestEmail, gi) => {
+          const guestInvs = invitationsByEmail[guestEmail];
+          const allAccepted = guestInvs.every(i => i.status === "accepted");
+          return (
+            <div key={guestEmail} style={{ borderBottom: gi < uniqueEmails.length - 1 ? "1px solid var(--border)" : "none" }}>
+              {/* En-tête invité */}
+              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", flexWrap: "wrap" }}>
+                <Avatar name={guestEmail[0]} size={34} />
+                <div style={{ flex: 1, minWidth: 100 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{guestEmail}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-sub)", marginTop: 1 }}>{guestInvs.length} événement{guestInvs.length > 1 ? "s" : ""}</div>
                 </div>
+                <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: allAccepted ? "#E8F5E9" : "#FFF8E1", color: allAccepted ? "#2E7D32" : "#F57F17", flexShrink: 0 }}>
+                  {allAccepted ? "✓ Accepté" : "⏳ En attente"}
+                </span>
+                <button onClick={() => openManager(guestEmail)}
+                  style={{ padding: "5px 12px", borderRadius: 8, border: "1.5px solid #BBDEFB", background: "#E3F2FD", color: "#1565C0", fontSize: 11, cursor: "pointer", fontWeight: 700, flexShrink: 0 }}>
+                  🔐 Gérer les droits
+                </button>
+                <button onClick={() => { if (window.confirm(`Retirer ${guestEmail} de tous les événements ?`)) guestInvs.forEach(i => handleRemove(i)); }}
+                  style={{ padding: "5px 10px", borderRadius: 8, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 11, cursor: "pointer", fontWeight: 700, flexShrink: 0 }}>
+                  Retirer
+                </button>
               </div>
-              <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: inv.status === "accepted" ? "#E8F5E9" : "#FFF8E1", color: inv.status === "accepted" ? "#2E7D32" : "#F57F17", flexShrink: 0 }}>
-                {inv.status === "accepted" ? "✓ Accepté" : "⏳ En attente"}
-              </span>
-              <button onClick={() => openEditPerms(inv)}
-                style={{ padding: "5px 12px", borderRadius: 8, border: "1.5px solid #BBDEFB", background: "#E3F2FD", color: "#1565C0", fontSize: 11, cursor: "pointer", fontWeight: 700, flexShrink: 0 }}>
-                🔐 Droits
-              </button>
-              <button onClick={() => handleRemove(inv)}
-                style={{ padding: "5px 10px", borderRadius: 8, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 11, cursor: "pointer", fontWeight: 700, flexShrink: 0 }}>
-                Retirer
-              </button>
+              {/* Détail par événement */}
+              <div style={{ paddingLeft: isMobile ? 16 : 64, paddingRight: 18, paddingBottom: 12 }}>
+                {guestInvs.map(inv => (
+                  <div key={inv.event_id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 11, color: "var(--text-sub)" }}>{inv.eventType === "budget" ? "🏦" : "💸"} <Truncate text={inv.eventName} max={20} /></span>
+                    <span style={{ fontSize: 9, color: "#aaa" }}>·</span>
+                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                      {normalizePerms(inv.permissions).length === 0
+                        ? <PermBadge perm="read_only" />
+                        : normalizePerms(inv.permissions).map(p => <PermBadge key={p} perm={p} />)
+                      }
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-            {/* Badges permissions */}
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", paddingLeft: 42 }}>
-              {normalizePerms(inv.permissions).length === 0
-                ? <PermBadge perm="read_only" />
-                : normalizePerms(inv.permissions).map(p => <PermBadge key={p} perm={p} />)
-              }
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
 }
+
 
 // ─── NOTIFICATIONS ────────────────────────────────────────────
 function NotificationsPage({ notifications, events, expenses, pendingActions, user, onMarkAll, onDismiss, reload, isMobile, addToast }) {
