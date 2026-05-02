@@ -516,6 +516,12 @@ export function subscribeToNotifications(userId, callback) {
     .subscribe();
 }
 
+export function subscribeToGuestPendingActions(guestEmail, callback) {
+  return supabase.channel(`guest-pending-admin-${guestEmail.replace('@', '-')}`)
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'pending_actions', filter: `guest_email=eq.${guestEmail}` }, callback)
+    .subscribe();
+}
+
 export function subscribeToPendingActions(eventIds, callback) {
   return supabase.channel(`pending-actions`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'pending_actions' }, callback)

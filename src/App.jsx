@@ -584,7 +584,7 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
   const [events, setEvents] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [contributions, setContributions] = useState({});
-  const [cotisations, setCotisations] = useState({}); // { eventId: [cotisations] }
+  const [cotisations, setCotisations] = useState({});
   const [active, setActive] = useState("events");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -593,13 +593,12 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
   const [requestEventId, setRequestEventId] = useState("");
   const [requestedPerms, setRequestedPerms] = useState([]);
   const [requestSaving, setRequestSaving] = useState(false);
-
-  // Filtre par événement (partagé entre onglets)
   const [filterEventId, setFilterEventId] = useState("");
-
-  // Formulaires charges
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
+
+  // Ref pour les event IDs — accessible dans les callbacks Realtime sans dépendances stale
+  const eventIdsRef = useRef([]);
 
   const loadGuest = useCallback(async () => {
     setLoading(true);
@@ -614,10 +613,12 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
     setPermissionsMap(pMap);
 
     const eventIds = invitations.map(i => i.event_id);
+    eventIdsRef.current = eventIds;
+
     const { data: evData } = await supabase.from('events').select('*, event_participants(name)').in('id', eventIds);
     if (!evData) { setLoading(false); return; }
     setEvents(evData);
-    if (evData.length > 0) setFilterEventId(evData[0].id);
+    setFilterEventId(prev => prev && eventIds.includes(prev) ? prev : (evData[0]?.id || ""));
 
     const allExp = [], allContrib = {}, allCot = {};
     for (const ev of evData) {
@@ -634,7 +635,97 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
     setLoading(false);
   }, [guestEmail]);
 
+  // Rechargement silencieux (sans spinner) pour Realtime
+  const silentReload = useCallback(async () => {
+    const { data: invitations } = await supabase
+      .from('invitations').select('event_id, role, status, permissions').eq('email', guestEmail);
+    if (!invitations || invitations.length === 0) return;
+    const eventIds = invitations.map(i => i.event_id);
+    const { data: evData } = await supabase.from('events').select('*, event_participants(name)').in('id', eventIds);
+    if (!evData) return;
+    setEvents(evData);
+    const allExp = [], allContrib = {}, allCot = {};
+    for (const ev of evData) {
+      const { data: exData } = await supabase.from('expenses').select('*').eq('event_id', ev.id);
+      if (exData) allExp.push(...exData);
+      const { data: cData } = await supabase.from('contributions').select('*').eq('event_id', ev.id);
+      if (cData) { allContrib[ev.id] = {}; cData.forEach(c => { allContrib[ev.id][c.participant] = c.amount; }); }
+      if (ev.event_type === "budget") {
+        const { data: cotData } = await supabase.from('cotisations').select('*').eq('event_id', ev.id);
+        if (cotData) allCot[ev.id] = cotData;
+      }
+    }
+    setExpenses(allExp); setContributions(allContrib); setCotisations(allCot);
+  }, [guestEmail]);
+
+  // Chargement initial
   useEffect(() => { loadGuest(); }, [loadGuest]);
+
+  // ─── Realtime — synchronisation temps réel ────────────────────
+  useEffect(() => {
+    if (!guestEmail) return;
+
+    const handleChange = (table, payload) => {
+      const evId = payload.new?.event_id || payload.old?.event_id;
+      if (!evId || !eventIdsRef.current.includes(evId)) return;
+      silentReload();
+      // Notification contextuelle selon la table et l'action
+      const labels = {
+        expenses:      { INSERT: "📝 Nouvelle charge ajoutée", UPDATE: "✏️ Charge modifiée", DELETE: "🗑 Charge supprimée" },
+        cotisations:   { INSERT: "💰 Nouvelle cotisation", UPDATE: "💰 Cotisation mise à jour", DELETE: "💰 Cotisation supprimée" },
+        contributions: { INSERT: "⊜ Contribution mise à jour", UPDATE: "⊜ Contribution mise à jour", DELETE: "⊜ Contribution mise à jour" },
+      };
+      const msg = labels[table]?.[payload.eventType];
+      if (msg) addToast(msg, "info");
+    };
+
+    // S'abonner aux charges
+    const expCh = supabase
+      .channel(`guest-expenses-${guestEmail}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "expenses" },
+        (p) => handleChange("expenses", p))
+      .subscribe();
+
+    // S'abonner aux cotisations
+    const cotCh = supabase
+      .channel(`guest-cotisations-${guestEmail}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "cotisations" },
+        (p) => handleChange("cotisations", p))
+      .subscribe();
+
+    // S'abonner aux contributions (soldes Split)
+    const contCh = supabase
+      .channel(`guest-contributions-${guestEmail}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "contributions" },
+        (p) => handleChange("contributions", p))
+      .subscribe();
+
+    // S'abonner aux pending_actions — notifier l'invité si sa demande est traitée
+    const pendingCh = supabase
+      .channel(`guest-pending-${guestEmail}`)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "pending_actions",
+        filter: `guest_email=eq.${guestEmail}` },
+        (payload) => {
+          if (payload.new?.status === "approved") {
+            addToast("✅ Votre demande a été approuvée par l'admin !", "success");
+            silentReload();
+          } else if (payload.new?.status === "rejected") {
+            addToast("❌ Votre demande a été refusée par l'admin.", "warning");
+          }
+        })
+      .subscribe();
+
+    // Polling de secours toutes les 30s (au cas où Realtime rate une mise à jour)
+    const pollInterval = setInterval(() => { silentReload(); }, 30000);
+
+    return () => {
+      supabase.removeChannel(expCh);
+      supabase.removeChannel(cotCh);
+      supabase.removeChannel(contCh);
+      supabase.removeChannel(pendingCh);
+      clearInterval(pollInterval);
+    };
+  }, [guestEmail, silentReload, addToast]);
 
   const can = (eventId, perm) => normalizePerms(permissionsMap[eventId] || []).includes(perm);
 
@@ -644,8 +735,8 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
     setSaving(false);
     setShowAddExpense(false);
     setEditingExpense(null);
-    addToast("Demande envoyée à l'admin.", "info");
-    await loadGuest();
+    addToast("Demande envoyée à l'admin — vous serez notifié dès approbation.", "info");
+    await silentReload();
   };
 
   const handleRequestPerms = async () => {
@@ -6558,7 +6649,6 @@ function AppInner() {
     const expCh = supabase
       .channel("expenses-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "expenses" }, (payload) => {
-        // Recharger seulement si la charge appartient à un de nos événements
         const evId = payload.new?.event_id || payload.old?.event_id;
         if (evId && eventIds.includes(evId)) {
           loadAll();
@@ -6577,17 +6667,31 @@ function AppInner() {
       })
       .subscribe();
 
+    // S'abonner aux cotisations (Budget)
+    const cotCh = supabase
+      .channel("cotisations-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "cotisations" }, (payload) => {
+        const evId = payload.new?.event_id || payload.old?.event_id;
+        if (evId && eventIds.includes(evId)) {
+          loadAll();
+          addToast("💰 Cotisations mises à jour", "info");
+        }
+      })
+      .subscribe();
+
     // S'abonner aux pending actions
     const pendingCh = supabase
       .channel("pending-actions-realtime")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "pending_actions" }, () => {
         loadAll();
+        addToast("📬 Nouvelle demande d'un invité", "info");
       })
       .subscribe();
 
     return () => {
       supabase.removeChannel(expCh);
       supabase.removeChannel(contCh);
+      supabase.removeChannel(cotCh);
       supabase.removeChannel(pendingCh);
     };
   }, [user, events.length]);
