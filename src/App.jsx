@@ -380,15 +380,47 @@ function AuthScreen({ onAuth, onGuestAuth, initialMode, onClose }) {
   const [form, setForm] = useState({ email: "", password: "", name: "", code: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [touched, setTouched] = useState({});
+
+  const touch = (field) => setTouched(t => ({ ...t, [field]: true }));
+
+  const emailValid   = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim());
+  const passwordValid = form.password.length >= 8;
+  const nameValid    = form.name.trim().length >= 2;
+  const codeValid    = /^\d{6}$/.test(form.code);
+
+  const fieldErr = {
+    email:    !emailValid   ? "Email invalide (ex: alice@mail.com)" : "",
+    password: !passwordValid? "Minimum 8 caractères" : "",
+    name:     !nameValid    ? "Minimum 2 caractères" : "",
+    code:     !codeValid    ? "6 chiffres requis" : "",
+  };
+
+  const canSubmit = mode === "login"
+    ? emailValid && form.password.length > 0
+    : emailValid && passwordValid && nameValid;
+
+  const inp = (field) => ({
+    ...S.input,
+    borderColor: touched[field] && fieldErr[field] ? "#C62828" : touched[field] && !fieldErr[field] ? "#4CAF50" : undefined,
+    boxShadow: touched[field] && fieldErr[field] ? "0 0 0 2px #FFCDD2" : touched[field] && !fieldErr[field] ? "0 0 0 2px #C8E6C9" : undefined,
+    transition: "border-color 0.2s, box-shadow 0.2s",
+  });
+
+  const FErr = ({ field }) => touched[field] && fieldErr[field]
+    ? <div style={{ fontSize: 11, color: "#C62828", marginTop: 4, display: "flex", alignItems: "center", gap: 4 }}>⚠️ {fieldErr[field]}</div>
+    : null;
 
   const handleAdmin = async () => {
+    setTouched({ email: true, password: true, name: true });
+    if (!canSubmit) return;
     setLoading(true); setError("");
     if (mode === "login") {
-      const { data, error } = await signIn(form.email, form.password);
+      const { data, error } = await signIn(form.email.trim(), form.password);
       if (error) setError(error.message);
       else onAuth(data.user);
     } else {
-      const { error } = await signUp(form.email, form.password, form.name);
+      const { error } = await signUp(form.email.trim(), form.password, form.name.trim());
       if (error) setError(error.message);
       else setMode("confirm");
     }
@@ -396,21 +428,24 @@ function AuthScreen({ onAuth, onGuestAuth, initialMode, onClose }) {
   };
 
   const handleGuestRequest = async () => {
-    if (!form.email) { setError("Entrez votre email."); return; }
+    setTouched(t => ({ ...t, email: true }));
+    if (!emailValid) { setError("Entrez un email valide."); return; }
     setLoading(true); setError("");
-    const { data: invites } = await supabase.from('invitations').select('*').eq('email', form.email);
+    const { data: invites } = await supabase.from('invitations').select('*').eq('email', form.email.trim());
     if (!invites || invites.length === 0) { setError("Aucune invitation trouvée pour cet email."); setLoading(false); return; }
-    await sendGuestCode(form.email, null);
+    await sendGuestCode(form.email.trim(), null);
     setMode("guest_verify");
     setLoading(false);
   };
 
   const handleGuestVerify = async () => {
+    setTouched(t => ({ ...t, code: true }));
+    if (!codeValid) { setError("Entrez le code à 6 chiffres reçu par email."); return; }
     setLoading(true); setError("");
-    const { valid } = await verifyGuestCode(form.email, form.code);
-    if (!valid) { setError("Code incorrect. Vérifiez et réessayez."); setLoading(false); return; }
-    await supabase.from('invitations').update({ status: 'accepted' }).eq('email', form.email).eq('status', 'pending');
-    onGuestAuth(form.email);
+    const { valid } = await verifyGuestCode(form.email.trim(), form.code);
+    if (!valid) { setError("Code incorrect ou expiré. Réessayez."); setLoading(false); return; }
+    await supabase.from('invitations').update({ status: 'accepted' }).eq('email', form.email.trim()).eq('status', 'pending');
+    onGuestAuth(form.email.trim());
     setLoading(false);
   };
 
@@ -458,26 +493,35 @@ function AuthScreen({ onAuth, onGuestAuth, initialMode, onClose }) {
             {mode === "register" && (
               <div style={{ marginBottom: 14 }}>
                 <label style={S.label}>Nom complet</label>
-                <input style={S.input} placeholder="Alice Martin" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+                <input style={inp("name")} placeholder="Alice Martin" value={form.name}
+                  onChange={e => setForm({ ...form, name: e.target.value })}
+                  onBlur={() => touch("name")} />
+                <FErr field="name" />
               </div>
             )}
             <div style={{ marginBottom: 14 }}>
               <label style={S.label}>Email</label>
-              <input style={S.input} type="email" placeholder="alice@mail.com" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
+              <input style={inp("email")} type="email" placeholder="alice@mail.com" value={form.email}
+                onChange={e => setForm({ ...form, email: e.target.value })}
+                onBlur={() => touch("email")} />
+              <FErr field="email" />
             </div>
             <div style={{ marginBottom: 20 }}>
-              <label style={S.label}>Mot de passe</label>
-              <input style={S.input} type="password" placeholder="••••••••" value={form.password}
+              <label style={S.label}>Mot de passe {mode === "register" && <span style={{ color: "#aaa", fontWeight: 400 }}>(8 car. min.)</span>}</label>
+              <input style={inp("password")} type="password" placeholder="••••••••" value={form.password}
                 onChange={e => setForm({ ...form, password: e.target.value })}
+                onBlur={() => touch("password")}
                 onKeyDown={e => e.key === "Enter" && handleAdmin()} />
+              <FErr field="password" />
             </div>
             {error && <div style={{ background: "#fff5f5", border: "1px solid #ffcdd2", borderRadius: 10, padding: "10px 14px", fontSize: 12, color: "#C62828", marginBottom: 14 }}>⚠️ {error}</div>}
-            <button onClick={handleAdmin} disabled={loading} style={{ ...S.btnDark, width: "100%", justifyContent: "center", display: "flex", opacity: loading ? 0.7 : 1 }}>
+            <button onClick={handleAdmin} disabled={loading || !canSubmit}
+              style={{ ...S.btnDark, width: "100%", justifyContent: "center", display: "flex", opacity: (loading || !canSubmit) ? 0.6 : 1 }}>
               {loading ? "Connexion..." : mode === "login" ? "Se connecter" : "Créer le compte"}
             </button>
             <div style={{ textAlign: "center", marginTop: 16, fontSize: 13, color: "#aaa" }}>
               {mode === "login" ? "Pas de compte ? " : "Déjà un compte ? "}
-              <button onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); }}
+              <button onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); setTouched({}); }}
                 style={{ background: "none", border: "none", color: "#0F0F0F", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>
                 {mode === "login" ? "S'inscrire" : "Se connecter"}
               </button>
@@ -493,12 +537,15 @@ function AuthScreen({ onAuth, onGuestAuth, initialMode, onClose }) {
             </div>
             <div style={{ marginBottom: 20 }}>
               <label style={S.label}>Votre email</label>
-              <input style={S.input} type="email" placeholder="votre@email.com" value={form.email}
+              <input style={inp("email")} type="email" placeholder="votre@email.com" value={form.email}
                 onChange={e => setForm({ ...form, email: e.target.value })}
+                onBlur={() => touch("email")}
                 onKeyDown={e => e.key === "Enter" && handleGuestRequest()} />
+              <FErr field="email" />
             </div>
             {error && <div style={{ background: "#fff5f5", border: "1px solid #ffcdd2", borderRadius: 10, padding: "10px 14px", fontSize: 12, color: "#C62828", marginBottom: 14 }}>⚠️ {error}</div>}
-            <button onClick={handleGuestRequest} disabled={loading} style={{ ...S.btnDark, width: "100%", justifyContent: "center", display: "flex", opacity: loading ? 0.7 : 1 }}>
+            <button onClick={handleGuestRequest} disabled={loading || !emailValid}
+              style={{ ...S.btnDark, width: "100%", justifyContent: "center", display: "flex", opacity: (loading || !emailValid) ? 0.6 : 1 }}>
               {loading ? "Envoi..." : "Recevoir le code →"}
             </button>
           </>
@@ -512,16 +559,19 @@ function AuthScreen({ onAuth, onGuestAuth, initialMode, onClose }) {
             </div>
             <div style={{ marginBottom: 20 }}>
               <label style={S.label}>Code d'accès (6 chiffres)</label>
-              <input style={{ ...S.input, fontSize: 24, letterSpacing: 8, textAlign: "center", fontWeight: 700 }}
+              <input style={{ ...inp("code"), fontSize: 24, letterSpacing: 8, textAlign: "center", fontWeight: 700 }}
                 placeholder="000000" maxLength={6} value={form.code}
                 onChange={e => setForm({ ...form, code: e.target.value.replace(/\D/g, "") })}
+                onBlur={() => touch("code")}
                 onKeyDown={e => e.key === "Enter" && handleGuestVerify()} />
+              <FErr field="code" />
             </div>
             {error && <div style={{ background: "#fff5f5", border: "1px solid #ffcdd2", borderRadius: 10, padding: "10px 14px", fontSize: 12, color: "#C62828", marginBottom: 14 }}>⚠️ {error}</div>}
-            <button onClick={handleGuestVerify} disabled={loading} style={{ ...S.btnDark, width: "100%", justifyContent: "center", display: "flex", opacity: loading ? 0.7 : 1 }}>
+            <button onClick={handleGuestVerify} disabled={loading || !codeValid}
+              style={{ ...S.btnDark, width: "100%", justifyContent: "center", display: "flex", opacity: (loading || !codeValid) ? 0.6 : 1 }}>
               {loading ? "Vérification..." : "Accéder →"}
             </button>
-            <button onClick={() => { setMode("guest"); setError(""); }} style={{ ...S.btnGhost, width: "100%", justifyContent: "center", display: "flex", marginTop: 8 }}>← Retour</button>
+            <button onClick={() => { setMode("guest"); setError(""); setTouched({}); }} style={{ ...S.btnGhost, width: "100%", justifyContent: "center", display: "flex", marginTop: 8 }}>← Retour</button>
           </>
         )}
       </div>
@@ -2232,11 +2282,17 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
           {/* ── Champs communs ── */}
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 14 }}>
             <div>
-              <label style={S.label}>Nom de l'événement <span style={{ color: form.name.length > 30 ? "#C62828" : "#aaa", fontWeight: form.name.length > 30 ? 700 : 400 }}>{form.name.length}/30</span></label>
-              <input style={{ ...S.input, borderColor: form.name.length > 30 ? "#C62828" : undefined }} placeholder="Ex: Fête de fin d'année" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} maxLength={50} />
-              {form.name.length > 30 && <div style={{ fontSize: 11, color: "#C62828", marginTop: 4, fontWeight: 600 }}>⚠️ Limite de 30 caractères dépassée ({form.name.length}/30)</div>}
+              <label style={S.label}>Nom de l'événement <span style={{ color: "#C62828" }}>*</span> <span style={{ color: form.name.length > 30 ? "#C62828" : "#aaa", fontWeight: form.name.length > 30 ? 700 : 400 }}>{form.name.length}/30</span></label>
+              <input style={{ ...S.input, borderColor: form.name.length > 30 ? "#C62828" : form.name.trim().length > 0 && form.name.trim().length <= 30 ? "#4CAF50" : undefined, transition: "border-color 0.2s" }}
+                placeholder="Ex: Fête de fin d'année" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} maxLength={50} />
+              {form.name.length > 30 && <div style={{ fontSize: 11, color: "#C62828", marginTop: 4 }}>⚠️ Max 30 caractères ({form.name.length}/30)</div>}
             </div>
-            <div><label style={S.label}>Date</label><input type="date" style={S.input} value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
+            <div>
+              <label style={S.label}>Date <span style={{ color: "#C62828" }}>*</span></label>
+              <input type="date" style={{ ...S.input, borderColor: form.date ? "#4CAF50" : undefined, transition: "border-color 0.2s" }}
+                value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} />
+              {!form.date && <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>Sélectionnez une date</div>}
+            </div>
             <div style={{ gridColumn: isMobile ? "auto" : "1 / -1" }}>
               <label style={S.label}>Devise</label>
               <select style={{ ...S.input, maxWidth: 220 }} value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value })}>
@@ -2268,12 +2324,21 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
           </div>
 
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={handleCreate} disabled={loading || form.participants.length < 1 || form.name.trim().length > 30}
-              style={{ ...S.btnDark, opacity: (form.participants.length < 1 || form.name.trim().length > 30) ? 0.5 : 1 }}>
+            <button onClick={handleCreate}
+              disabled={loading || form.participants.length < 1 || form.name.trim().length === 0 || form.name.trim().length > 30 || !form.date}
+              style={{ ...S.btnDark, opacity: (loading || form.participants.length < 1 || form.name.trim().length === 0 || form.name.trim().length > 30 || !form.date) ? 0.5 : 1 }}>
               {loading ? "Création..." : `Créer l'événement ${form.event_type === "budget" ? "🏦" : "💸"}`}
             </button>
             <button onClick={() => setShowNew(false)} style={S.btnGhost}>Annuler</button>
           </div>
+          {/* Récapitulatif erreurs si tentative submit avec champs vides */}
+          {(form.name.trim().length === 0 || !form.date || form.participants.length < 1) && (
+            <div style={{ display: "flex", gap: 12, marginTop: 10, flexWrap: "wrap" }}>
+              {!form.name.trim() && <span style={{ fontSize: 11, color: "#C62828" }}>· Nom requis</span>}
+              {!form.date && <span style={{ fontSize: 11, color: "#C62828" }}>· Date requise</span>}
+              {form.participants.length < 1 && <span style={{ fontSize: 11, color: "#C62828" }}>· Min. 1 participant</span>}
+            </div>
+          )}
         </div>
       )}
 
@@ -2709,18 +2774,20 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
 
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
             <div>
-              <label style={S.label}>Événement</label>
-              <select style={S.input} value={form.eventId} onChange={e => handleEventChange(e.target.value)} disabled={!!editingEx || !!defaultEventId}>
+              <label style={S.label}>Événement <span style={{ color: "#C62828" }}>*</span></label>
+              <select style={{ ...S.input, borderColor: !form.eventId ? "#FFB74D" : "#4CAF50" }} value={form.eventId} onChange={e => handleEventChange(e.target.value)} disabled={!!editingEx || !!defaultEventId}>
                 <option value="">Sélectionner...</option>
                 {events.filter(e => e.status === "open").map(ev => <option key={ev.id} value={ev.id}>{ev.event_type === "budget" ? "🏦 " : "💸 "}{ev.name}</option>)}
               </select>
             </div>
             <div>
-              <label style={S.label}>{currentEvent?.event_type === "budget" ? "Responsable de la dépense" : "Payé par"}</label>
-              <select style={{ ...S.input, opacity: unpaid ? 0.5 : 1 }} value={form.paidBy} onChange={e => setForm({ ...form, paidBy: e.target.value })} disabled={!currentEvent || unpaid}>
+              <label style={S.label}>{currentEvent?.event_type === "budget" ? "Responsable de la dépense" : "Payé par"} {!unpaid && <span style={{ color: "#C62828" }}>*</span>}</label>
+              <select style={{ ...S.input, opacity: unpaid ? 0.5 : 1, borderColor: !unpaid && form.eventId && !form.paidBy ? "#FFB74D" : !unpaid && form.paidBy ? "#4CAF50" : undefined }}
+                value={form.paidBy} onChange={e => setForm({ ...form, paidBy: e.target.value })} disabled={!currentEvent || unpaid}>
                 <option value="">Sélectionner...</option>
                 {participants.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
+              {!unpaid && form.eventId && !form.paidBy && <div style={{ fontSize: 11, color: "#F57F17", marginTop: 4 }}>⚠️ Requis</div>}
             </div>
           </div>
 
@@ -2765,25 +2832,34 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
           )}
 
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
-            <div><label style={S.label}>Catégorie</label>
-              <select style={S.input} value={form.category} onChange={e => setForm({ ...form, category: e.target.value, sub: "" })}>
+            <div><label style={S.label}>Catégorie <span style={{ color: "#C62828" }}>*</span></label>
+              <select style={{ ...S.input, borderColor: form.category ? "#4CAF50" : form.eventId ? "#FFB74D" : undefined }}
+                value={form.category} onChange={e => setForm({ ...form, category: e.target.value, sub: "" })}>
                 <option value="">Sélectionner...</option>
                 {Object.keys(CATEGORIES).map(c => <option key={c} value={c}>{CATEGORIES[c].icon} {c}</option>)}
               </select>
             </div>
-            <div><label style={S.label}>Sous-catégorie</label>
-              <select style={S.input} value={form.sub} onChange={e => setForm({ ...form, sub: e.target.value })} disabled={!form.category}>
+            <div><label style={S.label}>Sous-catégorie <span style={{ color: "#C62828" }}>*</span></label>
+              <select style={{ ...S.input, borderColor: form.sub ? "#4CAF50" : form.category ? "#FFB74D" : undefined }}
+                value={form.sub} onChange={e => setForm({ ...form, sub: e.target.value })} disabled={!form.category}>
                 <option value="">Sélectionner...</option>
                 {form.category && CATEGORIES[form.category].subs.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
           </div>
-          <div style={{ marginBottom: 12 }}><label style={S.label}>Détail / Nature</label>
-            <input style={S.input} placeholder="Ex: Vin rouge Côtes du Rhône, Salade César..." value={form.detail} onChange={e => setForm({ ...form, detail: e.target.value })} />
+          <div style={{ marginBottom: 12 }}>
+            <label style={S.label}>Détail / Nature <span style={{ color: "#C62828" }}>*</span></label>
+            <input style={{ ...S.input, borderColor: form.detail.trim() ? "#4CAF50" : form.category ? "#FFB74D" : undefined, transition: "border-color 0.2s" }}
+              placeholder="Ex: Vin rouge Côtes du Rhône, Salade César..." value={form.detail} onChange={e => setForm({ ...form, detail: e.target.value })} maxLength={100} />
+            {form.detail && <div style={{ fontSize: 10, color: "#aaa", marginTop: 2, textAlign: "right" }}>{form.detail.length}/100</div>}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 16 }}>
             <div><label style={S.label}>Quantité</label><input type="number" min="1" max="10000" step="1" style={S.input} value={form.qty} onChange={e => setForm({ ...form, qty: Math.floor(Math.abs(Number(e.target.value))) || 1 })} /></div>
-            <div><label style={S.label}>Prix unitaire</label><input type="number" min="0" step="0.01" style={S.input} value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })} /></div>
+            <div><label style={S.label}>Prix unitaire <span style={{ color: "#C62828" }}>*</span></label>
+              <input type="number" min="0" step="0.01" style={{ ...S.input, borderColor: Number(form.unit) > 0 ? "#4CAF50" : form.detail ? "#FFB74D" : undefined }}
+                value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })} />
+              {Number(form.unit) <= 0 && form.detail && <div style={{ fontSize: 11, color: "#F57F17", marginTop: 3 }}>⚠️ Montant requis</div>}
+            </div>
             <div><label style={S.label}>Total auto</label>
               <div style={{ ...S.input, background: total > 0 ? "#f0faf4" : "#f8f8f8", color: total > 0 ? "#2E7D32" : "#aaa", fontWeight: 700, display: "flex", alignItems: "center" }}>
                 {total.toFixed(2)} {currencySymbol(currentEvent?.currency)}
@@ -2819,9 +2895,19 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
             {form.comment && <div style={{ fontSize: 10, color: "#aaa", marginTop: 3, textAlign: "right" }}>{form.comment.length}/300</div>}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={handleSave} disabled={saving} style={S.btnDark}>{saving ? "Enregistrement..." : editingEx ? "Enregistrer les modifications" : "Ajouter la charge"}</button>
+            <button onClick={handleSave} disabled={saving} style={{ ...S.btnDark, opacity: saving ? 0.6 : 1 }}>{saving ? "Enregistrement..." : editingEx ? "Enregistrer les modifications" : "Ajouter la charge"}</button>
             <button onClick={() => { setShowForm(false); setEditingEx(null); setForm(empty); }} style={S.btnGhost}>Annuler</button>
           </div>
+          {/* Aide visuelle champs manquants */}
+          {(!form.eventId || !form.category || !form.sub || !form.detail || Number(form.unit) <= 0) && (
+            <div style={{ marginTop: 8, display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {!form.eventId && <span style={{ fontSize: 11, color: "#F57F17" }}>· Événement requis</span>}
+              {!form.category && <span style={{ fontSize: 11, color: "#F57F17" }}>· Catégorie requise</span>}
+              {form.category && !form.sub && <span style={{ fontSize: 11, color: "#F57F17" }}>· Sous-catégorie requise</span>}
+              {!form.detail && <span style={{ fontSize: 11, color: "#F57F17" }}>· Détail requis</span>}
+              {Number(form.unit) <= 0 && <span style={{ fontSize: 11, color: "#F57F17" }}>· Montant requis</span>}
+            </div>
+          )}
         </div>
       )}
 
@@ -4248,8 +4334,12 @@ function Invite({ events, user, isMobile, addToast }) {
         <div style={S.sectionTitle}>✉️ Inviter quelqu'un</div>
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 14 }}>
           <div>
-            <label style={S.label}>Email de l'invité</label>
-            <input style={S.input} type="email" placeholder="ami@example.com" value={email} onChange={e => setEmail(e.target.value)} />
+            <label style={S.label}>Email de l'invité <span style={{ color: "#C62828" }}>*</span></label>
+            <input style={{ ...S.input, borderColor: email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? "#C62828" : email ? "#4CAF50" : undefined, transition: "border-color 0.2s" }}
+              type="email" placeholder="ami@example.com" value={email} onChange={e => setEmail(e.target.value)} />
+            {email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && (
+              <div style={{ fontSize: 11, color: "#C62828", marginTop: 4 }}>⚠️ Format d'email invalide</div>
+            )}
           </div>
         </div>
 
@@ -4648,16 +4738,23 @@ function SettingsPage({ user, onSignOut, isMobile, addToast, t, events }) {
               )}
               <div>
                 <label style={S.label}>Description du problème <span style={{ color: "#C62828" }}>*</span></label>
-                <textarea style={{ ...S.input, minHeight: 100, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }}
+                <textarea style={{ ...S.input, minHeight: 100, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5, borderColor: reportForm.message.trim().length > 10 ? "#4CAF50" : reportForm.message.length > 0 ? "#FFB74D" : undefined, transition: "border-color 0.2s" }}
                   placeholder="Décrivez le problème en détail : ce que vous faisiez, ce qui s'est passé, le résultat attendu..."
                   value={reportForm.message}
                   onChange={e => setReportForm({ ...reportForm, message: e.target.value })}
                   maxLength={1000} />
-                <div style={{ fontSize: 10, color: "var(--text-sub)", textAlign: "right", marginTop: 2 }}>{reportForm.message.length}/1000</div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 3 }}>
+                  {reportForm.message.trim().length > 0 && reportForm.message.trim().length < 10
+                    ? <div style={{ fontSize: 11, color: "#F57F17" }}>⚠️ Description trop courte (min. 10 car.)</div>
+                    : <div />
+                  }
+                  <div style={{ fontSize: 10, color: "var(--text-sub)" }}>{reportForm.message.length}/1000</div>
+                </div>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={handleSendReport} disabled={sendingReport || !reportForm.message.trim()}
-                  style={{ ...S.btnDark, flex: 1, justifyContent: "center", display: "flex", opacity: !reportForm.message.trim() ? 0.5 : 1 }}>
+                <button onClick={handleSendReport}
+                  disabled={sendingReport || !reportForm.message.trim() || reportForm.message.trim().length < 10}
+                  style={{ ...S.btnDark, flex: 1, justifyContent: "center", display: "flex", opacity: (!reportForm.message.trim() || reportForm.message.trim().length < 10) ? 0.5 : 1 }}>
                   {sendingReport ? "Envoi..." : "✓ Envoyer le signalement"}
                 </button>
                 <button onClick={() => setShowReport(false)} style={{ ...S.btnGhost, flex: 1, justifyContent: "center", display: "flex" }}>Annuler</button>
@@ -5790,11 +5887,13 @@ function CotisationsPage({ events, expenses, user, reload, isMobile, addToast, t
               {editingCot ? (
                 <input style={{ ...S.input, background: "var(--hover-bg)" }} value={form.participant_name} disabled />
               ) : (
-                <select style={S.input} value={form.participant_name} onChange={e => setForm({ ...form, participant_name: e.target.value })}>
+                <select style={{ ...S.input, borderColor: form.participant_name ? "#4CAF50" : "#FFB74D" }}
+                  value={form.participant_name} onChange={e => setForm({ ...form, participant_name: e.target.value })}>
                   <option value="">Sélectionner...</option>
                   {participants.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
               )}
+              {!form.participant_name && <div style={{ fontSize: 11, color: "#F57F17", marginTop: 3 }}>⚠️ Sélectionnez un participant</div>}
             </div>
 
             {/* B2 — Montant intelligent */}
