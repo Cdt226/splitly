@@ -3,7 +3,7 @@ import LandingPage from "./LandingPage.jsx";
 import { useTranslation, LanguageSwitcher, LanguageMenu } from "./i18n.jsx";
 import {
   supabase, signUp, signIn, signOut, getSession,
-  fetchEvents, createEvent, updateEventStatus, deleteEvent,
+  fetchEvents, createEvent, updateEventStatus, updateEvent, deleteEvent,
   addParticipant, removeParticipant,
   fetchExpenses, createExpense, updateExpense, deleteExpense,
   fetchContributions, upsertContribution, recordPayment, fetchPayments,
@@ -577,7 +577,7 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
 
   // Check if guest has permission for an action on a specific event
   const can = (eventId, perm) => {
-    const perms = permissionsMap[eventId] || ["read_only"];
+    const perms = normalizePerms(permissionsMap[eventId] || []);
     return perms.includes(perm);
   };
 
@@ -639,7 +639,7 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
                 <label style={{ fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, display: "block", marginBottom: 8 }}>Droits demandés</label>
                 {(() => {
                   const ev = events.find(e => e.id === requestEventId);
-                  const myPerms = permissionsMap[requestEventId] || ["read_only"];
+                  const myPerms = normalizePerms(permissionsMap[requestEventId] || []);
                   const available = getAvailablePermissions(ev?.event_type || "split").filter(p => !myPerms.includes(p.key));
                   return available.length === 0 ? (
                     <div style={{ fontSize: 13, color: "#2E7D32", background: "#E8F5E9", borderRadius: 8, padding: "10px 14px" }}>✓ Vous avez déjà tous les droits disponibles.</div>
@@ -1546,6 +1546,9 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
   const [loading, setLoading] = useState(false);
   const [confirm, setConfirm] = useState(null);
   const [managingEv, setManagingEv] = useState(null);
+  const [editingEv, setEditingEv] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [editLoading, setEditLoading] = useState(false);
   const [newParticipant, setNewParticipant] = useState("");
   const [templates, setTemplates] = useState(getTemplates());
   const [showTemplates, setShowTemplates] = useState(false);
@@ -1555,6 +1558,43 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
   const MAX_PARTICIPANTS_BUDGET = 150;
   const MAX_NAME_LENGTH = 50;
   const MAX_PARTICIPANT_NAME = 30;
+
+  // Ouvrir modal édition événement
+  const openEditEvent = (ev) => {
+    setEditingEv(ev);
+    setEditForm({
+      name: ev.name,
+      date: ev.date,
+      currency: ev.currency,
+      event_type: ev.event_type || "split",
+      cotisation_cible: ev.cotisation_cible || "",
+      nombre_invites: ev.nombre_invites || "",
+    });
+  };
+
+  // Sauvegarder les modifications d'un événement
+  const handleSaveEdit = async () => {
+    if (!editForm.name?.trim()) { addToast("Le nom est obligatoire.", "warning"); return; }
+    if (editForm.name.trim().length > 30) { addToast("Nom trop long (max 30 car.).", "warning"); return; }
+    if (!editForm.date) { addToast("La date est obligatoire.", "warning"); return; }
+    setEditLoading(true);
+    const fields = {
+      name: editForm.name.trim(),
+      date: editForm.date,
+      currency: editForm.currency,
+      event_type: editForm.event_type,
+      cotisation_cible: editForm.event_type === "budget" ? (parseFloat(editForm.cotisation_cible) || 0) : 0,
+      nombre_invites: editForm.event_type === "budget" ? (parseInt(editForm.nombre_invites) || 0) : 0,
+    };
+    const { error } = await updateEvent(editingEv.id, fields, user.id);
+    if (error) { addToast("Erreur : " + error.message, "error"); }
+    else {
+      await reload();
+      setEditingEv(null);
+      addToast("Événement modifié.", "success");
+    }
+    setEditLoading(false);
+  };
 
   // Sauvegarder un événement comme modèle
   const handleSaveTemplate = (ev) => {
@@ -1794,6 +1834,66 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
   return (
     <div>
       {confirm && <ConfirmModal {...confirm} />}
+
+      {/* Modal édition événement */}
+      {editingEv && (
+        <Modal title={`✏️ Modifier — ${editingEv.name}`} onClose={() => setEditingEv(null)}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div>
+              <label style={S.label}>Type d'événement</label>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 6 }}>
+                {[{ key: "split", icon: "💸", label: "Split" }, { key: "budget", icon: "🏦", label: "Budget" }].map(opt => (
+                  <div key={opt.key} onClick={() => setEditForm({ ...editForm, event_type: opt.key })}
+                    style={{ padding: "10px 14px", borderRadius: 10, border: `2px solid ${editForm.event_type === opt.key ? "#0F0F0F" : "var(--border)"}`, background: editForm.event_type === opt.key ? "#0F0F0F" : "var(--bg-secondary)", cursor: "pointer", transition: "all 0.15s", textAlign: "center" }}>
+                    <div style={{ fontSize: 18, marginBottom: 4 }}>{opt.icon}</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: editForm.event_type === opt.key ? "#fff" : "var(--text)" }}>{opt.label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label style={S.label}>Nom <span style={{ color: (editForm.name?.length || 0) > 30 ? "#C62828" : "#aaa", fontWeight: 400 }}>{editForm.name?.length || 0}/30</span></label>
+              <input style={{ ...S.input, borderColor: (editForm.name?.length || 0) > 30 ? "#C62828" : undefined }}
+                value={editForm.name || ""} onChange={e => setEditForm({ ...editForm, name: e.target.value })} maxLength={50} />
+              {(editForm.name?.length || 0) > 30 && <div style={{ fontSize: 11, color: "#C62828", marginTop: 3 }}>⚠️ Max 30 caractères</div>}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div>
+                <label style={S.label}>Date</label>
+                <input type="date" style={S.input} value={editForm.date || ""} onChange={e => setEditForm({ ...editForm, date: e.target.value })} />
+              </div>
+              <div>
+                <label style={S.label}>Devise</label>
+                <select style={S.input} value={editForm.currency || "EUR €"} onChange={e => setEditForm({ ...editForm, currency: e.target.value })}>
+                  {CURRENCIES.map(c => <option key={c}>{c}</option>)}
+                </select>
+              </div>
+            </div>
+            {editForm.event_type === "budget" && (
+              <div style={{ background: "#FFF8E1", border: "1px solid #FFE082", borderRadius: 10, padding: "12px 14px" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#F57F17", marginBottom: 10 }}>🏦 Options Budget</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <div>
+                    <label style={S.label}>Cotisation cible <span style={{ color: "#aaa", fontWeight: 400 }}>(opt.)</span></label>
+                    <input type="number" min="0" step="0.01" style={S.input} placeholder="Ex: 50" value={editForm.cotisation_cible || ""} onChange={e => setEditForm({ ...editForm, cotisation_cible: e.target.value })} />
+                  </div>
+                  <div>
+                    <label style={S.label}>Invités attendus <span style={{ color: "#aaa", fontWeight: 400 }}>(opt.)</span></label>
+                    <input type="number" min="0" step="1" style={S.input} placeholder="Ex: 100" value={editForm.nombre_invites || ""} onChange={e => setEditForm({ ...editForm, nombre_invites: e.target.value })} />
+                  </div>
+                </div>
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={handleSaveEdit} disabled={editLoading || (editForm.name?.length || 0) > 30}
+                style={{ ...S.btnDark, flex: 1, justifyContent: "center", display: "flex", opacity: (editForm.name?.length || 0) > 30 ? 0.5 : 1 }}>
+                {editLoading ? "Enregistrement..." : "✓ Enregistrer"}
+              </button>
+              <button onClick={() => setEditingEv(null)} style={{ ...S.btnGhost, flex: 1, justifyContent: "center", display: "flex" }}>Annuler</button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {/* ── Vue détail événement (drill-down) ── */}
       {selectedEvent && (
@@ -2087,6 +2187,10 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
                         <button onClick={e => { e.stopPropagation(); handleSaveTemplate(ev); }} title="Modèle"
                           style={{ padding: isMobile ? "4px 8px" : "5px 12px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--hover-bg)", color: "var(--text-muted)", fontSize: 11, cursor: "pointer", fontWeight: 600, whiteSpace: "nowrap" }}>
                           📋
+                        </button>
+                        <button onClick={e => { e.stopPropagation(); openEditEvent(ev); }} title="Modifier"
+                          style={{ padding: isMobile ? "4px 8px" : "5px 12px", borderRadius: 8, border: "1.5px solid #BBDEFB", background: "#E3F2FD", color: "#1565C0", fontSize: 11, cursor: "pointer", fontWeight: 600, whiteSpace: "nowrap" }}>
+                          ✏️
                         </button>
                         {allSettled && (
                           <button onClick={e => { e.stopPropagation(); handleClose(ev); }} style={{ ...S.btnDark, padding: isMobile ? "4px 8px" : "5px 12px", fontSize: 11, background: "#2E7D32", borderRadius: 8, whiteSpace: "nowrap" }}>
@@ -3614,8 +3718,9 @@ function History({ events, history, user, reload, isMobile, addToast }) {
 
 // ─── INVITATIONS ──────────────────────────────────────────────
 // ─── PERMISSIONS ──────────────────────────────────────────────
+// read_only est implicite — ce n'est PAS un droit qu'on accorde, c'est l'état par défaut
+// Un invité sans permissions = lecture seule automatiquement
 const ALL_PERMISSIONS = {
-  read_only:           { label: "Lecture seule",           icon: "👁",  desc: "Consulter uniquement", color: "#888",    bg: "#f5f5f5", split: true, budget: true },
   add_expense:         { label: "Ajouter charge",          icon: "➕",  desc: "Créer de nouvelles charges", color: "#1565C0", bg: "#E3F2FD", split: true, budget: true },
   edit_expense:        { label: "Modifier charge",         icon: "✏️",  desc: "Modifier les charges existantes", color: "#F57F17", bg: "#FFF8E1", split: true, budget: true },
   delete_expense:      { label: "Supprimer charge",        icon: "🗑",  desc: "Supprimer des charges", color: "#C62828", bg: "#FFEBEE", split: true, budget: true },
@@ -3626,25 +3731,56 @@ const ALL_PERMISSIONS = {
   export_pdf:          { label: "Exporter PDF",            icon: "📄",  desc: "Générer des PDF", color: "#0F0F0F", bg: "#f0f0f0", split: true, budget: true },
 };
 
+// Retourne les permissions disponibles pour un type d'événement (jamais read_only)
 function getAvailablePermissions(eventType) {
   return Object.entries(ALL_PERMISSIONS)
     .filter(([, p]) => eventType === "budget" ? p.budget : p.split)
     .map(([key, p]) => ({ key, ...p }));
 }
 
+// Vérifie si un invité a une permission spécifique
+// Un tableau vide ou null = lecture seule (aucun droit supplémentaire)
 function hasPermission(permissions, perm) {
-  if (!permissions) return false;
-  return Array.isArray(permissions) ? permissions.includes(perm) : false;
+  if (!permissions || permissions.length === 0) return false;
+  // Compatibilité ascendante : ancienne valeur "read_only" = aucun droit
+  const filtered = permissions.filter(p => p !== "read_only");
+  return filtered.includes(perm);
+}
+
+// Normalise les permissions : retire read_only, déduplique
+function normalizePerms(perms) {
+  if (!perms) return [];
+  return [...new Set(perms.filter(p => p !== "read_only"))];
+}
+
+// Badge lecture seule ou droits actifs
+function PermissionSummaryBadge({ permissions }) {
+  const perms = normalizePerms(permissions);
+  if (perms.length === 0) {
+    return <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: "#f5f5f5", color: "#888", fontWeight: 700 }}>👁 Lecture seule</span>;
+  }
+  return (
+    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+      {perms.map(p => {
+        const info = ALL_PERMISSIONS[p];
+        return info ? (
+          <span key={p} style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: info.bg, color: info.color, fontWeight: 700 }}>
+            {info.icon} {info.label}
+          </span>
+        ) : null;
+      })}
+    </div>
+  );
 }
 
 // ─── INVITE ───────────────────────────────────────────────────
 function Invite({ events, user, isMobile, addToast }) {
   const [email, setEmail] = useState("");
   const [selectedEvents, setSelectedEvents] = useState([]);
-  const [permissions, setPermissions] = useState(["read_only"]);
+  const [permissions, setPermissions] = useState([]); // vide = lecture seule implicite
   const [invitations, setInvitations] = useState([]);
   const [saving, setSaving] = useState(false);
-  const [editingPerms, setEditingPerms] = useState(null); // inv object
+  const [editingPerms, setEditingPerms] = useState(null);
   const [editPerms, setEditPerms] = useState([]);
   const [applyToAll, setApplyToAll] = useState(false);
   const [savingPerms, setSavingPerms] = useState(false);
@@ -3666,10 +3802,23 @@ function Invite({ events, user, isMobile, addToast }) {
     if (!emailRegex.test(email)) { addToast("Format d'email invalide.", "warning"); return; }
     if (selectedEvents.length === 0) { addToast("Sélectionnez au moins un événement.", "warning"); return; }
     setSaving(true);
-    for (const evId of selectedEvents) {
-      await sendInvitation({ eventId: evId, email, role: permissions.includes("read_only") && permissions.length === 1 ? "read" : "edit", invitedBy: user.id, permissions });
+    const finalPerms = normalizePerms(permissions);
+    // Vérifier doublons — si TOUS les événements ont déjà cet invité → ouvrir droits
+    const existing = invitations.filter(i => i.email === email && selectedEvents.includes(i.event_id));
+    if (existing.length > 0 && existing.length === selectedEvents.length) {
+      setSaving(false);
+      addToast(`${email} est déjà invité sur ces événements. Modifiez ses droits.`, "info");
+      openEditPerms(existing[0]);
+      return;
     }
-    setEmail(""); setSelectedEvents([]); setPermissions(["read_only"]);
+    // Envoyer seulement pour les événements où l'invitation n'existe pas encore
+    for (const evId of selectedEvents) {
+      const alreadyExists = invitations.find(i => i.email === email && i.event_id === evId);
+      if (!alreadyExists) {
+        await sendInvitation({ eventId: evId, email, role: finalPerms.length > 0 ? "edit" : "read", invitedBy: user.id, permissions: finalPerms });
+      }
+    }
+    setEmail(""); setSelectedEvents([]); setPermissions([]);
     await loadInvites();
     setSaving(false);
     addToast(`Invitation envoyée à ${email}.`, "success");
@@ -3683,7 +3832,7 @@ function Invite({ events, user, isMobile, addToast }) {
 
   const openEditPerms = (inv) => {
     setEditingPerms(inv);
-    setEditPerms(inv.permissions || ["read_only"]);
+    setEditPerms(normalizePerms(inv.permissions));
     setApplyToAll(false);
   };
 
@@ -3697,20 +3846,15 @@ function Invite({ events, user, isMobile, addToast }) {
   };
 
   const togglePerm = (perms, setPerms, key) => {
-    if (key === "read_only") {
-      setPerms(["read_only"]);
-      return;
-    }
-    const without = perms.filter(p => p !== "read_only");
-    if (without.includes(key)) {
-      const next = without.filter(p => p !== key);
-      setPerms(next.length === 0 ? ["read_only"] : next);
+    if (perms.includes(key)) {
+      setPerms(perms.filter(p => p !== key));
     } else {
-      setPerms([...without, key]);
+      setPerms([...perms, key]);
     }
   };
 
   const PermBadge = ({ perm }) => {
+    if (perm === "read_only") return <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: "#f5f5f5", color: "#888", fontWeight: 700 }}>👁 Lecture seule</span>;
     const p = ALL_PERMISSIONS[perm];
     if (!p) return null;
     return (
@@ -3774,7 +3918,7 @@ function Invite({ events, user, isMobile, addToast }) {
 
         {/* Permissions à l'invitation */}
         <div style={{ marginBottom: 16 }}>
-          <label style={S.label}>Droits accordés</label>
+          <label style={S.label}>Droits accordés <span style={{ color: "var(--text-sub)", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(lecture seule par défaut)</span></label>
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 8, marginTop: 8 }}>
             {Object.entries(ALL_PERMISSIONS).map(([key, p]) => (
               <label key={key} onClick={() => togglePerm(permissions, setPermissions, key)}
@@ -3787,6 +3931,11 @@ function Invite({ events, user, isMobile, addToast }) {
               </label>
             ))}
           </div>
+          {permissions.length === 0 && (
+            <div style={{ marginTop: 8, fontSize: 11, color: "#888", background: "#f5f5f5", borderRadius: 8, padding: "6px 12px", display: "inline-flex", alignItems: "center", gap: 6 }}>
+              👁 Aucun droit sélectionné = <strong>Lecture seule</strong>
+            </div>
+          )}
         </div>
 
         {/* Événements */}
@@ -3841,7 +3990,10 @@ function Invite({ events, user, isMobile, addToast }) {
             </div>
             {/* Badges permissions */}
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", paddingLeft: 42 }}>
-              {(inv.permissions || ["read_only"]).map(p => <PermBadge key={p} perm={p} />)}
+              {normalizePerms(inv.permissions).length === 0
+                ? <PermBadge perm="read_only" />
+                : normalizePerms(inv.permissions).map(p => <PermBadge key={p} perm={p} />)
+              }
             </div>
           </div>
         ))}
@@ -3857,13 +4009,12 @@ function NotificationsPage({ notifications, events, expenses, pendingActions, us
   const handleApprove = async (action) => {
     setSaving(action.id);
     if (action.action_type === "request_permissions") {
-      // Accorder les permissions demandées
       const existing = await fetchInvitationPermissions(action.event_id, action.guest_email);
-      const currentPerms = existing.data || ["read_only"];
-      const requested = action.action_data?.requested || [];
-      const newPerms = [...new Set([...currentPerms.filter(p => p !== "read_only"), ...requested])];
+      const currentPerms = normalizePerms(existing.data || []);
+      const requested = normalizePerms(action.action_data?.requested || []);
+      const newPerms = [...new Set([...currentPerms, ...requested])];
       await updateInvitationPermissions(action.event_id, action.guest_email, newPerms);
-      await rejectPendingAction(action.id, user.id); // close the pending action
+      await rejectPendingAction(action.id, user.id);
       addToast(`Droits accordés à ${action.guest_email}.`, "success");
       await reload();
       setSaving(null);

@@ -292,6 +292,16 @@ export async function updateEventStatus(eventId, status) {
   return { data, error };
 }
 
+export async function updateEvent(eventId, fields, userId) {
+  const { data, error } = await supabase
+    .from('events')
+    .update(fields)
+    .eq('id', eventId)
+    .eq('admin_id', userId)
+    .select().single();
+  return { data, error };
+}
+
 export async function deleteEvent(eventId) {
   return await supabase.from('events').delete().eq('id', eventId);
 }
