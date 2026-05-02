@@ -15,6 +15,8 @@ import {
   subscribeToNotifications, unsubscribe,
   exportPDF,
   fetchProfile, fetchAdminUsers, adminUserAction,
+  fetchCotisations, createCotisation, updateCotisation, deleteCotisation,
+  fetchAvances, createAvance, updateAvance, deleteAvance,
 } from "./supabase.js";
 
 // ─── CONSTANTES ───────────────────────────────────────────────
@@ -853,7 +855,7 @@ function GuestBalance({ events, expenses, contributions }) {
 }
 
 // ─── SIDEBAR ──────────────────────────────────────────────────
-function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut, isMobile, menuOpen, setMenuOpen, t, lang, setLang, searchQuery, setSearchQuery, isAdmin }) {
+function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut, isMobile, menuOpen, setMenuOpen, t, lang, setLang, searchQuery, setSearchQuery, isAdmin, hasBudgetEvents }) {
   const totalBadge = unreadCount + pendingCount;
 
   // Super admin : nav réduite
@@ -862,19 +864,35 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
   ];
 
   // Utilisateur normal : nav complète
-  const hasBudgetEvents = !isAdmin; // sera passé en prop si nécessaire
   const userNav = [
     { key: "dashboard",     icon: "◈", label: t("nav_dashboard") },
     { key: "events",        icon: "◉", label: t("nav_events") },
     { key: "expenses",      icon: "◫", label: t("nav_expenses") },
     { key: "balance",       icon: "⊜", label: t("nav_balance") },
     { key: "analytics",     icon: "◐", label: t("nav_analytics") },
-    { key: "cotisations",   icon: "💰", label: "Cotisations" },
+    ...(hasBudgetEvents ? [{ key: "cotisations", icon: "💰", label: "Cotisations" }] : []),
     { key: "history",       icon: "◷", label: t("nav_history") },
     { key: "invite",        icon: "◎", label: t("nav_invite") },
     { key: "notifications", icon: "◬", label: t("nav_notifications"), badge: totalBadge },
     { key: "settings",      icon: "⚙", label: t("nav_settings") || "Paramètres" },
   ];
+
+  // Bottom nav mobile : 5 onglets adaptés selon contexte
+  const mobileNav = hasBudgetEvents
+    ? [
+        { key: "dashboard",    icon: "◈", label: t("nav_dashboard") },
+        { key: "events",       icon: "◉", label: t("nav_events") },
+        { key: "cotisations",  icon: "💰", label: "Cotisations" },
+        { key: "balance",      icon: "⊜", label: "Caisse" },
+        { key: "analytics",    icon: "◐", label: t("nav_analytics") },
+      ]
+    : [
+        { key: "dashboard",    icon: "◈", label: t("nav_dashboard") },
+        { key: "events",       icon: "◉", label: t("nav_events") },
+        { key: "expenses",     icon: "◫", label: t("nav_expenses") },
+        { key: "balance",      icon: "⊜", label: t("nav_balance") },
+        { key: "analytics",    icon: "◐", label: t("nav_analytics") },
+      ];
 
   const nav = isAdmin ? adminNav : userNav;
 
@@ -987,7 +1005,7 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
         </div>
       )}
       <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, height: 62, background: "#0F0F0F", display: "flex", alignItems: "center", justifyContent: "space-around", zIndex: 200, borderTop: "1px solid #1e1e1e" }}>
-        {nav.slice(0, 5).map(n => (
+        {(isAdmin ? adminNav : mobileNav).map(n => (
           <button key={n.key} onClick={() => setActive(n.key)} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, background: "none", border: "none", cursor: "pointer", color: active === n.key ? "#fff" : "#555", padding: "6px 4px", position: "relative", flex: 1, textAlign: "center" }}>
             <span style={{ fontSize: 19, display: "block", textAlign: "center" }}>{n.icon}</span>
             <span style={{ fontSize: 9, fontWeight: active === n.key ? 700 : 400, display: "block", textAlign: "center", width: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -1322,8 +1340,22 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
     const participants = (ev.event_participants || []).map(p => p.name);
     const evContribMap = {};
     (contributions[ev.id] || []).forEach(c => { evContribMap[c.participant] = c.amount; });
-    const allSettled = participants.every(p => isSettled(computeNetBalance(evExp, evContribMap, p)));
-    if (!allSettled) { addToast("Tous les participants doivent solder avant de boucler.", "warning"); return; }
+
+    // Règle de bouclage selon le type d'événement
+    if (ev.event_type === "budget") {
+      // Option Budget : tous les participants doivent avoir cotisé (statut paye)
+      const { data: cotisations } = await fetchCotisations(ev.id);
+      const cotisants = new Set((cotisations || []).filter(c => c.statut === "paye").map(c => c.participant_name));
+      const nonCotisants = participants.filter(p => !cotisants.has(p));
+      if (nonCotisants.length > 0) {
+        addToast(`Bouclage impossible — ${nonCotisants.length} participant(s) n'ont pas encore cotisé : ${nonCotisants.join(", ")}`, "warning");
+        return;
+      }
+    } else {
+      // Option Split : tous les participants doivent être soldés
+      const allSettled = participants.every(p => isSettled(computeNetBalance(evExp, evContribMap, p)));
+      if (!allSettled) { addToast("Tous les participants doivent solder avant de boucler.", "warning"); return; }
+    }
     setConfirm({
       message: `Boucler "${ev.name}" ? L'historique sera effacé et aucune modification ne sera plus possible.`,
       warnings: ["Action irréversible.", "Un résumé PDF sera envoyé par email à l'admin."],
@@ -1582,7 +1614,11 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
 
           {/* ── Champs communs ── */}
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 14 }}>
-            <div><label style={S.label}>Nom de l'événement</label><input style={S.input} placeholder="Ex: Fête de fin d'année" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} maxLength={50} /></div>
+            <div>
+              <label style={S.label}>Nom de l'événement <span style={{ color: form.name.length > 30 ? "#C62828" : "#aaa", fontWeight: form.name.length > 30 ? 700 : 400 }}>{form.name.length}/30</span></label>
+              <input style={{ ...S.input, borderColor: form.name.length > 30 ? "#C62828" : undefined }} placeholder="Ex: Fête de fin d'année" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} maxLength={50} />
+              {form.name.length > 30 && <div style={{ fontSize: 11, color: "#C62828", marginTop: 4, fontWeight: 600 }}>⚠️ Limite de 30 caractères dépassée ({form.name.length}/30)</div>}
+            </div>
             <div><label style={S.label}>Date</label><input type="date" style={S.input} value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
             <div style={{ gridColumn: isMobile ? "auto" : "1 / -1" }}>
               <label style={S.label}>Devise</label>
@@ -1615,8 +1651,8 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
           </div>
 
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={handleCreate} disabled={loading || form.participants.length < 1}
-              style={{ ...S.btnDark, opacity: form.participants.length < 1 ? 0.5 : 1 }}>
+            <button onClick={handleCreate} disabled={loading || form.participants.length < 1 || form.name.trim().length > 30}
+              style={{ ...S.btnDark, opacity: (form.participants.length < 1 || form.name.trim().length > 30) ? 0.5 : 1 }}>
               {loading ? "Création..." : `Créer l'événement ${form.event_type === "budget" ? "🏦" : "💸"}`}
             </button>
             <button onClick={() => setShowNew(false)} style={S.btnGhost}>Annuler</button>
@@ -1659,67 +1695,82 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
             (contributions[ev.id] || []).forEach(c => { evContribMap[c.participant] = c.amount; });
             const evTotal = evExp.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
             const settledCount = participants.filter(p => isSettled(computeNetBalance(evExp, evContribMap, p))).length;
-            const allSettled = participants.length > 0 && settledCount === participants.length;
+            const allSettled = ev.event_type === "budget"
+              ? participants.length > 0 && settledCount === participants.length
+              : participants.length > 0 && settledCount === participants.length;
             const progress = participants.length > 0 ? (settledCount / participants.length) * 100 : 0;
 
             return (
-              <div key={ev.id} style={{ background: "var(--bg-secondary)", borderRadius: 16, padding: isMobile ? "16px" : "18px 22px", border: `1px solid ${ev.event_type === "budget" ? "#FFE082" : "var(--border)"}`, boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
-                  <div style={{ width: 44, height: 44, borderRadius: 12, background: ev.status === "closed" ? "var(--hover-bg)" : ev.event_type === "budget" ? "#FFF8E1" : "#f0faf4", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>
+              <div key={ev.id} style={{ background: "var(--bg-secondary)", borderRadius: 16, padding: isMobile ? "14px" : "18px 22px", border: `1px solid ${ev.event_type === "budget" ? "#FFE082" : "var(--border)"}`, boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                  {/* Icône */}
+                  <div style={{ width: 40, height: 40, borderRadius: 12, background: ev.status === "closed" ? "var(--hover-bg)" : ev.event_type === "budget" ? "#FFF8E1" : "#f0faf4", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>
                     {ev.status === "closed" ? "🔒" : ev.event_type === "budget" ? "🏦" : "🎊"}
                   </div>
+
+                  {/* Contenu principal */}
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
-                      <span style={{ fontSize: 15, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: isMobile ? 140 : 260 }}>{ev.name}</span>
-                      <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: ev.status === "closed" ? "var(--hover-bg)" : allSettled ? "#E8F5E9" : "#fff8e1", color: ev.status === "closed" ? "#999" : allSettled ? "#2E7D32" : "#F57F17", fontWeight: 700, flexShrink: 0 }}>
-                        {ev.status === "closed" ? "🔒 Bouclé" : allSettled ? "✓ Prêt à boucler" : "En cours"}
+                    {/* Ligne 1 : Nom + badges */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, flexWrap: "nowrap", minWidth: 0 }}>
+                      <span style={{ fontSize: isMobile ? 14 : 15, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{ev.name}</span>
+                      <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: ev.event_type === "budget" ? "#FFF8E1" : "#F3E5F5", color: ev.event_type === "budget" ? "#F57F17" : "#6A1B9A", fontWeight: 700, flexShrink: 0, border: `1px solid ${ev.event_type === "budget" ? "#FFE082" : "#CE93D8"}`, whiteSpace: "nowrap" }}>
+                        {ev.event_type === "budget" ? "🏦" : "💸"}
                       </span>
-                      <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: ev.event_type === "budget" ? "#FFF8E1" : "#F3E5F5", color: ev.event_type === "budget" ? "#F57F17" : "#6A1B9A", fontWeight: 700, flexShrink: 0, border: `1px solid ${ev.event_type === "budget" ? "#FFE082" : "#CE93D8"}` }}>
-                        {ev.event_type === "budget" ? "🏦 Budget" : "💸 Split"}
+                      <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: ev.status === "closed" ? "var(--hover-bg)" : allSettled ? "#E8F5E9" : "#fff8e1", color: ev.status === "closed" ? "#999" : allSettled ? "#2E7D32" : "#F57F17", fontWeight: 700, flexShrink: 0, whiteSpace: "nowrap" }}>
+                        {ev.status === "closed" ? "🔒" : allSettled ? "✓" : "•"}
                       </span>
                     </div>
-                    <div style={{ fontSize: 11, color: "var(--text-sub)", marginBottom: 10 }}>
-                      📅 {ev.date} · {currencySymbol(ev.currency)} · {evExp.length} charge{evExp.length > 1 ? "s" : ""}
-                      {ev.event_type === "budget" && ev.nombre_invites > 0 && ` · ${ev.nombre_invites} invités attendus`}
+
+                    {/* Ligne 2 : Info compacte sur une seule ligne */}
+                    <div style={{ fontSize: 11, color: "var(--text-sub)", marginBottom: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {ev.date} · {currencySymbol(ev.currency)} · {evExp.length} charge{evExp.length > 1 ? "s" : ""}
+                      {ev.event_type === "budget" && ev.nombre_invites > 0 && ` · ${ev.nombre_invites} inv.`}
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: ev.status === "open" ? 12 : 0 }}>
-                      <AvatarStack names={participants} size={24} />
+
+                    {/* Ligne 3 : Participants + gérer */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: ev.status === "open" ? 10 : 0 }}>
+                      <AvatarStack names={participants} size={22} />
                       <button onClick={() => setManagingEv(ev)}
                         style={{ fontSize: 11, color: "#1565C0", background: "#E3F2FD", border: "none", borderRadius: 8, padding: "3px 10px", cursor: "pointer", fontWeight: 600, flexShrink: 0 }}>
                         👥 Gérer
                       </button>
                     </div>
+
+                    {/* Progression */}
                     {ev.status === "open" && (
                       <div>
-                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                          <span style={{ fontSize: 11, color: "var(--text-sub)" }}>
-                            {ev.event_type === "budget" ? "Progression collecte" : "Progression vers bouclage"}
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                          <span style={{ fontSize: 10, color: "var(--text-sub)" }}>
+                            {ev.event_type === "budget" ? "Collecte" : "Bouclage"}
                           </span>
-                          <span style={{ fontSize: 11, color: allSettled ? "#2E7D32" : "#F57F17", fontWeight: 700 }}>{settledCount}/{participants.length} soldés</span>
+                          <span style={{ fontSize: 10, color: allSettled ? "#2E7D32" : "#F57F17", fontWeight: 700 }}>{settledCount}/{participants.length}</span>
                         </div>
-                        <div style={{ background: "var(--border)", borderRadius: 6, height: 6, overflow: "hidden" }}>
-                          <div style={{ background: allSettled ? "#2E7D32" : ev.event_type === "budget" ? "#F57F17" : "#F57F17", borderRadius: 6, height: 6, width: `${progress}%`, transition: "width 0.4s ease" }} />
+                        <div style={{ background: "var(--border)", borderRadius: 6, height: 5, overflow: "hidden" }}>
+                          <div style={{ background: allSettled ? "#2E7D32" : "#F57F17", borderRadius: 6, height: 5, width: `${progress}%`, transition: "width 0.4s ease" }} />
                         </div>
                       </div>
                     )}
                   </div>
-                  <div style={{ textAlign: "right", flexShrink: 0 }}>
-                    <div style={{ fontSize: 17, fontWeight: 700, fontFamily: "'Playfair Display', serif", marginBottom: 2 }}>{fmt(evTotal, currencySymbol(ev.currency))}</div>
-                    <div style={{ fontSize: 10, color: "var(--text-sub)", marginBottom: 10 }}>{ev.event_type === "budget" ? "total dépenses" : "budget collectif"}</div>
+
+                  {/* Colonne droite : montant + actions */}
+                  <div style={{ textAlign: "right", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+                    <div>
+                      <div style={{ fontSize: isMobile ? 14 : 17, fontWeight: 700, fontFamily: "'Playfair Display', serif", whiteSpace: "nowrap" }}>{fmt(evTotal, currencySymbol(ev.currency))}</div>
+                      <div style={{ fontSize: 10, color: "var(--text-sub)" }}>{ev.event_type === "budget" ? "dépenses" : "budget"}</div>
+                    </div>
                     {ev.status === "open" && (
-                      <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
-                        <button onClick={() => handleSaveTemplate(ev)}
-                          title="Sauvegarder comme modèle"
-                          style={{ padding: "5px 12px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--hover-bg)", color: "var(--text-muted)", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
-                          📋 Modèle
+                      <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 4, alignItems: "flex-end" }}>
+                        <button onClick={() => handleSaveTemplate(ev)} title="Modèle"
+                          style={{ padding: isMobile ? "4px 8px" : "5px 12px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--hover-bg)", color: "var(--text-muted)", fontSize: 11, cursor: "pointer", fontWeight: 600, whiteSpace: "nowrap" }}>
+                          📋
                         </button>
                         {allSettled && (
-                          <button onClick={() => handleClose(ev)} style={{ ...S.btnDark, padding: "5px 12px", fontSize: 11, background: "#2E7D32", borderRadius: 8 }}>
-                            🔒 Boucler
+                          <button onClick={() => handleClose(ev)} style={{ ...S.btnDark, padding: isMobile ? "4px 8px" : "5px 12px", fontSize: 11, background: "#2E7D32", borderRadius: 8, whiteSpace: "nowrap" }}>
+                            🔒
                           </button>
                         )}
-                        <button onClick={() => handleDelete(ev)} style={{ padding: "5px 12px", borderRadius: 8, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
-                          Supprimer
+                        <button onClick={() => handleDelete(ev)} style={{ padding: isMobile ? "4px 8px" : "5px 12px", borderRadius: 8, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 11, cursor: "pointer", fontWeight: 600, whiteSpace: "nowrap" }}>
+                          🗑
                         </button>
                       </div>
                     )}
@@ -3856,53 +3907,362 @@ function SuperAdminPage({ user, isMobile, addToast }) {
   );
 }
 
-// ─── COTISATIONS PAGE (placeholder Phase 4a) ──────────────────
+// ─── COTISATIONS PAGE (Phase 4a) ──────────────────────────────
 function CotisationsPage({ events, expenses, user, reload, isMobile, addToast, t }) {
-  const budgetEvents = events.filter(e => e.event_type === "budget");
+  const budgetEvents = events.filter(e => e.event_type === "budget" && e.status === "open");
   const [filterEvent, setFilterEvent] = useState(budgetEvents[0]?.id || "");
-  const ev = budgetEvents.find(e => e.id === filterEvent);
+  const ev = events.find(e => e.id === filterEvent);
   const sym = currencySymbol(ev?.currency);
+  const participants = (ev?.event_participants || []).map(p => p.name);
+
+  const [cotisations, setCotisations] = useState([]);
+  const [loadingCot, setLoadingCot] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [editingCot, setEditingCot] = useState(null);
+  const [confirm, setConfirm] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [showAddParticipant, setShowAddParticipant] = useState(false);
+  const [newParticipant, setNewParticipant] = useState("");
+
+  // Formulaire cotisation
+  const emptyForm = { participant_name: "", montant: "", forme: "especes", statut: "paye", description: "" };
+  const [form, setForm] = useState(emptyForm);
+
+  // Formulaire charge en nature (si forme = nature)
+  const emptyNatureForm = { category: "Divers", sub: "", detail: "", qty: 1, unit: "", comment: "" };
+  const [natureForm, setNatureForm] = useState(emptyNatureForm);
+
+  // Charger cotisations
+  const loadCotisations = async () => {
+    if (!filterEvent) return;
+    setLoadingCot(true);
+    try {
+      const { data } = await fetchCotisations(filterEvent);
+      setCotisations(data || []);
+    } catch { setCotisations([]); }
+    setLoadingCot(false);
+  };
+
+  useEffect(() => { loadCotisations(); }, [filterEvent]);
+
+  const handleSave = async () => {
+    if (!form.participant_name.trim()) { addToast("Sélectionnez un participant.", "warning"); return; }
+    if (!form.montant || isNaN(form.montant) || Number(form.montant) <= 0) { addToast("Montant invalide.", "warning"); return; }
+    if (form.participant_name.length > 30) { addToast("Nom trop long (max 30 car.).", "warning"); return; }
+    if (form.forme === "nature" && !natureForm.detail.trim()) { addToast("Précisez la nature de l'apport.", "warning"); return; }
+
+    setSaving(true);
+    const cotData = {
+      event_id: filterEvent,
+      participant_name: form.participant_name,
+      montant: Number(form.montant),
+      forme: form.forme,
+      statut: form.statut,
+      description: form.description,
+    };
+
+    try {
+      if (editingCot) {
+        await updateCotisation(editingCot.id, cotData);
+        addToast("Cotisation mise à jour.", "success");
+      } else {
+        const { data: newCot } = await createCotisation(cotData);
+        // Si apport en nature → créer aussi la charge
+        if (form.forme === "nature" && newCot) {
+          await createExpense({
+            eventId: filterEvent,
+            category: natureForm.category,
+            sub: natureForm.sub || form.participant_name,
+            detail: natureForm.detail,
+            qty: Number(natureForm.qty) || 1,
+            unit: Number(form.montant),
+            paidBy: form.participant_name,
+            included: participants,
+            comment: `Apport en nature — cotisation de ${form.participant_name}`,
+            is_unpaid: false,
+          }, user.id);
+        }
+        addToast(`Cotisation de ${form.participant_name} enregistrée !`, "success");
+      }
+      await loadCotisations();
+      await reload();
+      setShowForm(false);
+      setEditingCot(null);
+      setForm(emptyForm);
+      setNatureForm(emptyNatureForm);
+    } catch (e) {
+      addToast("Erreur : " + e.message, "error");
+    }
+    setSaving(false);
+  };
+
+  const handleDelete = (cot) => {
+    setConfirm({
+      message: `Supprimer la cotisation de ${cot.participant_name} (${fmt(cot.montant, sym)}) ?`,
+      onConfirm: async () => {
+        await deleteCotisation(cot.id);
+        await loadCotisations();
+        setConfirm(null);
+        addToast("Cotisation supprimée.", "info");
+      },
+      onCancel: () => setConfirm(null),
+    });
+  };
+
+  const handleAddParticipant = async () => {
+    if (!newParticipant.trim()) return;
+    if (newParticipant.trim().length > 30) { addToast("Nom trop long (max 30 car.).", "warning"); return; }
+    if (participants.includes(newParticipant.trim())) { addToast("Ce participant existe déjà.", "warning"); return; }
+    await addParticipant(filterEvent, newParticipant.trim());
+    await reload();
+    setNewParticipant("");
+    setShowAddParticipant(false);
+    addToast(`${newParticipant.trim()} ajouté.`, "success");
+  };
+
+  // Stats
+  const totalCollecte = cotisations.filter(c => c.statut === "paye").reduce((s, c) => s + c.montant, 0);
+  const totalEspeces = cotisations.filter(c => c.forme === "especes" && c.statut === "paye").reduce((s, c) => s + c.montant, 0);
+  const totalNature = cotisations.filter(c => c.forme === "nature").reduce((s, c) => s + c.montant, 0);
+  const cible = ev?.cotisation_cible > 0 ? ev.cotisation_cible * participants.length : 0;
+  const pctCollecte = cible > 0 ? Math.min((totalCollecte / cible) * 100, 100) : 0;
+
+  // Participants sans cotisation
+  const participantsAvecCot = new Set(cotisations.map(c => c.participant_name));
+  const participantsSansCot = participants.filter(p => !participantsAvecCot.has(p));
+
+  const formeBadge = (forme) => forme === "nature"
+    ? { bg: "#E8F5E9", color: "#2E7D32", label: "🌿 Nature" }
+    : { bg: "#E3F2FD", color: "#1565C0", label: "💵 Espèces" };
+
+  const statutBadge = (statut) => ({
+    paye:    { bg: "#E8F5E9", color: "#2E7D32",  label: "✓ Payé" },
+    partiel: { bg: "#FFF8E1", color: "#F57F17",  label: "~ Partiel" },
+    impaye:  { bg: "#FFEBEE", color: "#C62828",  label: "✗ Impayé" },
+  })[statut] || { bg: "#f5f5f5", color: "#888", label: statut };
+
+  if (budgetEvents.length === 0) return (
+    <div>
+      <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 4, color: "var(--text)" }}>💰 Cotisations</h2>
+      <p style={{ color: "var(--text-sub)", fontSize: 12, marginBottom: 20 }}>Gestion des cotisations et contributions</p>
+      <EmptyState icon="🏦" title="Aucun événement Budget ouvert"
+        subtitle="Créez un événement de type Budget pour gérer les cotisations." />
+    </div>
+  );
 
   return (
     <div>
-      <div style={{ marginBottom: 20 }}>
-        <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2, color: "var(--text)" }}>
-          💰 Cotisations
-        </h2>
-        <p style={{ color: "var(--text-sub)", fontSize: 12 }}>Gestion des cotisations et contributions</p>
+      {confirm && <ConfirmModal {...confirm} />}
+
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
+        <div>
+          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2, color: "var(--text)" }}>💰 Cotisations</h2>
+          <p style={{ color: "var(--text-sub)", fontSize: 12 }}>Gestion des cotisations et contributions</p>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <select style={{ ...S.input, width: "auto" }} value={filterEvent} onChange={e => { setFilterEvent(e.target.value); setShowForm(false); }}>
+            {budgetEvents.map(ev => <option key={ev.id} value={ev.id}>🏦 {ev.name}</option>)}
+          </select>
+          <button onClick={() => { setShowForm(!showForm); setEditingCot(null); setForm(emptyForm); }} style={S.btnDark}>
+            {showForm ? "× Fermer" : "+ Ajouter"}
+          </button>
+        </div>
       </div>
 
-      {budgetEvents.length === 0 ? (
-        <EmptyState icon="🏦" title="Aucun événement Budget"
-          subtitle="Créez un événement de type Budget pour gérer les cotisations."
-          action={<span style={{ fontSize: 12, color: "var(--text-sub)" }}>Allez dans Événements → Nouveau → Budget</span>} />
-      ) : (
-        <>
-          {/* Sélecteur événement Budget */}
-          <div style={{ marginBottom: 16 }}>
-            <select style={{ ...S.input, width: "auto" }} value={filterEvent} onChange={e => setFilterEvent(e.target.value)}>
-              {budgetEvents.map(ev => <option key={ev.id} value={ev.id}>🏦 {ev.name}</option>)}
-            </select>
+      {/* Info */}
+      <div style={{ background: "#E3F2FD", border: "1px solid #BBDEFB", borderRadius: 10, padding: "10px 16px", marginBottom: 16, fontSize: 12, color: "#1565C0" }}>
+        ℹ️ Les cotisations sont liées aux participants enregistrés. <strong>Ajoutez d'abord un participant</strong> pour créer sa cotisation.
+      </div>
+
+      {/* KPIs */}
+      {ev && (
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+          <StatCard label="Total collecté" value={fmt(totalCollecte, sym)} sub={`${cotisations.filter(c => c.statut === "paye").length} cotisation(s)`} accent="#2E7D32" />
+          <StatCard label="En espèces" value={fmt(totalEspeces, sym)} sub="virements + cash" accent="#1565C0" />
+          <StatCard label="En nature" value={fmt(totalNature, sym)} sub="valorisation" accent="#6A1B9A" />
+          <StatCard label="Cotisation cible" value={ev.cotisation_cible > 0 ? fmt(cible, sym) : "Libre"} sub={ev.cotisation_cible > 0 ? `${fmt(ev.cotisation_cible, sym)}/pers.` : "montant libre"} accent="#F57F17" />
+        </div>
+      )}
+
+      {/* Barre de progression collecte */}
+      {cible > 0 && (
+        <div style={{ background: "var(--bg-secondary)", borderRadius: 12, padding: "14px 18px", marginBottom: 16, border: "1px solid var(--border)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Progression collecte</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: pctCollecte >= 100 ? "#2E7D32" : "#F57F17" }}>{fmt(totalCollecte, sym)} / {fmt(cible, sym)} ({pctCollecte.toFixed(0)}%)</span>
+          </div>
+          <div style={{ background: "var(--border)", borderRadius: 6, height: 8, overflow: "hidden" }}>
+            <div style={{ background: pctCollecte >= 100 ? "#2E7D32" : "#F57F17", height: 8, width: `${pctCollecte}%`, borderRadius: 6, transition: "width 0.5s" }} />
+          </div>
+        </div>
+      )}
+
+      {/* Formulaire ajout/modif */}
+      {showForm && (
+        <div style={{ ...S.card, marginBottom: 16, border: editingCot ? "1.5px solid #F57F17" : "1px solid var(--border)" }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16, color: "var(--text)" }}>{editingCot ? "✏️ Modifier la cotisation" : "➕ Nouvelle cotisation"}</div>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div>
+              <label style={S.label}>Participant <span style={{ color: "#C62828" }}>*</span></label>
+              {editingCot ? (
+                <input style={{ ...S.input, background: "var(--hover-bg)" }} value={form.participant_name} disabled />
+              ) : (
+                <select style={S.input} value={form.participant_name} onChange={e => setForm({ ...form, participant_name: e.target.value })}>
+                  <option value="">Sélectionner...</option>
+                  {participants.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+              )}
+            </div>
+            <div>
+              <label style={S.label}>Montant ({sym}) <span style={{ color: "#C62828" }}>*</span></label>
+              <input type="number" min="0.01" step="0.01" style={S.input} placeholder="Ex: 50" value={form.montant} onChange={e => setForm({ ...form, montant: e.target.value })} />
+            </div>
+            <div>
+              <label style={S.label}>Forme</label>
+              <select style={S.input} value={form.forme} onChange={e => setForm({ ...form, forme: e.target.value })}>
+                <option value="especes">💵 Espèces (cash / virement)</option>
+                <option value="nature">🌿 En nature (bien ou service)</option>
+              </select>
+            </div>
+            <div>
+              <label style={S.label}>Statut paiement</label>
+              <select style={S.input} value={form.statut} onChange={e => setForm({ ...form, statut: e.target.value })}>
+                <option value="paye">✓ Payé</option>
+                <option value="partiel">~ Partiellement payé</option>
+                <option value="impaye">✗ Impayé</option>
+              </select>
+            </div>
+            <div style={{ gridColumn: isMobile ? "auto" : "1 / -1" }}>
+              <label style={S.label}>Description <span style={{ color: "#aaa", fontWeight: 400 }}>(optionnel)</span></label>
+              <input style={S.input} placeholder="Ex: Virement du 12/05" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />
+            </div>
           </div>
 
-          {/* Info événement */}
-          {ev && (
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 12, marginBottom: 20 }}>
-              <StatCard label="Cotisation cible" value={ev.cotisation_cible > 0 ? fmt(ev.cotisation_cible, sym) : "Libre"} sub="par participant" accent="#2E7D32" />
-              <StatCard label="Invités attendus" value={ev.nombre_invites || "—"} sub="le jour J" accent="#1565C0" />
-              <StatCard label="Participants" value={(ev.event_participants || []).length} sub="inscrits" accent="#6A1B9A" />
+          {/* Champs charge nature */}
+          {form.forme === "nature" && !editingCot && (
+            <div style={{ background: "#E8F5E9", border: "1px solid #C8E6C9", borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#2E7D32", marginBottom: 12 }}>🌿 Détail de l'apport en nature</div>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={S.label}>Catégorie</label>
+                  <select style={S.input} value={natureForm.category} onChange={e => setNatureForm({ ...natureForm, category: e.target.value })}>
+                    {Object.keys(CATEGORIES).map(c => <option key={c} value={c}>{CATEGORIES[c].icon} {c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={S.label}>Désignation <span style={{ color: "#C62828" }}>*</span></label>
+                  <input style={S.input} placeholder="Ex: Nettoyage de la salle" value={natureForm.detail} onChange={e => setNatureForm({ ...natureForm, detail: e.target.value })} />
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: "#2E7D32", marginTop: 8 }}>ℹ️ Une charge sera automatiquement créée dans l'onglet Charges avec le montant saisi.</div>
             </div>
           )}
 
-          {/* Placeholder Phase 4a */}
-          <div style={{ background: "#FFF8E1", border: "1px solid #FFE082", borderRadius: 12, padding: "20px", textAlign: "center" }}>
-            <div style={{ fontSize: 32, marginBottom: 12 }}>🚧</div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: "#F57F17", marginBottom: 8 }}>Gestion des cotisations — en cours de développement</div>
-            <div style={{ fontSize: 12, color: "#E65100", lineHeight: 1.6 }}>
-              La saisie des cotisations, contributions en nature, et le suivi des paiements seront disponibles dans la prochaine mise à jour (Phase 4a).
-            </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={handleSave} disabled={saving} style={{ ...S.btnDark, opacity: saving ? 0.6 : 1 }}>{saving ? "..." : editingCot ? "Modifier" : "Enregistrer"}</button>
+            <button onClick={() => { setShowForm(false); setEditingCot(null); setForm(emptyForm); }} style={S.btnGhost}>Annuler</button>
           </div>
-        </>
+        </div>
+      )}
+
+      {/* Alerte participants sans cotisation */}
+      {participantsSansCot.length > 0 && (
+        <div style={{ background: "#FFF8E1", border: "1px solid #FFE082", borderRadius: 10, padding: "10px 16px", marginBottom: 16, fontSize: 12 }}>
+          <span style={{ fontWeight: 700, color: "#F57F17" }}>⚠️ {participantsSansCot.length} participant(s) sans cotisation : </span>
+          <span style={{ color: "#E65100" }}>{participantsSansCot.join(", ")}</span>
+        </div>
+      )}
+
+      {/* Ajouter participant */}
+      <div style={{ marginBottom: 16 }}>
+        {!showAddParticipant ? (
+          <button onClick={() => setShowAddParticipant(true)} style={{ ...S.btnGhost, fontSize: 12, padding: "7px 14px" }}>
+            👤 + Ajouter un participant
+          </button>
+        ) : (
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexWrap: "wrap" }}>
+            <div style={{ flex: 1, minWidth: 180 }}>
+              <input style={{ ...S.input, borderColor: newParticipant.length > 30 ? "#C62828" : undefined }}
+                placeholder="Prénom du participant (max 30 car.)"
+                value={newParticipant}
+                onChange={e => setNewParticipant(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleAddParticipant()}
+                maxLength={35} />
+              {newParticipant.length > 30 && <div style={{ fontSize: 11, color: "#C62828", marginTop: 4 }}>⚠️ Max 30 caractères ({newParticipant.length}/30)</div>}
+            </div>
+            <button onClick={handleAddParticipant} style={S.btnDark}>+ Ajouter</button>
+            <button onClick={() => { setShowAddParticipant(false); setNewParticipant(""); }} style={S.btnGhost}>Annuler</button>
+          </div>
+        )}
+      </div>
+
+      {/* Liste participants + cotisations */}
+      {loadingCot ? (
+        <div style={{ textAlign: "center", padding: 40, color: "var(--text-sub)" }}>Chargement...</div>
+      ) : participants.length === 0 ? (
+        <EmptyState icon="👥" title="Aucun participant" subtitle="Ajoutez des participants à cet événement pour commencer à gérer les cotisations." />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {participants.map(p => {
+            const cotP = cotisations.filter(c => c.participant_name === p);
+            const totalP = cotP.reduce((s, c) => s + c.montant, 0);
+            const hasCot = cotP.length > 0;
+            const allPaid = cotP.every(c => c.statut === "paye");
+
+            return (
+              <div key={p} style={{ background: "var(--bg-secondary)", borderRadius: 14, border: `1px solid ${!hasCot ? "#FFE082" : allPaid ? "#C8E6C9" : "var(--border)"}`, overflow: "hidden" }}>
+                {/* En-tête participant */}
+                <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px" }}>
+                  <Avatar name={p} size={34} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p}</div>
+                    <div style={{ fontSize: 12, color: "var(--text-sub)", marginTop: 2 }}>
+                      {hasCot ? `${cotP.length} cotisation(s) · ${fmt(totalP, sym)}` : "Aucune cotisation"}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                    <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 20, background: !hasCot ? "#FFF8E1" : allPaid ? "#E8F5E9" : "#FFEBEE", color: !hasCot ? "#F57F17" : allPaid ? "#2E7D32" : "#C62828", fontWeight: 700 }}>
+                      {!hasCot ? "⏳ En attente" : allPaid ? "✓ Soldé" : "~ Partiel"}
+                    </span>
+                    <button onClick={() => { setForm({ ...emptyForm, participant_name: p }); setEditingCot(null); setShowForm(true); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+                      style={{ fontSize: 11, padding: "4px 10px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--hover-bg)", color: "var(--text-muted)", cursor: "pointer", fontWeight: 600, flexShrink: 0 }}>
+                      + Cotisation
+                    </button>
+                  </div>
+                </div>
+
+                {/* Détail cotisations */}
+                {cotP.length > 0 && (
+                  <div style={{ borderTop: "1px solid var(--border)" }}>
+                    {cotP.map((cot, i) => {
+                      const fb = formeBadge(cot.forme);
+                      const sb = statutBadge(cot.statut);
+                      return (
+                        <div key={cot.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", borderBottom: i < cotP.length - 1 ? "1px solid var(--border)" : "none", background: "var(--hover-bg)" }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                              <span style={{ fontSize: 12, padding: "2px 8px", borderRadius: 20, background: fb.bg, color: fb.color, fontWeight: 600 }}>{fb.label}</span>
+                              <span style={{ fontSize: 12, padding: "2px 8px", borderRadius: 20, background: sb.bg, color: sb.color, fontWeight: 600 }}>{sb.label}</span>
+                            </div>
+                            {cot.description && <div style={{ fontSize: 11, color: "var(--text-sub)", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>💬 {cot.description}</div>}
+                          </div>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", flexShrink: 0 }}>{fmt(cot.montant, sym)}</div>
+                          <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                            <button onClick={() => { setEditingCot(cot); setForm({ participant_name: cot.participant_name, montant: cot.montant, forme: cot.forme, statut: cot.statut, description: cot.description || "" }); setShowForm(true); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+                              style={{ padding: "4px 8px", borderRadius: 7, border: "1.5px solid #FFE082", background: "#FFF8E1", color: "#F57F17", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>✏️</button>
+                            <button onClick={() => handleDelete(cot)}
+                              style={{ padding: "4px 8px", borderRadius: 7, border: "1.5px solid #FFCDD2", background: "#FFEBEE", color: "#C62828", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>🗑</button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );
@@ -4251,6 +4611,7 @@ function AppInner() {
   } : null;
 
   const isAdmin = profile?.user_role === "admin";
+  const hasBudgetEvents = events.some(e => e.event_type === "budget");
 
   const pages = isAdmin ? {
     superadmin: <SuperAdminPage user={user} isMobile={isMobile} addToast={addToast} />,
@@ -4291,7 +4652,7 @@ function AppInner() {
       <Sidebar active={active} setActive={setActive} unreadCount={unreadCount} pendingCount={pendingCount}
         user={user} onSignOut={handleSignOut} isMobile={isMobile} menuOpen={menuOpen} setMenuOpen={setMenuOpen}
         t={t} lang={lang} setLang={setLang} searchQuery={searchQuery} setSearchQuery={setSearchQuery}
-        isAdmin={isAdmin} />
+        isAdmin={isAdmin} hasBudgetEvents={hasBudgetEvents} />
 
       <main style={{ flex: 1, overflow: "hidden", minWidth: 0, background: "var(--bg)", display: "flex", flexDirection: "column" }}>
         {/* Topbar desktop — breadcrumb léger */}
