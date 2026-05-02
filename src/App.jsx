@@ -1134,52 +1134,6 @@ function GuestBalanceSection({ ev, evExp, evContribMap, sym }) {
   );
 }
 
-  return (
-    <div>
-      <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700, marginBottom: 16 }}>Répartition</h2>
-      {events.length > 1 && (
-        <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-          {events.map(ev => <button key={ev.id} onClick={() => setSel(ev.id)} style={{ padding: "6px 14px", borderRadius: 20, border: `1.5px solid ${sel === ev.id ? "#0F0F0F" : "#ddd"}`, background: sel === ev.id ? "#0F0F0F" : "#fff", color: sel === ev.id ? "#fff" : "#555", fontSize: 12, cursor: "pointer" }}>{ev.name}</button>)}
-        </div>
-      )}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 10, marginBottom: 16 }}>
-        {participants.map(p => {
-          const owed = computeOwed(evExp, p);
-          const contrib = evContribMap[p] || 0;
-          const net = contrib - owed;
-          const settled = isSettled(net);
-          return (
-            <div key={p} style={{ background: "#fff", borderRadius: 14, padding: "16px 12px", border: `2px solid ${settled ? "#c8e6c9" : "#eee"}`, textAlign: "center" }}>
-              <Avatar name={p} size={36} />
-              <div style={{ marginTop: 8, fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p}</div>
-              <div style={{ fontSize: 10, color: "#aaa", marginTop: 3 }}>Doit: {fmt(owed, sym)}</div>
-              <div style={{ marginTop: 6, padding: "4px 6px", borderRadius: 8, background: settleStatus(net, owed > 0).bg, fontSize: 12, fontWeight: 700, color: settleStatus(net, owed > 0).color }}>
-                {settleStatus(net, owed > 0).label}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #eee", overflow: "hidden" }}>
-        <div style={{ padding: "14px 18px", borderBottom: "1px solid #f0f0f0", fontSize: 14, fontWeight: 700 }}>Remboursements ({transactions.length})</div>
-        {transactions.length === 0 ? <EmptyState icon="✅" title="Tout est soldé !" subtitle="Aucun remboursement à effectuer." /> : (
-          transactions.map((t, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", borderBottom: i < transactions.length - 1 ? "1px solid #f5f5f5" : "none" }}>
-              <Avatar name={t.from} size={28} />
-              <div style={{ flex: 1, fontSize: 13, minWidth: 0 }}>
-                <span style={{ fontWeight: 600 }}><Truncate text={t.from} max={12} /></span>
-                <span style={{ color: "#aaa" }}> → </span>
-                <span style={{ fontWeight: 600 }}><Truncate text={t.to} max={12} /></span>
-              </div>
-              <Avatar name={t.to} size={28} />
-              <div style={{ fontSize: 15, fontWeight: 700, flexShrink: 0 }}>{fmt(t.amount, sym)}</div>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
 
 // ─── SIDEBAR ──────────────────────────────────────────────────
 function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut, isMobile, menuOpen, setMenuOpen, t, lang, setLang, searchQuery, setSearchQuery, isAdmin, hasBudgetEvents }) {
