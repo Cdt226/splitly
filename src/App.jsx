@@ -855,7 +855,14 @@ function GuestBalance({ events, expenses, contributions }) {
 // ─── SIDEBAR ──────────────────────────────────────────────────
 function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut, isMobile, menuOpen, setMenuOpen, t, lang, setLang, searchQuery, setSearchQuery, isAdmin }) {
   const totalBadge = unreadCount + pendingCount;
-  const nav = [
+
+  // Super admin : nav réduite
+  const adminNav = [
+    { key: "superadmin", icon: "⚡", label: "Super Admin" },
+  ];
+
+  // Utilisateur normal : nav complète
+  const userNav = [
     { key: "dashboard",     icon: "◈", label: t("nav_dashboard") },
     { key: "events",        icon: "◉", label: t("nav_events") },
     { key: "expenses",      icon: "◫", label: t("nav_expenses") },
@@ -864,9 +871,10 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
     { key: "history",       icon: "◷", label: t("nav_history") },
     { key: "invite",        icon: "◎", label: t("nav_invite") },
     { key: "notifications", icon: "◬", label: t("nav_notifications"), badge: totalBadge },
-    { key: "settings", icon: "⚙", label: t("nav_settings") || "Paramètres" },
-    ...(isAdmin ? [{ key: "superadmin", icon: "⚡", label: "Super Admin" }] : []),
+    { key: "settings",      icon: "⚙", label: t("nav_settings") || "Paramètres" },
   ];
+
+  const nav = isAdmin ? adminNav : userNav;
 
   const SHORTCUTS = {
     dashboard: "D", events: "E", expenses: "X",
@@ -944,7 +952,7 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
         <Avatar name={user?.user_metadata?.full_name?.[0] || user?.email?.[0] || "U"} size={30} />
         <div style={{ overflow: "hidden", flex: 1, minWidth: 0 }}>
           <div style={{ color: "#fff", fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user?.user_metadata?.full_name || user?.email}</div>
-          <div style={{ color: "#F57F17", fontSize: 10, marginTop: 1 }}>✦ Admin</div>
+          <div style={{ color: "#F57F17", fontSize: 10, marginTop: 1 }}>✦ {isAdmin ? "Super Admin" : "Admin"}</div>
         </div>
       </div>
       <button onClick={onSignOut} style={{ width: "100%", padding: "7px", borderRadius: 8, border: "1px solid #2a2a2a", background: "transparent", color: "#666", fontSize: 11, cursor: "pointer", transition: "all 0.15s", fontFamily: "inherit" }}>{t("nav_logout")}</button>
@@ -3408,6 +3416,10 @@ function SuperAdminPage({ user, isMobile, addToast }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [confirm, setConfirm] = useState(null); // { action, userId, userName }
+  const [emailModal, setEmailModal] = useState(null); // { userId, userEmail, userName }
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailBody, setEmailBody] = useState("");
+  const [sendingEmail, setSendingEmail] = useState(false);
   const [acting, setActing] = useState(null);
   const [search, setSearch] = useState("");
   const [filterRole, setFilterRole] = useState("all");
@@ -3436,8 +3448,37 @@ function SuperAdminPage({ user, isMobile, addToast }) {
     setConfirm(null);
   };
 
-  // Filtres
-  const filtered = users.filter(u => {
+  const handleSendEmail = async () => {
+    if (!emailModal || !emailSubject.trim() || !emailBody.trim()) return;
+    setSendingEmail(true);
+    try {
+      const res = await fetch("/api/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: emailModal.userEmail,
+          subject: emailSubject,
+          html: `<div style="font-family:sans-serif;max-width:560px;margin:auto;padding:32px">
+            <h2 style="color:#0F0F0F">Message de l'équipe SplitLy</h2>
+            <div style="font-size:15px;line-height:1.7;color:#333;white-space:pre-wrap">${emailBody}</div>
+            <hr style="margin:24px 0;border:none;border-top:1px solid #eee"/>
+            <p style="font-size:12px;color:#aaa">Cet email a été envoyé depuis le back-office SplitLy.</p>
+          </div>`,
+        }),
+      });
+      if (res.ok) {
+        addToast(`✉️ Email envoyé à ${emailModal.userEmail}`, "success");
+        setEmailModal(null);
+        setEmailSubject("");
+        setEmailBody("");
+      } else {
+        addToast("Erreur lors de l'envoi de l'email.", "error");
+      }
+    } catch {
+      addToast("Erreur réseau.", "error");
+    }
+    setSendingEmail(false);
+  };
     const q = search.toLowerCase();
     const matchSearch = !q || u.email?.toLowerCase().includes(q) || u.full_name?.toLowerCase().includes(q);
     const matchRole = filterRole === "all" || u.user_role === filterRole;
@@ -3466,6 +3507,38 @@ function SuperAdminPage({ user, isMobile, addToast }) {
 
   return (
     <div>
+      {emailModal && (
+        <Modal title={`✉️ Envoyer un email à ${emailModal.userName}`} onClose={() => { setEmailModal(null); setEmailSubject(""); setEmailBody(""); }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-sub)", textTransform: "uppercase", letterSpacing: 0.8, display: "block", marginBottom: 6 }}>Destinataire</label>
+              <div style={{ fontSize: 13, color: "var(--text)", padding: "8px 12px", background: "var(--hover-bg)", borderRadius: 8, border: "1px solid var(--border)" }}>{emailModal.userEmail}</div>
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-sub)", textTransform: "uppercase", letterSpacing: 0.8, display: "block", marginBottom: 6 }}>Sujet</label>
+              <input value={emailSubject} onChange={e => setEmailSubject(e.target.value)}
+                placeholder="Objet de l'email..."
+                style={{ ...S.input, width: "100%" }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-sub)", textTransform: "uppercase", letterSpacing: 0.8, display: "block", marginBottom: 6 }}>Message</label>
+              <textarea value={emailBody} onChange={e => setEmailBody(e.target.value)}
+                placeholder="Votre message..."
+                rows={6}
+                style={{ ...S.input, width: "100%", resize: "vertical", minHeight: 120 }} />
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={handleSendEmail} disabled={sendingEmail || !emailSubject.trim() || !emailBody.trim()}
+                style={{ ...S.btnDark, flex: 1, justifyContent: "center", display: "flex", opacity: (!emailSubject.trim() || !emailBody.trim()) ? 0.5 : 1 }}>
+                {sendingEmail ? "Envoi..." : "✉️ Envoyer"}
+              </button>
+              <button onClick={() => { setEmailModal(null); setEmailSubject(""); setEmailBody(""); }}
+                style={{ ...S.btnGhost, flex: 1, justifyContent: "center", display: "flex" }}>Annuler</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {confirm && (
         <Modal title="Confirmer l'action" onClose={() => setConfirm(null)}>
           <div style={{ fontSize: 14, color: "var(--text)", marginBottom: 16, lineHeight: 1.6 }}>
@@ -3579,9 +3652,13 @@ function SuperAdminPage({ user, isMobile, addToast }) {
                       ⊘ Bloquer
                     </button>
                   )}
+                  <button onClick={() => setEmailModal({ userId: u.id, userEmail: u.email, userName: u.full_name !== "—" ? u.full_name : u.email })}
+                    style={{ padding: "7px 12px", borderRadius: 9, border: "1.5px solid #BBDEFB", background: "#E3F2FD", color: "#1565C0", fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
+                    ✉️
+                  </button>
                   <button onClick={() => setConfirm({ action: "delete", userId: u.id, userName: u.email })}
-                    style={{ flex: 1, padding: "7px", borderRadius: 9, border: "1.5px solid #FFCDD2", background: "#FFEBEE", color: "#C62828", fontSize: 12, cursor: "pointer", fontWeight: 700, fontFamily: "inherit" }}>
-                    🗑 Supprimer
+                    style={{ padding: "7px 12px", borderRadius: 9, border: "1.5px solid #FFCDD2", background: "#FFEBEE", color: "#C62828", fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
+                    🗑
                   </button>
                 </div>
               )}
@@ -3641,6 +3718,10 @@ function SuperAdminPage({ user, isMobile, addToast }) {
                               ⊘ Bloquer
                             </button>
                           )}
+                          <button onClick={() => setEmailModal({ userId: u.id, userEmail: u.email, userName: u.full_name !== "—" ? u.full_name : u.email })} disabled={acting === u.id}
+                            style={{ padding: "5px 10px", borderRadius: 8, border: "1.5px solid #BBDEFB", background: "#E3F2FD", color: "#1565C0", fontSize: 11, cursor: "pointer", fontWeight: 700, fontFamily: "inherit" }}>
+                            ✉️
+                          </button>
                           <button onClick={() => setConfirm({ action: "delete", userId: u.id, userName: u.email })} disabled={acting === u.id}
                             style={{ padding: "5px 10px", borderRadius: 8, border: "1.5px solid #FFCDD2", background: "#FFEBEE", color: "#C62828", fontSize: 11, cursor: "pointer", fontWeight: 700, fontFamily: "inherit" }}>
                             🗑
@@ -3860,8 +3941,12 @@ function AppInner() {
           if (!onboarded) setShowOnboarding(true);
         } catch {}
         // Charger le profil pour détecter le rôle admin
-        const { data: prof } = await fetchProfile(u.id);
-        setProfile(prof);
+        try {
+          const { data: prof } = await fetchProfile(u.id);
+          setProfile(prof || null);
+          // Rediriger automatiquement le super admin vers sa page dédiée
+          if (prof?.user_role === "admin") setActive("superadmin");
+        } catch {}
       }
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
@@ -4003,7 +4088,9 @@ function AppInner() {
 
   const isAdmin = profile?.user_role === "admin";
 
-  const pages = {
+  const pages = isAdmin ? {
+    superadmin: <SuperAdminPage user={user} isMobile={isMobile} addToast={addToast} />,
+  } : {
     dashboard:     <Dashboard {...sharedProps} navigateTo={setActive} lang={lang} />,
     events:        <Events {...sharedProps} />,
     expenses:      <Expenses {...sharedProps} />,
@@ -4016,7 +4103,6 @@ function AppInner() {
                      onMarkAll={async () => { await markAllNotificationsRead(user.id); await loadAll(); addToast(t("notif_mark_all"), "info"); }}
                      onDismiss={async (id) => { await deleteNotification(id); await loadAll(); }} />,
     settings:      <SettingsPage user={user} onSignOut={handleSignOut} isMobile={isMobile} addToast={addToast} t={t} />,
-    ...(isAdmin ? { superadmin: <SuperAdminPage user={user} isMobile={isMobile} addToast={addToast} /> } : {}),
   };
 
   return (
