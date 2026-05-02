@@ -862,12 +862,14 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
   ];
 
   // Utilisateur normal : nav complète
+  const hasBudgetEvents = !isAdmin; // sera passé en prop si nécessaire
   const userNav = [
     { key: "dashboard",     icon: "◈", label: t("nav_dashboard") },
     { key: "events",        icon: "◉", label: t("nav_events") },
     { key: "expenses",      icon: "◫", label: t("nav_expenses") },
     { key: "balance",       icon: "⊜", label: t("nav_balance") },
     { key: "analytics",     icon: "◐", label: t("nav_analytics") },
+    { key: "cotisations",   icon: "💰", label: "Cotisations" },
     { key: "history",       icon: "◷", label: t("nav_history") },
     { key: "invite",        icon: "◎", label: t("nav_invite") },
     { key: "notifications", icon: "◬", label: t("nav_notifications"), badge: totalBadge },
@@ -1899,7 +1901,7 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
           <option value="all">Tous les événements ({expenses.length})</option>
           {events.map(ev => {
             const count = expenses.filter(e => e.event_id === ev.id).length;
-            return <option key={ev.id} value={ev.id}>{ev.name} ({count})</option>;
+            return <option key={ev.id} value={ev.id}>{ev.event_type === "budget" ? "🏦 " : "💸 "}{ev.name} ({count})</option>;
           })}
         </select>
         <select style={{ ...S.input, width: "auto" }} value={filterCategory} onChange={e => setFilterCategory(e.target.value)}>
@@ -1921,6 +1923,17 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
           <span style={{ fontSize: 12, color: "var(--text-sub)" }}>{filtered.length} résultat{filtered.length > 1 ? "s" : ""}</span>
         )}
       </div>
+
+      {/* Bandeau info si événement Budget sélectionné */}
+      {filterEvent !== "all" && events.find(e => e.id === filterEvent)?.event_type === "budget" && (
+        <div style={{ background: "#FFF8E1", border: "1px solid #FFE082", borderRadius: 10, padding: "10px 16px", marginBottom: 12, display: "flex", alignItems: "center", gap: 10, fontSize: 12 }}>
+          <span style={{ fontSize: 16 }}>🏦</span>
+          <div>
+            <span style={{ fontWeight: 700, color: "#F57F17" }}>Événement Budget</span>
+            <span style={{ color: "#E65100", marginLeft: 8 }}>— Les charges ici représentent les dépenses effectuées par les responsables. Gérez les cotisations dans l'onglet <strong>Cotisations</strong>.</span>
+          </div>
+        </div>
+      )}
 
       {showForm && (
         <div style={{ ...S.card, marginBottom: 16, border: editingEx ? "1.5px solid #F57F17" : "1px solid #eee" }}>
@@ -2293,19 +2306,31 @@ function Balance({ events, expenses, contributions, user, reload, isMobile, addT
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
         <div>
-          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2 }}>{t ? t("bal_title") : "Répartition"}</h2>
-          <p style={{ color: "var(--text-sub)", fontSize: 12 }}>{t ? t("bal_subtitle") : "Soldes calculés en temps réel"}</p>
+          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2 }}>
+            {ev?.event_type === "budget" ? "🏦 Caisse" : (t ? t("bal_title") : "Répartition")}
+          </h2>
+          <p style={{ color: "var(--text-sub)", fontSize: 12 }}>
+            {ev?.event_type === "budget" ? "Soldes caisse et remboursements responsables" : (t ? t("bal_subtitle") : "Soldes calculés en temps réel")}
+          </p>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <select style={{ ...S.input, width: "auto" }} value={filterEvent} onChange={e => setFilterEvent(e.target.value)}>
-            {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
+            {events.map(ev => <option key={ev.id} value={ev.id}>{ev.event_type === "budget" ? "🏦 " : "💸 "}{ev.name}</option>)}
           </select>
-          <button onClick={handleExportPDF} style={{ ...S.btnGhost, padding: "8px 14px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>{t ? t("bal_pdf") : "📄 PDF"}</button>
-          <button onClick={handleExportExcel} style={{ ...S.btnGhost, padding: "8px 14px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>📊 CSV</button>
+          {ev?.event_type !== "budget" && <>
+            <button onClick={handleExportPDF} style={{ ...S.btnGhost, padding: "8px 14px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>{t ? t("bal_pdf") : "📄 PDF"}</button>
+            <button onClick={handleExportExcel} style={{ ...S.btnGhost, padding: "8px 14px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>📊 CSV</button>
+          </>}
         </div>
       </div>
 
-      {participants.length === 0 ? (
+      {/* ── Si événement Budget → vue Caisse (Phase 4c) ── */}
+      {ev?.event_type === "budget" && (
+        <BudgetCaisseView ev={ev} expenses={expenses} isMobile={isMobile} addToast={addToast} t={t} />
+      )}
+
+      {/* ── Si événement Split → vue Répartition normale ── */}
+      {ev?.event_type !== "budget" && (participants.length === 0 ? (
         <EmptyState icon="👥" title={t ? t("bal_no_participants") : "Aucun participant"} subtitle={t ? t("bal_select_event") : "Sélectionnez un événement avec des participants."} />
       ) : (
         <>
@@ -2400,7 +2425,31 @@ function Balance({ events, expenses, contributions, user, reload, isMobile, addT
           {/* Historique des versements */}
           <PaymentHistory eventId={filterEvent} sym={sym} />
         </>
-      )}
+      ))}
+    </div>
+  );
+}
+
+// ─── BUDGET CAISSE VIEW (placeholder Phase 4c) ───────────────
+function BudgetCaisseView({ ev, expenses, isMobile, addToast, t }) {
+  const evExp = expenses.filter(e => e.event_id === ev?.id);
+  const sym = currencySymbol(ev?.currency);
+  const totalDepenses = evExp.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
+
+  return (
+    <div>
+      <div style={{ background: "#FFF8E1", border: "1px solid #FFE082", borderRadius: 12, padding: "14px 18px", marginBottom: 20, display: "flex", alignItems: "center", gap: 12 }}>
+        <span style={{ fontSize: 20 }}>🏦</span>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#F57F17" }}>Vue Caisse — en cours de développement</div>
+          <div style={{ fontSize: 12, color: "#E65100", marginTop: 2 }}>La gestion complète de la caisse sera disponible dans la prochaine mise à jour (Phase 4c).</div>
+        </div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 12 }}>
+        <StatCard label="Total dépenses" value={fmt(totalDepenses, sym)} sub={`${evExp.length} charge(s)`} accent="#C62828" />
+        <StatCard label="Invités attendus" value={ev?.nombre_invites || "—"} sub="personnes" accent="#1565C0" />
+        <StatCard label="Cotisation cible" value={ev?.cotisation_cible > 0 ? fmt(ev.cotisation_cible, sym) : "Libre"} sub="par participant" accent="#2E7D32" />
+      </div>
     </div>
   );
 }
@@ -2549,6 +2598,9 @@ function Analytics({ events, expenses, contributions, isMobile, t }) {
 
   // ── Données tous événements (onglet "Tous") ───────────────
   const allTotal = expenses.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
+  const splitEvents = events.filter(e => e.event_type !== "budget");
+  const budgetEvents = events.filter(e => e.event_type === "budget");
+
   const evRows = events.map(ev => {
     const exps = expenses.filter(e => e.event_id === ev.id);
     const total = exps.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
@@ -2643,7 +2695,7 @@ function Analytics({ events, expenses, contributions, isMobile, t }) {
         <div>
           {/* KPIs globaux */}
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
-            <StatCard label="Événements" value={events.length} sub={`${events.filter(e => e.status === "open").length} ouvert(s)`} accent="#0F0F0F" />
+            <StatCard label="Événements" value={events.length} sub={`${splitEvents.length} Split · ${budgetEvents.length} Budget`} accent="#0F0F0F" />
             <StatCard label="Charges totales" value={expenses.length} sub="toutes catégories" accent="#1565C0" />
             <StatCard label="Participants" value={allParticipants.length} sub="profils uniques" accent="#6A1B9A" />
             <StatCard label="Budget cumulé" value={fmt(allTotal)} sub="toutes devises" accent="#2E7D32" />
@@ -2669,8 +2721,11 @@ function Analytics({ events, expenses, contributions, isMobile, t }) {
                       <tr key={ev.id} style={{ borderBottom: i < evRows.length - 1 ? "1px solid var(--border)" : "none" }}>
                         <td style={{ padding: "12px 16px" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <span>{ev.status === "closed" ? "🔒" : "🎊"}</span>
-                            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}><Truncate text={ev.name} max={20} /></span>
+                            <span>{ev.status === "closed" ? "🔒" : ev.event_type === "budget" ? "🏦" : "🎊"}</span>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}><Truncate text={ev.name} max={16} /></span>
+                            <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 20, background: ev.event_type === "budget" ? "#FFF8E1" : "#F3E5F5", color: ev.event_type === "budget" ? "#F57F17" : "#6A1B9A", fontWeight: 700, flexShrink: 0 }}>
+                              {ev.event_type === "budget" ? "Budget" : "Split"}
+                            </span>
                           </div>
                         </td>
                         <td style={{ padding: "12px 16px", fontSize: 12, color: "var(--text-sub)", whiteSpace: "nowrap" }}>{ev.date}</td>
@@ -3801,6 +3856,58 @@ function SuperAdminPage({ user, isMobile, addToast }) {
   );
 }
 
+// ─── COTISATIONS PAGE (placeholder Phase 4a) ──────────────────
+function CotisationsPage({ events, expenses, user, reload, isMobile, addToast, t }) {
+  const budgetEvents = events.filter(e => e.event_type === "budget");
+  const [filterEvent, setFilterEvent] = useState(budgetEvents[0]?.id || "");
+  const ev = budgetEvents.find(e => e.id === filterEvent);
+  const sym = currencySymbol(ev?.currency);
+
+  return (
+    <div>
+      <div style={{ marginBottom: 20 }}>
+        <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2, color: "var(--text)" }}>
+          💰 Cotisations
+        </h2>
+        <p style={{ color: "var(--text-sub)", fontSize: 12 }}>Gestion des cotisations et contributions</p>
+      </div>
+
+      {budgetEvents.length === 0 ? (
+        <EmptyState icon="🏦" title="Aucun événement Budget"
+          subtitle="Créez un événement de type Budget pour gérer les cotisations."
+          action={<span style={{ fontSize: 12, color: "var(--text-sub)" }}>Allez dans Événements → Nouveau → Budget</span>} />
+      ) : (
+        <>
+          {/* Sélecteur événement Budget */}
+          <div style={{ marginBottom: 16 }}>
+            <select style={{ ...S.input, width: "auto" }} value={filterEvent} onChange={e => setFilterEvent(e.target.value)}>
+              {budgetEvents.map(ev => <option key={ev.id} value={ev.id}>🏦 {ev.name}</option>)}
+            </select>
+          </div>
+
+          {/* Info événement */}
+          {ev && (
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 12, marginBottom: 20 }}>
+              <StatCard label="Cotisation cible" value={ev.cotisation_cible > 0 ? fmt(ev.cotisation_cible, sym) : "Libre"} sub="par participant" accent="#2E7D32" />
+              <StatCard label="Invités attendus" value={ev.nombre_invites || "—"} sub="le jour J" accent="#1565C0" />
+              <StatCard label="Participants" value={(ev.event_participants || []).length} sub="inscrits" accent="#6A1B9A" />
+            </div>
+          )}
+
+          {/* Placeholder Phase 4a */}
+          <div style={{ background: "#FFF8E1", border: "1px solid #FFE082", borderRadius: 12, padding: "20px", textAlign: "center" }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>🚧</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#F57F17", marginBottom: 8 }}>Gestion des cotisations — en cours de développement</div>
+            <div style={{ fontSize: 12, color: "#E65100", lineHeight: 1.6 }}>
+              La saisie des cotisations, contributions en nature, et le suivi des paiements seront disponibles dans la prochaine mise à jour (Phase 4a).
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── STYLES ───────────────────────────────────────────────────
 const S = {
   label: { display: "block", fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 },
@@ -3970,6 +4077,7 @@ function AppInner() {
     analytics: t("nav_analytics"), history: t("nav_history"),
     invite: t("nav_invite"), notifications: t("nav_notifications"),
     settings: t("nav_settings") || "Paramètres",
+    cotisations: "Cotisations",
     superadmin: "Super Admin",
   };
 
@@ -4159,6 +4267,7 @@ function AppInner() {
                      onMarkAll={async () => { await markAllNotificationsRead(user.id); await loadAll(); addToast(t("notif_mark_all"), "info"); }}
                      onDismiss={async (id) => { await deleteNotification(id); await loadAll(); }} />,
     settings:      <SettingsPage user={user} onSignOut={handleSignOut} isMobile={isMobile} addToast={addToast} t={t} />,
+    cotisations:   <CotisationsPage events={events} expenses={expenses} user={user} reload={loadAll} isMobile={isMobile} addToast={addToast} t={t} />,
   };
 
   return (
