@@ -4389,13 +4389,6 @@ function SuperAdminPage({ user, isMobile, addToast }) {
     return matchSearch && matchRole;
   });
 
-  // KPIs
-  const totalUsers = users.length;
-  const activeUsers = users.filter(u => u.user_role === 'user').length;
-  const blockedUsers = users.filter(u => u.user_role === 'blocked').length;
-  const totalBudget = users.reduce((s, u) => s + (u.budget_total || 0), 0);
-  const totalEvents = users.reduce((s, u) => s + (u.events_total || 0), 0);
-
   const roleBadge = (role) => {
     const map = {
       admin:   { label: "Admin",   bg: "#FFF8E1", color: "#F57F17" },
