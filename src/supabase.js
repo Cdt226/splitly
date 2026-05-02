@@ -813,7 +813,22 @@ export function exportPDF(ev, evExp, evContribMap, participants) {
   w.document.close();
 }
 
-// ─── PROFILES ─────────────────────────────────────────────────
+// ─── SIGNALEMENTS ─────────────────────────────────────────────
+export async function createReport({ userId, userEmail, category, message, eventId }) {
+  const { data, error } = await supabase
+    .from('reports')
+    .insert({ user_id: userId, user_email: userEmail, category, message, event_id: eventId || null })
+    .select().single();
+  return { data, error };
+}
+
+export async function fetchReports() {
+  const { data, error } = await supabase
+    .from('reports')
+    .select('*')
+    .order('created_at', { ascending: false });
+  return { data, error };
+}
 export async function fetchProfile(userId) {
   const { data, error } = await supabase
     .from('profiles')

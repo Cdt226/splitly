@@ -107,6 +107,12 @@ export default async function handler(req, res) {
       return res.status(200).json({ users: enriched });
     }
 
+    // ── GET reports ───────────────────────────────────────────
+    if (req.method === 'GET' && req.query?.type === 'reports') {
+      const { data: reports } = await supabaseAdmin.from('reports').select('*').order('created_at', { ascending: false });
+      return res.status(200).json({ reports: reports || [] });
+    }
+
     // ── POST — actions admin (bloquer / débloquer / supprimer) ──
     if (req.method === 'POST') {
       const { action, userId } = req.body;
@@ -141,6 +147,13 @@ export default async function handler(req, res) {
         await supabaseAdmin.from('profiles').delete().eq('id', userId);
         await supabaseAdmin.auth.admin.deleteUser(userId);
         return res.status(200).json({ success: true, message: 'Compte supprimé' });
+      }
+
+      if (action === 'update_report') {
+        const { reportId, status } = req.body;
+        if (!reportId || !status) return res.status(400).json({ error: 'Paramètres manquants' });
+        await supabaseAdmin.from('reports').update({ status }).eq('id', reportId);
+        return res.status(200).json({ success: true, message: `Signalement ${status}` });
       }
 
       return res.status(400).json({ error: 'Action inconnue' });

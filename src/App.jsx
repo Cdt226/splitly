@@ -18,6 +18,7 @@ import {
   fetchProfile, fetchAdminUsers, adminUserAction,
   fetchCotisations, createCotisation, updateCotisation, deleteCotisation,
   fetchAvances, createAvance, updateAvance, deleteAvance,
+  createReport, fetchReports,
 } from "./supabase.js";
 
 // ─── CONSTANTES ───────────────────────────────────────────────
@@ -1311,109 +1312,65 @@ function Dashboard({ events, expenses, contributions, user, isMobile, navigateTo
 }
 
 // ─── EXPORT PDF BUDGET ───────────────────────────────────────
-async function exportBudgetPDF(ev, expenses, cotisations) {
+function exportBudgetPDF(ev, expenses, cotisations) {
   const sym = currencySymbol(ev.currency);
-  const fmt2 = n => `${Number(n || 0).toFixed(2)} ${sym}`;
+  const fmt2 = n => Number(n || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ' + sym;
   const evExp = expenses.filter(e => e.event_id === ev.id);
   const totalDepenses = evExp.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
   const totalRecettes = cotisations.filter(c => c.statut === "paye").reduce((s, c) => s + c.montant, 0);
   const solde = totalRecettes - totalDepenses;
+  const participants = (ev.event_participants || []).map(p => p.name);
   const byCategory = Object.keys(CATEGORIES).map(cat => ({
     cat, total: evExp.filter(e => e.category === cat).reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0)
   })).filter(c => c.total > 0).sort((a, b) => b.total - a.total);
 
-  const cotisationsRows = cotisations.map(c => `
-    <tr style="border-bottom:1px solid #f0f0f0">
-      <td style="padding:8px 12px;font-weight:600">${c.participant_name}</td>
-      <td style="padding:8px 12px;text-align:center">
-        <span style="background:${c.forme === "nature" ? "#E8F5E9" : "#E3F2FD"};color:${c.forme === "nature" ? "#2E7D32" : "#1565C0"};padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">
-          ${c.forme === "nature" ? "🌿 Nature" : "💵 Espèces"}
-        </span>
-      </td>
-      <td style="padding:8px 12px;text-align:center">
-        <span style="background:${c.statut === "paye" ? "#E8F5E9" : "#FFEBEE"};color:${c.statut === "paye" ? "#2E7D32" : "#C62828"};padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">
-          ${c.statut === "paye" ? "✓ Payé" : c.statut === "partiel" ? "~ Partiel" : "✗ Impayé"}
-        </span>
-      </td>
-      <td style="padding:8px 12px;text-align:right;font-weight:700">${fmt2(c.montant)}</td>
-    </tr>`).join("");
+  const cotisationsRows = cotisations.map((c, i) => `
+    <tr style="background:${i % 2 === 0 ? '#fff' : '#f9f9f9'}">
+      <td style="padding:9px 12px;font-weight:600">${c.participant_name}</td>
+      <td style="padding:9px 12px"><span class="badge" style="background:${c.forme === "nature" ? "#E8F5E9" : "#E3F2FD"};color:${c.forme === "nature" ? "#2E7D32" : "#1565C0"}">${c.forme === "nature" ? "🌿 Nature" : "💵 Espèces"}</span></td>
+      <td style="padding:9px 12px"><span class="badge" style="background:${c.statut === "paye" ? "#E8F5E9" : "#FFEBEE"};color:${c.statut === "paye" ? "#2E7D32" : "#C62828"}">${c.statut === "paye" ? "✓ Payé" : c.statut === "partiel" ? "~ Partiel" : "✗ Impayé"}</span></td>
+      <td style="padding:9px 12px;text-align:right;font-weight:700">${fmt2(c.montant)}</td>
+    </tr>`).join('');
 
-  const depensesRows = evExp.map(ex => `
-    <tr style="border-bottom:1px solid #f0f0f0">
-      <td style="padding:8px 12px">${CATEGORIES[ex.category]?.icon || ""} ${ex.category}</td>
-      <td style="padding:8px 12px">${ex.detail}</td>
-      <td style="padding:8px 12px">${ex.paid_by || "—"}</td>
-      <td style="padding:8px 12px;text-align:right;font-weight:700">${fmt2(ex.qty * (ex.unit_price ?? 0))}</td>
-    </tr>`).join("");
+  const depensesRows = evExp.map((ex, i) => `
+    <tr style="background:${i % 2 === 0 ? '#fff' : '#f9f9f9'}">
+      <td style="padding:9px 12px">${CATEGORIES[ex.category]?.icon || ''} ${ex.category}</td>
+      <td style="padding:9px 12px;font-weight:600">${ex.detail}</td>
+      <td style="padding:9px 12px">${ex.paid_by || '—'}</td>
+      <td style="padding:9px 12px;text-align:right;font-weight:700">${fmt2(ex.qty * (ex.unit_price ?? 0))}</td>
+    </tr>`).join('');
 
-  const catRows = byCategory.map(c => `
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-      <span style="font-size:18px">${CATEGORIES[c.cat]?.icon || "🏷️"}</span>
-      <div style="flex:1">
-        <div style="display:flex;justify-content:space-between;margin-bottom:3px">
-          <span style="font-size:13px">${c.cat}</span>
-          <span style="font-size:13px;font-weight:700">${fmt2(c.total)} (${totalDepenses > 0 ? ((c.total / totalDepenses) * 100).toFixed(0) : 0}%)</span>
-        </div>
-        <div style="background:#f0f0f0;border-radius:4px;height:5px">
-          <div style="background:#F57F17;height:5px;border-radius:4px;width:${totalDepenses > 0 ? (c.total / totalDepenses) * 100 : 0}%"></div>
-        </div>
-      </div>
-    </div>`).join("");
+  const catBars = byCategory.map(c => `
+    <div class="cat-bar">
+      <div class="cat-bar-label"><span>${CATEGORIES[c.cat]?.icon || '🏷️'} ${c.cat}</span><strong>${fmt2(c.total)} (${totalDepenses > 0 ? ((c.total / totalDepenses) * 100).toFixed(0) : 0}%)</strong></div>
+      <div class="cat-bar-track"><div style="background:${CATEGORIES[c.cat]?.accent || '#F57F17'};height:6px;width:${totalDepenses > 0 ? (c.total / totalDepenses) * 100 : 0}%;border-radius:3px"></div></div>
+    </div>`).join('');
 
-  const html = `
-    <html><head><meta charset="utf-8">
-    <style>body{font-family:Arial,sans-serif;margin:0;padding:0;color:#333}table{width:100%;border-collapse:collapse}th{background:#f5f5f5;padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#888}</style>
-    </head><body>
-    <div style="background:linear-gradient(135deg,#0F0F0F,#1a1a2e);padding:32px;color:#fff">
-      <div style="font-size:26px;font-weight:700;margin-bottom:6px">SplitLy</div>
-      <div style="font-size:13px;color:rgba(255,255,255,0.6)">Bilan financier — Événement Budget</div>
-    </div>
-    <div style="padding:28px">
-      <h2 style="font-size:22px;margin-bottom:4px">🏦 ${ev.name}</h2>
-      <div style="font-size:13px;color:#888;margin-bottom:28px">${ev.date} · ${sym} · ${(ev.event_participants || []).length} participants · ${ev.nombre_invites > 0 ? ev.nombre_invites + " invités attendus" : ""}</div>
+  const infoBox = ev.nombre_invites > 0
+    ? `<div class="info-box">💡 Coût par invité : <strong>${fmt2(totalDepenses / ev.nombre_invites)}</strong> · Cotisation moyenne : <strong>${fmt2(cotisations.length > 0 ? totalRecettes / cotisations.length : 0)}</strong></div>`
+    : '';
 
-      <!-- KPIs -->
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:28px">
-        <div style="background:#E8F5E9;border-radius:12px;padding:16px;border-left:4px solid #2E7D32">
-          <div style="font-size:11px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Total recettes</div>
-          <div style="font-size:22px;font-weight:700;color:#2E7D32">${fmt2(totalRecettes)}</div>
-        </div>
-        <div style="background:#FFEBEE;border-radius:12px;padding:16px;border-left:4px solid #C62828">
-          <div style="font-size:11px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Total dépenses</div>
-          <div style="font-size:22px;font-weight:700;color:#C62828">${fmt2(totalDepenses)}</div>
-        </div>
-        <div style="background:${solde >= 0 ? "#E8F5E9" : "#FFEBEE"};border-radius:12px;padding:16px;border-left:4px solid ${solde >= 0 ? "#2E7D32" : "#C62828"}">
-          <div style="font-size:11px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Solde</div>
-          <div style="font-size:22px;font-weight:700;color:${solde >= 0 ? "#2E7D32" : "#C62828"}">${solde >= 0 ? "+" : ""}${fmt2(solde)}</div>
-        </div>
-      </div>
-      ${ev.nombre_invites > 0 ? `<div style="background:#f5f5f5;border-radius:10px;padding:12px 16px;margin-bottom:24px;font-size:13px">💡 Coût par invité : <strong>${fmt2(totalDepenses / ev.nombre_invites)}</strong> · Cotisation moyenne : <strong>${fmt2(cotisations.length > 0 ? totalRecettes / cotisations.length : 0)}</strong></div>` : ""}
-
-      <!-- Recettes -->
-      <h3 style="font-size:14px;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:12px">💰 Cotisations (${cotisations.length})</h3>
-      <table style="margin-bottom:24px">
-        <thead><tr><th>Participant</th><th>Forme</th><th>Statut</th><th style="text-align:right">Montant</th></tr></thead>
-        <tbody>${cotisationsRows}</tbody>
-        <tfoot><tr style="background:#f5f5f5;font-weight:700"><td colspan="3" style="padding:10px 12px">TOTAL RECETTES</td><td style="padding:10px 12px;text-align:right;color:#2E7D32">${fmt2(totalRecettes)}</td></tr></tfoot>
-      </table>
-
-      <!-- Dépenses -->
-      <h3 style="font-size:14px;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:12px">💸 Dépenses (${evExp.length})</h3>
-      <table style="margin-bottom:24px">
-        <thead><tr><th>Catégorie</th><th>Désignation</th><th>Responsable</th><th style="text-align:right">Montant</th></tr></thead>
-        <tbody>${depensesRows}</tbody>
-        <tfoot><tr style="background:#f5f5f5;font-weight:700"><td colspan="3" style="padding:10px 12px">TOTAL DÉPENSES</td><td style="padding:10px 12px;text-align:right;color:#C62828">${fmt2(totalDepenses)}</td></tr></tfoot>
-      </table>
-
-      <!-- Par catégorie -->
-      <h3 style="font-size:14px;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:16px">📊 Répartition par catégorie</h3>
-      <div style="margin-bottom:24px">${catRows}</div>
-
-      <div style="text-align:center;font-size:11px;color:#aaa;border-top:1px solid #eee;padding-top:16px;margin-top:24px">Généré par SplitLy — splitmeapp.com · ${new Date().toLocaleDateString("fr-FR")}</div>
-    </div></body></html>`;
-
-  const w = window.open("", "_blank");
-  if (w) { w.document.write(html); w.document.close(); }
+  buildPDF({
+    title: ev.name,
+    subtitle: "Bilan financier complet",
+    docType: "Rapport Bilan · Événement Budget",
+    meta: [
+      { label: "Date de l'événement", value: ev.date },
+      { label: "Participants", value: `${participants.length} personne${participants.length > 1 ? 's' : ''}` },
+      { label: "Devise", value: sym },
+      ...(ev.nombre_invites > 0 ? [{ label: "Invités attendus", value: ev.nombre_invites }] : []),
+    ],
+    summaryItems: [
+      { label: "Total recettes", value: fmt2(totalRecettes), sub: `${cotisations.filter(c => c.statut === "paye").length} cotisation(s)`, accent: "#2E7D32", color: "#2E7D32" },
+      { label: "Total dépenses", value: fmt2(totalDepenses), sub: `${evExp.length} charge(s)`, accent: "#C62828", color: "#C62828" },
+      { label: "Solde", value: `${solde >= 0 ? '+' : ''}${fmt2(solde)}`, sub: solde >= 0 ? "excédent" : "déficit", accent: solde >= 0 ? "#2E7D32" : "#C62828", color: solde >= 0 ? "#2E7D32" : "#C62828" },
+    ],
+    sections: [
+      { title: `Cotisations (${cotisations.length})`, content: `<table><thead><tr><th>Participant</th><th>Forme</th><th>Statut</th><th style="text-align:right">Montant</th></tr></thead><tbody>${cotisationsRows}</tbody><tfoot><tr><td colspan="3">TOTAL RECETTES</td><td style="text-align:right;color:#2E7D32">${fmt2(totalRecettes)}</td></tr></tfoot></table>` },
+      { title: `Dépenses (${evExp.length})`, content: `${infoBox}<table><thead><tr><th>Catégorie</th><th>Désignation</th><th>Responsable</th><th style="text-align:right">Montant</th></tr></thead><tbody>${depensesRows}</tbody><tfoot><tr><td colspan="3">TOTAL DÉPENSES</td><td style="text-align:right;color:#C62828">${fmt2(totalDepenses)}</td></tr></tfoot></table>` },
+      { title: "Répartition par catégorie", content: `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">${catBars}</div>` },
+    ],
+  });
 }
 
 // ─── EVENT DETAIL (drill-down) ────────────────────────────────
@@ -1468,10 +1425,19 @@ function EventDetail({ ev, events, expenses, contributions, user, reload, isMobi
             {isBudget && ev.nombre_invites > 0 && ` · ${ev.nombre_invites} invités attendus`}
           </div>
         </div>
-        {/* Bouton PDF Budget */}
-        {isBudget && (
+        {/* Bouton PDF selon type */}
+        {isBudget ? (
           <button onClick={() => exportBudgetPDF(ev, expenses, cotisations)}
             style={{ ...S.btnGhost, fontSize: 11, padding: "7px 12px", flexShrink: 0, whiteSpace: "nowrap" }}>
+            📄 Bilan PDF
+          </button>
+        ) : (
+          <button onClick={() => {
+            const evExp = expenses.filter(e => e.event_id === ev.id);
+            const contribMap = {};
+            (contributions[ev.id] || []).forEach(c => { contribMap[c.participant] = c.amount; });
+            exportPDF(ev, evExp, contribMap, participants);
+          }} style={{ ...S.btnGhost, fontSize: 11, padding: "7px 12px", flexShrink: 0, whiteSpace: "nowrap" }}>
             📄 Bilan PDF
           </button>
         )}
@@ -2149,72 +2115,61 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
 // ─── EXPORT PDF CHARGES ──────────────────────────────────────
 function exportChargesPDF(ev, evExpenses) {
   const sym = currencySymbol(ev.currency);
-  const fmt2 = n => `${Number(n || 0).toFixed(2)} ${sym}`;
+  const fmt2 = n => Number(n || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ' + sym;
   const total = evExpenses.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
+  const participants = (ev.event_participants || []).map(p => p.name);
   const byCategory = Object.keys(CATEGORIES).map(cat => ({
     cat, total: evExpenses.filter(e => e.category === cat).reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0)
   })).filter(c => c.total > 0).sort((a, b) => b.total - a.total);
 
-  const rows = evExpenses.map(ex => {
+  const rows = evExpenses.map((ex, i) => {
     const exTotal = ex.qty * (ex.unit_price ?? 0);
-    return `<tr style="border-bottom:1px solid #f0f0f0">
-      <td style="padding:8px 12px">${CATEGORIES[ex.category]?.icon || ""} ${ex.category}</td>
-      <td style="padding:8px 12px">${ex.detail}</td>
-      <td style="padding:8px 12px">${ex.paid_by || "—"}</td>
-      <td style="padding:8px 12px;text-align:right">${ex.qty > 1 ? `${ex.qty} × ${fmt2(ex.unit_price ?? 0)}` : ""}</td>
-      <td style="padding:8px 12px;text-align:right;font-weight:700">${fmt2(exTotal)}</td>
+    return `<tr style="background:${i % 2 === 0 ? '#fff' : '#f9f9f9'}">
+      <td style="padding:9px 12px">${CATEGORIES[ex.category]?.icon || ''} ${ex.category}</td>
+      <td style="padding:9px 12px;font-weight:600">${ex.detail}</td>
+      <td style="padding:9px 12px">${ex.paid_by || '—'}</td>
+      <td style="padding:9px 12px;text-align:center">${ex.qty > 1 ? `${ex.qty} × ${fmt2(ex.unit_price ?? 0)}` : '—'}</td>
+      <td style="padding:9px 12px;text-align:right;font-weight:700">${fmt2(exTotal)}</td>
     </tr>`;
-  }).join("");
+  }).join('');
 
-  const catRows = byCategory.map(c => `
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f0f0f0">
-      <div style="display:flex;align-items:center;gap:8px">
-        <span style="font-size:16px">${CATEGORIES[c.cat]?.icon || "🏷️"}</span>
-        <span style="font-size:13px">${c.cat}</span>
+  const catBars = byCategory.map(c => `
+    <div class="cat-bar">
+      <div class="cat-bar-label">
+        <span>${CATEGORIES[c.cat]?.icon || '🏷️'} ${c.cat}</span>
+        <strong style="color:${CATEGORIES[c.cat]?.accent || '#333'}">${fmt2(c.total)} (${total > 0 ? ((c.total / total) * 100).toFixed(0) : 0}%)</strong>
       </div>
-      <div style="display:flex;align-items:center;gap:16px">
-        <span style="font-size:12px;color:#888">${total > 0 ? ((c.total / total) * 100).toFixed(0) : 0}%</span>
-        <span style="font-size:13px;font-weight:700">${fmt2(c.total)}</span>
-      </div>
-    </div>`).join("");
+      <div class="cat-bar-track"><div style="background:${CATEGORIES[c.cat]?.accent || '#aaa'};height:6px;width:${total > 0 ? (c.total / total) * 100 : 0}%;border-radius:3px"></div></div>
+    </div>`).join('');
 
-  const html = `
-    <html><head><meta charset="utf-8">
-    <style>body{font-family:Arial,sans-serif;margin:0;padding:0;color:#333}table{width:100%;border-collapse:collapse}th{background:#f5f5f5;padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#888}</style>
-    </head><body>
-    <div style="background:linear-gradient(135deg,#0F0F0F,#1a1a2e);padding:28px 32px;color:#fff">
-      <div style="font-size:22px;font-weight:700;margin-bottom:4px">SplitLy — Bilan Charges</div>
-      <div style="font-size:13px;color:rgba(255,255,255,0.6)">${ev.event_type === "budget" ? "🏦" : "🎊"} ${ev.name} · ${ev.date} · ${sym}</div>
-    </div>
-    <div style="padding:24px">
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:24px">
-        <div style="background:#FFEBEE;border-radius:10px;padding:14px;border-left:4px solid #C62828">
-          <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Total dépenses</div>
-          <div style="font-size:20px;font-weight:700;color:#C62828">${fmt2(total)}</div>
-        </div>
-        <div style="background:#f5f5f5;border-radius:10px;padding:14px;border-left:4px solid #0F0F0F">
-          <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Nb charges</div>
-          <div style="font-size:20px;font-weight:700">${evExpenses.length}</div>
-        </div>
-        <div style="background:#f5f5f5;border-radius:10px;padding:14px;border-left:4px solid #1565C0">
-          <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Catégories</div>
-          <div style="font-size:20px;font-weight:700">${byCategory.length}</div>
-        </div>
-      </div>
-      ${ev.nombre_invites > 0 ? `<div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:10px;padding:12px 16px;margin-bottom:20px;font-size:13px">💡 Coût par invité : <strong>${fmt2(total / ev.nombre_invites)}</strong> sur ${ev.nombre_invites} invités attendus</div>` : ""}
-      <h3 style="font-size:13px;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:16px">Répartition par catégorie</h3>
-      <div style="margin-bottom:24px">${catRows}</div>
-      <h3 style="font-size:13px;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:12px">Détail des charges</h3>
-      <table>
-        <thead><tr><th>Catégorie</th><th>Désignation</th><th>Responsable</th><th style="text-align:right">Détail</th><th style="text-align:right">Montant</th></tr></thead>
-        <tbody>${rows}</tbody>
-        <tfoot><tr style="background:#f5f5f5;font-weight:700"><td colspan="4" style="padding:10px 12px">TOTAL</td><td style="padding:10px 12px;text-align:right;color:#C62828">${fmt2(total)}</td></tr></tfoot>
-      </table>
-      <div style="text-align:center;font-size:11px;color:#aaa;border-top:1px solid #eee;padding-top:16px;margin-top:20px">Généré par SplitLy — splitmeapp.com · ${new Date().toLocaleDateString("fr-FR")}</div>
-    </div></body></html>`;
-
-  const w = window.open("", "_blank");
-  if (w) { w.document.write(html); w.document.close(); }
+  buildPDF({
+    title: ev.name,
+    subtitle: `Bilan des charges${ev.event_type === "budget" ? " — Événement Budget" : ""}`,
+    docType: ev.event_type === "budget" ? "Rapport Charges · Événement Budget" : "Rapport Charges · Événement Split",
+    meta: [
+      { label: "Date de l'événement", value: ev.date },
+      { label: "Participants", value: `${participants.length} personne${participants.length > 1 ? 's' : ''}` },
+      { label: "Devise", value: sym },
+      ...(ev.nombre_invites > 0 ? [{ label: "Invités attendus", value: ev.nombre_invites }] : []),
+    ],
+    summaryItems: [
+      { label: "Total dépenses", value: fmt2(total), sub: `${evExpenses.length} charge(s)`, accent: "#C62828", color: "#C62828" },
+      { label: "Catégories", value: byCategory.length, sub: "catégories actives", accent: "#1565C0" },
+      { label: "Moy. / charge", value: fmt2(evExpenses.length > 0 ? total / evExpenses.length : 0), sub: "par dépense", accent: "#F57F17" },
+      ...(ev.nombre_invites > 0 ? [{ label: "Coût / invité", value: fmt2(total / ev.nombre_invites), sub: `sur ${ev.nombre_invites} invités`, accent: "#6A1B9A" }] : []),
+    ],
+    sections: [
+      { title: "Répartition par catégorie", content: `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">${catBars}</div>` },
+      {
+        title: `Détail des charges (${evExpenses.length})`,
+        content: `<table>
+          <thead><tr><th>Catégorie</th><th>Désignation</th><th>Responsable</th><th style="text-align:center">Détail</th><th style="text-align:right">Montant</th></tr></thead>
+          <tbody>${rows}</tbody>
+          <tfoot><tr><td colspan="4">TOTAL DÉPENSES</td><td style="text-align:right;color:#C62828">${fmt2(total)}</td></tr></tfoot>
+        </table>`
+      },
+    ],
+  });
 }
 
 // ─── CHARGES ──────────────────────────────────────────────────
@@ -4064,12 +4019,32 @@ function NotificationsPage({ notifications, events, expenses, pendingActions, us
 }
 
 // ─── PAGE PARAMÈTRES ─────────────────────────────────────────
-function SettingsPage({ user, onSignOut, isMobile, addToast, t }) {
+function SettingsPage({ user, onSignOut, isMobile, addToast, t, events }) {
   const { dark, toggle } = useTheme();
   const { lang, setLang } = useTranslation();
   const [pushEnabled, setPushEnabled] = useState(
     typeof Notification !== "undefined" && Notification.permission === "granted"
   );
+  const [showReport, setShowReport] = useState(false);
+  const [reportForm, setReportForm] = useState({ category: "bug", message: "", eventId: "" });
+  const [sendingReport, setSendingReport] = useState(false);
+
+  const handleSendReport = async () => {
+    if (!reportForm.message.trim()) { addToast("Décrivez le problème.", "warning"); return; }
+    setSendingReport(true);
+    const { error } = await createReport({
+      userId: user.id,
+      userEmail: user.email,
+      category: reportForm.category,
+      message: reportForm.message,
+      eventId: reportForm.eventId || null,
+    });
+    setSendingReport(false);
+    if (error) { addToast("Erreur lors de l'envoi.", "error"); return; }
+    setShowReport(false);
+    setReportForm({ category: "bug", message: "", eventId: "" });
+    addToast("✓ Signalement envoyé à l'équipe SplitLy.", "success");
+  };
 
   const handlePushToggle = async () => {
     if (typeof Notification === "undefined") {
@@ -4142,6 +4117,55 @@ function SettingsPage({ user, onSignOut, isMobile, addToast, t }) {
         <Row icon="📧" label="Email" desc={user?.email} right={null} />
         <Row icon="🏷️" label="Nom" desc={user?.user_metadata?.full_name || "Non défini"} right={null} />
         <Row icon="🔑" label="Rôle" desc="Administrateur" right={null} />
+      </Section>
+
+      <Section title="🚨 Signaler un problème">
+        {!showReport ? (
+          <div style={{ padding: "14px 20px" }}>
+            <p style={{ fontSize: 13, color: "var(--text-sub)", marginBottom: 12 }}>Un bug, une erreur de données, un problème d'accès ? Signalez-le directement à l'équipe SplitLy.</p>
+            <button onClick={() => setShowReport(true)} style={{ ...S.btnGhost, fontSize: 12, padding: "8px 16px" }}>🚨 Ouvrir un signalement</button>
+          </div>
+        ) : (
+          <div style={{ padding: "14px 20px" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div>
+                <label style={S.label}>Catégorie</label>
+                <select style={S.input} value={reportForm.category} onChange={e => setReportForm({ ...reportForm, category: e.target.value })}>
+                  <option value="bug">🐛 Bug technique</option>
+                  <option value="data">📊 Problème de données</option>
+                  <option value="access">🔐 Problème d'accès</option>
+                  <option value="request">💡 Demande spéciale</option>
+                  <option value="other">💬 Autre</option>
+                </select>
+              </div>
+              {events && events.length > 0 && (
+                <div>
+                  <label style={S.label}>Événement concerné <span style={{ color: "#aaa", fontWeight: 400 }}>(optionnel)</span></label>
+                  <select style={S.input} value={reportForm.eventId} onChange={e => setReportForm({ ...reportForm, eventId: e.target.value })}>
+                    <option value="">Aucun événement spécifique</option>
+                    {events.map(ev => <option key={ev.id} value={ev.id}>{ev.event_type === "budget" ? "🏦 " : "💸 "}{ev.name}</option>)}
+                  </select>
+                </div>
+              )}
+              <div>
+                <label style={S.label}>Description du problème <span style={{ color: "#C62828" }}>*</span></label>
+                <textarea style={{ ...S.input, minHeight: 100, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }}
+                  placeholder="Décrivez le problème en détail : ce que vous faisiez, ce qui s'est passé, le résultat attendu..."
+                  value={reportForm.message}
+                  onChange={e => setReportForm({ ...reportForm, message: e.target.value })}
+                  maxLength={1000} />
+                <div style={{ fontSize: 10, color: "var(--text-sub)", textAlign: "right", marginTop: 2 }}>{reportForm.message.length}/1000</div>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={handleSendReport} disabled={sendingReport || !reportForm.message.trim()}
+                  style={{ ...S.btnDark, flex: 1, justifyContent: "center", display: "flex", opacity: !reportForm.message.trim() ? 0.5 : 1 }}>
+                  {sendingReport ? "Envoi..." : "✓ Envoyer le signalement"}
+                </button>
+                <button onClick={() => setShowReport(false)} style={{ ...S.btnGhost, flex: 1, justifyContent: "center", display: "flex" }}>Annuler</button>
+              </div>
+            </div>
+          </div>
+        )}
       </Section>
 
       <Section title="⚠️ Zone de danger">
@@ -4238,25 +4262,78 @@ function OnboardingWizard({ onComplete }) {
 // ─── SUPER ADMIN ──────────────────────────────────────────────
 function SuperAdminPage({ user, isMobile, addToast }) {
   const [users, setUsers] = useState([]);
+  const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [confirm, setConfirm] = useState(null); // { action, userId, userName }
-  const [emailModal, setEmailModal] = useState(null); // { userId, userEmail, userName }
+  const [activeTab, setActiveTab] = useState("overview"); // "overview" | "users" | "reports"
+  const [confirm, setConfirm] = useState(null);
+  const [emailModal, setEmailModal] = useState(null);
   const [emailSubject, setEmailSubject] = useState("");
   const [emailBody, setEmailBody] = useState("");
   const [sendingEmail, setSendingEmail] = useState(false);
   const [acting, setActing] = useState(null);
   const [search, setSearch] = useState("");
   const [filterRole, setFilterRole] = useState("all");
+  const [updatingReport, setUpdatingReport] = useState(null);
 
   const load = async () => {
     setLoading(true);
     const { data, error } = await fetchAdminUsers();
     if (error) { addToast("Erreur chargement : " + error.message, "error"); }
     else setUsers(data || []);
+    // Load reports via supabase directly (service key not needed for reads with RLS bypassed via admin)
+    try {
+      const { data: rData } = await fetchReports();
+      setReports(rData || []);
+    } catch {}
     setLoading(false);
   };
 
   useEffect(() => { load(); }, []);
+
+  // ── Métriques ─────────────────────────────────────────────
+  const now = new Date();
+  const oneWeekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
+  const oneMonthAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
+
+  const newThisWeek = users.filter(u => new Date(u.created_at) > oneWeekAgo).length;
+  const newThisMonth = users.filter(u => new Date(u.created_at) > oneMonthAgo).length;
+  const activeUsers = users.filter(u => u.user_role === "user").length;
+  const blockedUsers = users.filter(u => u.user_role === "blocked").length;
+  const activated = users.filter(u => u.events_total > 0).length;
+  const activationRate = users.length > 0 ? ((activated / users.length) * 100).toFixed(0) : 0;
+  const totalEvents = users.reduce((s, u) => s + (u.events_total || 0), 0);
+  const totalBudget = users.reduce((s, u) => s + (u.budget_total || 0), 0);
+  const avgEvents = users.length > 0 ? (totalEvents / users.length).toFixed(1) : 0;
+  const openReports = reports.filter(r => r.status === "open").length;
+
+  const ADMIN_TABS = [
+    { key: "overview",  icon: "📊", label: "Vue d'ensemble" },
+    { key: "users",     icon: "👥", label: "Utilisateurs" },
+    { key: "reports",   icon: "🚨", label: `Signalements${openReports > 0 ? ` (${openReports})` : ""}` },
+  ];
+
+  const reportCategoryLabel = {
+    bug: "🐛 Bug technique",
+    data: "📊 Données",
+    access: "🔐 Accès",
+    request: "💡 Demande",
+    other: "💬 Autre",
+  };
+
+  const handleUpdateReportStatus = async (reportId, status) => {
+    setUpdatingReport(reportId);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      await fetch('/api/admin-users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+        body: JSON.stringify({ action: 'update_report', userId: user.id, reportId, status }),
+      });
+      setReports(prev => prev.map(r => r.id === reportId ? { ...r, status } : r));
+      addToast(`Signalement marqué "${status}".`, "success");
+    } catch { addToast("Erreur de mise à jour.", "error"); }
+    setUpdatingReport(null);
+  };
 
   const handleAction = async () => {
     if (!confirm) return;
@@ -4387,34 +4464,85 @@ function SuperAdminPage({ user, isMobile, addToast }) {
       )}
 
       {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24, flexWrap: "wrap", gap: 10 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
         <div>
           <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 4, color: "var(--text)", display: "flex", alignItems: "center", gap: 10 }}>
             ⚡ Super Admin
             <span style={{ background: "#FFF8E1", color: "#F57F17", fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, border: "1px solid #FFE08244" }}>Back-office</span>
           </h2>
-          <p style={{ color: "var(--text-sub)", fontSize: 12 }}>Gestion des comptes utilisateurs SplitLy</p>
+          <p style={{ color: "var(--text-sub)", fontSize: 12 }}>Administration SplitLy</p>
         </div>
         <button onClick={load} style={{ ...S.btnGhost, fontSize: 12, padding: "8px 14px" }}>↻ Actualiser</button>
       </div>
 
-      {/* KPIs */}
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(5, 1fr)", gap: 12, marginBottom: 24 }}>
-        {[
-          { label: "Utilisateurs", value: totalUsers, sub: "inscrits", accent: "#0F0F0F" },
-          { label: "Actifs", value: activeUsers, sub: "comptes actifs", accent: "#2E7D32" },
-          { label: "Bloqués", value: blockedUsers, sub: "comptes bloqués", accent: "#C62828" },
-          { label: "Événements", value: totalEvents, sub: "sur la plateforme", accent: "#1565C0" },
-          { label: "Budget plateforme", value: `${(totalBudget / 1000).toFixed(1)}k`, sub: "toutes devises", accent: "#6A1B9A" },
-        ].map(k => (
-          <div key={k.label} style={{ background: "var(--bg-secondary)", borderRadius: 14, padding: "16px 18px", border: `1px solid var(--border)`, borderLeft: `4px solid ${k.accent}` }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-sub)", textTransform: "uppercase", letterSpacing: 0.9, marginBottom: 6 }}>{k.label}</div>
-            <div style={{ fontSize: 24, fontWeight: 700, fontFamily: "'Playfair Display', serif", color: "var(--text)" }}>{k.value}</div>
-            <div style={{ fontSize: 11, color: "var(--text-sub)", marginTop: 3 }}>{k.sub}</div>
-          </div>
+      {/* Tabs */}
+      <div style={{ display: "flex", background: "var(--hover-bg)", borderRadius: 12, padding: 3, gap: 2, marginBottom: 24, flexWrap: "wrap" }}>
+        {ADMIN_TABS.map(tab => (
+          <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+            style={{ padding: isMobile ? "7px 12px" : "8px 16px", borderRadius: 9, border: "none", background: activeTab === tab.key ? "#0F0F0F" : "transparent", color: activeTab === tab.key ? "#fff" : "var(--text-muted)", fontSize: 12, fontWeight: activeTab === tab.key ? 700 : 400, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
+            <span>{tab.icon}</span> {tab.label}
+          </button>
         ))}
       </div>
 
+      {/* ── VUE D'ENSEMBLE ── */}
+      {activeTab === "overview" && (
+        <div>
+          {/* KPIs globaux */}
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+            {[
+              { label: "Utilisateurs total", value: users.length, sub: `+${newThisWeek} cette semaine`, accent: "#0F0F0F" },
+              { label: "Taux activation", value: `${activationRate}%`, sub: `${activated} avec événements`, accent: "#2E7D32" },
+              { label: "Budget plateforme", value: `${(totalBudget / 1000).toFixed(1)}k`, sub: "toutes devises", accent: "#6A1B9A" },
+              { label: "Signalements ouverts", value: openReports, sub: `${reports.length} total`, accent: openReports > 0 ? "#C62828" : "#2E7D32" },
+            ].map(k => (
+              <div key={k.label} style={{ background: "var(--bg-secondary)", borderRadius: 14, padding: "16px 18px", border: `1px solid var(--border)`, borderLeft: `4px solid ${k.accent}` }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-sub)", textTransform: "uppercase", letterSpacing: 0.9, marginBottom: 6 }}>{k.label}</div>
+                <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'Playfair Display', serif", color: "var(--text)" }}>{k.value}</div>
+                <div style={{ fontSize: 11, color: "var(--text-sub)", marginTop: 3 }}>{k.sub}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Stats détaillées */}
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
+            <div style={{ background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border)", padding: 20 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 16 }}>👥 Utilisateurs</div>
+              {[
+                { label: "Nouveaux (7j)", value: newThisWeek, color: "#2E7D32" },
+                { label: "Nouveaux (30j)", value: newThisMonth, color: "#1565C0" },
+                { label: "Actifs", value: activeUsers, color: "#2E7D32" },
+                { label: "Bloqués", value: blockedUsers, color: "#C62828" },
+                { label: "Taux activation", value: `${activationRate}%`, color: "#F57F17" },
+              ].map(s => (
+                <div key={s.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 10, marginBottom: 10, borderBottom: "1px solid var(--border)" }}>
+                  <span style={{ fontSize: 13, color: "var(--text-sub)" }}>{s.label}</span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: s.color }}>{s.value}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border)", padding: 20 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 16 }}>📊 Plateforme</div>
+              {[
+                { label: "Total événements", value: totalEvents, color: "#1565C0" },
+                { label: "Moy. événements/user", value: avgEvents, color: "#F57F17" },
+                { label: "Budget total géré", value: `${(totalBudget / 1000).toFixed(1)}k`, color: "#6A1B9A" },
+                { label: "Signalements ouverts", value: openReports, color: openReports > 0 ? "#C62828" : "#2E7D32" },
+                { label: "Signalements total", value: reports.length, color: "#888" },
+              ].map(s => (
+                <div key={s.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 10, marginBottom: 10, borderBottom: "1px solid var(--border)" }}>
+                  <span style={{ fontSize: 13, color: "var(--text-sub)" }}>{s.label}</span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: s.color }}>{s.value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── UTILISATEURS ── */}
+      {activeTab === "users" && (
+      <div>
       {/* Filtres */}
       <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--bg-secondary)", borderRadius: 10, padding: "8px 12px", border: "1px solid var(--border)", flex: 1, minWidth: 180 }}>
@@ -4431,8 +4559,6 @@ function SuperAdminPage({ user, isMobile, addToast }) {
           ))}
         </div>
       </div>
-
-      {/* Tableau */}
       {loading ? (
         <div style={{ textAlign: "center", padding: 60 }}><Spinner fullscreen={false} /></div>
       ) : filtered.length === 0 ? (
@@ -4568,80 +4694,220 @@ function SuperAdminPage({ user, isMobile, addToast }) {
           </div>
         </div>
       )}
+      </div>
+      )} {/* fin onglet users */}
+
+      {/* ── SIGNALEMENTS ── */}
+      {activeTab === "reports" && (
+        <div>
+          {loading ? (
+            <div style={{ textAlign: "center", padding: 40, color: "var(--text-sub)" }}>Chargement...</div>
+          ) : reports.length === 0 ? (
+            <EmptyState icon="✅" title="Aucun signalement" subtitle="Aucun utilisateur n'a signalé de problème." />
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {reports.map(r => {
+                const statusColor = r.status === "open" ? "#C62828" : r.status === "resolved" ? "#2E7D32" : "#888";
+                const statusBg = r.status === "open" ? "#FFEBEE" : r.status === "resolved" ? "#E8F5E9" : "#f5f5f5";
+                const statusLabel = r.status === "open" ? "🔴 Ouvert" : r.status === "resolved" ? "✅ Résolu" : "📦 Archivé";
+                return (
+                  <div key={r.id} style={{ background: "var(--bg-secondary)", borderRadius: 14, border: `1px solid ${r.status === "open" ? "#FFCDD2" : "var(--border)"}`, padding: "16px 18px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.user_email}</span>
+                        <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 20, background: "#E3F2FD", color: "#1565C0", fontWeight: 700, flexShrink: 0 }}>{reportCategoryLabel[r.category] || r.category}</span>
+                        <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 20, background: statusBg, color: statusColor, fontWeight: 700, flexShrink: 0 }}>{statusLabel}</span>
+                      </div>
+                      <span style={{ fontSize: 11, color: "var(--text-sub)", flexShrink: 0 }}>{new Date(r.created_at).toLocaleDateString("fr-FR")}</span>
+                    </div>
+                    <p style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.6, marginBottom: 12 }}>{r.message}</p>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {r.status === "open" && (
+                        <button onClick={() => handleUpdateReportStatus(r.id, "resolved")} disabled={updatingReport === r.id}
+                          style={{ padding: "5px 12px", borderRadius: 8, border: "1.5px solid #c8e6c9", background: "#E8F5E9", color: "#2E7D32", fontSize: 11, cursor: "pointer", fontWeight: 700, fontFamily: "inherit" }}>
+                          ✅ Marquer résolu
+                        </button>
+                      )}
+                      {r.status !== "archived" && (
+                        <button onClick={() => handleUpdateReportStatus(r.id, "archived")} disabled={updatingReport === r.id}
+                          style={{ padding: "5px 12px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--hover-bg)", color: "var(--text-muted)", fontSize: 11, cursor: "pointer", fontWeight: 600, fontFamily: "inherit" }}>
+                          📦 Archiver
+                        </button>
+                      )}
+                      <button onClick={() => setEmailModal({ userId: r.user_id, userEmail: r.user_email, userName: r.user_email })}
+                        style={{ padding: "5px 12px", borderRadius: 8, border: "1.5px solid #BBDEFB", background: "#E3F2FD", color: "#1565C0", fontSize: 11, cursor: "pointer", fontWeight: 700, fontFamily: "inherit" }}>
+                        ✉️ Répondre par email
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
+}
+
+// ─── TEMPLATE PDF UNIFIÉ ─────────────────────────────────────
+function buildPDF({ title, subtitle, docType, meta = [], summaryItems = [], sections = [], printAuto = true }) {
+  const now = new Date().toLocaleString('fr-FR');
+  const dateOnly = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
+
+  const metaHTML = meta.map(m => `
+    <div class="meta-item">
+      <div>${m.label}</div>
+      <div class="meta-value">${m.value}</div>
+    </div>`).join('');
+
+  const summaryHTML = summaryItems.map(s => `
+    <div class="summary-item" style="${s.accent ? `border-top: 3px solid ${s.accent}` : ''}">
+      <div class="summary-label">${s.label}</div>
+      <div class="summary-value" style="${s.color ? `color:${s.color}` : ''}">${s.value}</div>
+      ${s.sub ? `<div class="summary-sub">${s.sub}</div>` : ''}
+    </div>`).join('');
+
+  const sectionsHTML = sections.map(s => `
+    <div class="section">
+      <div class="section-title">${s.title}</div>
+      ${s.content}
+    </div>`).join('');
+
+  const html = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>SplitLy — ${title}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', Arial, sans-serif; color: #1a1a1a; background: #fff; }
+    .header { background: linear-gradient(135deg, #0F0F0F 0%, #1a1a2e 100%); color: #fff; padding: 36px 40px 28px; }
+    .header-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+    .logo { font-size: 28px; font-weight: 800; letter-spacing: -1px; }
+    .doc-type { font-size: 11px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: rgba(255,255,255,0.5); margin-bottom: 6px; }
+    .event-name { font-size: 22px; font-weight: 700; }
+    .header-sub { font-size: 13px; color: rgba(255,255,255,0.6); margin-top: 4px; }
+    .header-meta { display: flex; gap: 24px; flex-wrap: wrap; }
+    .meta-item { font-size: 12px; color: rgba(255,255,255,0.6); }
+    .meta-value { font-size: 14px; font-weight: 600; color: #fff; margin-top: 2px; }
+    .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0; border-bottom: 2px solid #f0f0f0; }
+    .summary-item { padding: 20px 24px; border-right: 1px solid #f0f0f0; }
+    .summary-item:last-child { border-right: none; }
+    .summary-label { font-size: 10px; font-weight: 700; color: #aaa; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+    .summary-value { font-size: 20px; font-weight: 800; color: #0F0F0F; }
+    .summary-sub { font-size: 11px; color: #aaa; margin-top: 3px; }
+    .section { padding: 28px 40px; border-bottom: 1px solid #f5f5f5; }
+    .section-title { font-size: 13px; font-weight: 700; color: #0F0F0F; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+    .section-title::before { content: ''; display: inline-block; width: 4px; height: 16px; background: #0F0F0F; border-radius: 2px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    thead tr { background: #0F0F0F; color: #fff; }
+    thead th { padding: 10px 12px; text-align: left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; }
+    tbody tr:nth-child(even) { background: #f9f9f9; }
+    tfoot tr { background: #f0f0f0; font-weight: 700; }
+    tfoot td { padding: 10px 12px; }
+    .cat-bar { margin-bottom: 10px; }
+    .cat-bar-label { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; font-size: 12px; }
+    .cat-bar-track { background: #eee; height: 6px; border-radius: 3px; overflow: hidden; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+    .info-box { background: #FFF8E1; border: 1px solid #FFE082; border-radius: 8px; padding: 12px 16px; font-size: 13px; color: #E65100; margin-bottom: 16px; }
+    .footer { padding: 20px 40px; background: #f9f9f9; display: flex; justify-content: space-between; align-items: center; border-top: 2px solid #f0f0f0; }
+    .footer-logo { font-size: 15px; font-weight: 800; color: #0F0F0F; }
+    .footer-text { font-size: 10px; color: #aaa; text-align: right; line-height: 1.6; }
+    @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-top">
+      <div>
+        <div class="doc-type">${docType}</div>
+        <div class="event-name">${title}</div>
+        ${subtitle ? `<div class="header-sub">${subtitle}</div>` : ''}
+      </div>
+      <div class="logo">SplitLy</div>
+    </div>
+    <div class="header-meta">${metaHTML}</div>
+  </div>
+  ${summaryItems.length > 0 ? `<div class="summary">${summaryHTML}</div>` : ''}
+  ${sectionsHTML}
+  <div class="footer">
+    <div>
+      <div class="footer-logo">SplitLy</div>
+      <div style="font-size:10px;color:#aaa;margin-top:2px">Gestion de dépenses partagées · splitmeapp.com</div>
+    </div>
+    <div class="footer-text">
+      <div>Document généré le ${now}</div>
+      <div>Document non contractuel — Référence au ${dateOnly}</div>
+    </div>
+  </div>
+  ${printAuto ? '<script>window.onload = () => setTimeout(() => window.print(), 600);</script>' : ''}
+</body>
+</html>`;
+
+  const w = window.open('', '_blank');
+  if (w) { w.document.write(html); w.document.close(); }
 }
 
 // ─── EXPORT PDF COTISATIONS ───────────────────────────────────
 function exportCotisationsPDF(ev, cotisations) {
   const sym = currencySymbol(ev.currency);
-  const fmt2 = n => `${Number(n || 0).toFixed(2)} ${sym}`;
+  const fmt2 = n => Number(n || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ' + sym;
   const totalCollecte = cotisations.filter(c => c.statut === "paye").reduce((s, c) => s + c.montant, 0);
   const totalNature = cotisations.filter(c => c.forme === "nature").reduce((s, c) => s + c.montant, 0);
   const totalEspeces = cotisations.filter(c => c.forme === "especes" && c.statut === "paye").reduce((s, c) => s + c.montant, 0);
-  const nbCotisants = new Set(cotisations.filter(c => c.statut === "paye").map(c => c.participant_name)).size;
   const participants = (ev.event_participants || []).map(p => p.name);
   const cotisants = new Set(cotisations.filter(c => c.statut === "paye").map(c => c.participant_name));
   const nonCotisants = participants.filter(p => !cotisants.has(p));
 
-  const rows = cotisations.map(c => `
-    <tr style="border-bottom:1px solid #f0f0f0">
-      <td style="padding:8px 12px;font-weight:600">${c.participant_name}</td>
-      <td style="padding:8px 12px;text-align:center">
-        <span style="background:${c.forme === "nature" ? "#E8F5E9" : "#E3F2FD"};color:${c.forme === "nature" ? "#2E7D32" : "#1565C0"};padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">
-          ${c.forme === "nature" ? "🌿 Nature" : "💵 Espèces"}
-        </span>
-      </td>
-      <td style="padding:8px 12px;text-align:center">
-        <span style="background:${c.statut === "paye" ? "#E8F5E9" : c.statut === "partiel" ? "#FFF8E1" : "#FFEBEE"};color:${c.statut === "paye" ? "#2E7D32" : c.statut === "partiel" ? "#F57F17" : "#C62828"};padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">
-          ${c.statut === "paye" ? "✓ Payé" : c.statut === "partiel" ? "~ Partiel" : "✗ Impayé"}
-        </span>
-      </td>
-      <td style="padding:8px 12px">${c.description || "—"}</td>
-      <td style="padding:8px 12px;text-align:right;font-weight:700">${fmt2(c.montant)}</td>
-    </tr>`).join("");
+  const rows = cotisations.map((c, i) => `
+    <tr style="background:${i % 2 === 0 ? '#fff' : '#f9f9f9'}">
+      <td style="padding:9px 12px;font-weight:600">${c.participant_name}</td>
+      <td style="padding:9px 12px"><span class="badge" style="background:${c.forme === "nature" ? "#E8F5E9" : "#E3F2FD"};color:${c.forme === "nature" ? "#2E7D32" : "#1565C0"}">${c.forme === "nature" ? "🌿 Nature" : "💵 Espèces"}</span></td>
+      <td style="padding:9px 12px"><span class="badge" style="background:${c.statut === "paye" ? "#E8F5E9" : c.statut === "partiel" ? "#FFF8E1" : "#FFEBEE"};color:${c.statut === "paye" ? "#2E7D32" : c.statut === "partiel" ? "#F57F17" : "#C62828"}">${c.statut === "paye" ? "✓ Payé" : c.statut === "partiel" ? "~ Partiel" : "✗ Impayé"}</span></td>
+      <td style="padding:9px 12px;color:#888;font-size:11px">${c.description || "—"}</td>
+      <td style="padding:9px 12px;text-align:right;font-weight:700">${fmt2(c.montant)}</td>
+    </tr>`).join('');
 
-  const html = `
-    <html><head><meta charset="utf-8">
-    <style>body{font-family:Arial,sans-serif;margin:0;padding:0;color:#333}table{width:100%;border-collapse:collapse}th{background:#f5f5f5;padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#888}@media print{body{margin:0}}</style>
-    </head><body>
-    <div style="background:linear-gradient(135deg,#0F0F0F,#1a1a2e);padding:28px 32px;color:#fff">
-      <div style="font-size:22px;font-weight:700;margin-bottom:4px">SplitLy — Bilan Cotisations</div>
-      <div style="font-size:13px;color:rgba(255,255,255,0.6)">🏦 ${ev.name} · ${ev.date} · ${sym}</div>
-    </div>
-    <div style="padding:24px">
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:24px">
-        <div style="background:#E8F5E9;border-radius:10px;padding:14px;border-left:4px solid #2E7D32">
-          <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Total collecté</div>
-          <div style="font-size:20px;font-weight:700;color:#2E7D32">${fmt2(totalCollecte)}</div>
-        </div>
-        <div style="background:#E3F2FD;border-radius:10px;padding:14px;border-left:4px solid #1565C0">
-          <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">En espèces</div>
-          <div style="font-size:20px;font-weight:700;color:#1565C0">${fmt2(totalEspeces)}</div>
-        </div>
-        <div style="background:#E8F5E9;border-radius:10px;padding:14px;border-left:4px solid #6A1B9A">
-          <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">En nature</div>
-          <div style="font-size:20px;font-weight:700;color:#6A1B9A">${fmt2(totalNature)}</div>
-        </div>
-        <div style="background:#f5f5f5;border-radius:10px;padding:14px;border-left:4px solid #0F0F0F">
-          <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Cotisants</div>
-          <div style="font-size:20px;font-weight:700">${nbCotisants} / ${participants.length}</div>
-        </div>
-      </div>
-      ${ev.cotisation_cible > 0 ? `<div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:10px;padding:12px 16px;margin-bottom:20px;font-size:13px">🎯 Cotisation cible : <strong>${fmt2(ev.cotisation_cible)}/participant</strong> · Total cible : <strong>${fmt2(ev.cotisation_cible * participants.length)}</strong> · Progression : <strong>${((totalCollecte / (ev.cotisation_cible * participants.length)) * 100).toFixed(0)}%</strong></div>` : ""}
-      <table style="margin-bottom:20px">
-        <thead><tr><th>Participant</th><th>Forme</th><th>Statut</th><th>Description</th><th style="text-align:right">Montant</th></tr></thead>
-        <tbody>${rows}</tbody>
-        <tfoot><tr style="background:#f5f5f5;font-weight:700"><td colspan="4" style="padding:10px 12px">TOTAL COLLECTÉ</td><td style="padding:10px 12px;text-align:right;color:#2E7D32">${fmt2(totalCollecte)}</td></tr></tfoot>
-      </table>
-      ${nonCotisants.length > 0 ? `<div style="background:#FFEBEE;border:1px solid #FFCDD2;border-radius:10px;padding:12px 16px;font-size:13px;color:#C62828">⚠️ Participants sans cotisation (${nonCotisants.length}) : ${nonCotisants.join(", ")}</div>` : `<div style="background:#E8F5E9;border:1px solid #C8E6C9;border-radius:10px;padding:12px 16px;font-size:13px;color:#2E7D32">✓ Tous les participants ont cotisé.</div>`}
-      <div style="text-align:center;font-size:11px;color:#aaa;border-top:1px solid #eee;padding-top:16px;margin-top:20px">Généré par SplitLy — splitmeapp.com · ${new Date().toLocaleDateString("fr-FR")}</div>
-    </div></body></html>`;
+  const catBars = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div class="cat-bar"><div class="cat-bar-label"><span>💵 Espèces</span><strong>${fmt2(totalEspeces)}</strong></div><div class="cat-bar-track"><div style="background:#1565C0;height:6px;width:${totalCollecte > 0 ? (totalEspeces / totalCollecte) * 100 : 0}%;border-radius:3px"></div></div></div>
+      <div class="cat-bar"><div class="cat-bar-label"><span>🌿 Nature</span><strong>${fmt2(totalNature)}</strong></div><div class="cat-bar-track"><div style="background:#2E7D32;height:6px;width:${totalCollecte > 0 ? (totalNature / totalCollecte) * 100 : 0}%;border-radius:3px"></div></div></div>
+    </div>`;
 
-  const w = window.open("", "_blank");
-  if (w) { w.document.write(html); w.document.close(); }
+  buildPDF({
+    title: ev.name,
+    subtitle: "Bilan des cotisations",
+    docType: "Rapport Cotisations · Événement Budget",
+    meta: [
+      { label: "Date de l'événement", value: ev.date },
+      { label: "Participants", value: `${participants.length} personne${participants.length > 1 ? 's' : ''}` },
+      { label: "Devise", value: sym },
+      { label: "Cotisation cible", value: ev.cotisation_cible > 0 ? fmt2(ev.cotisation_cible) + '/p.' : 'Libre' },
+    ],
+    summaryItems: [
+      { label: "Total collecté", value: fmt2(totalCollecte), sub: `${cotisants.size} cotisant(s)`, accent: "#2E7D32", color: "#2E7D32" },
+      { label: "En espèces", value: fmt2(totalEspeces), sub: "virements + cash", accent: "#1565C0" },
+      { label: "En nature", value: fmt2(totalNature), sub: "valorisation", accent: "#6A1B9A" },
+      { label: "Taux collecte", value: ev.cotisation_cible > 0 ? `${((totalCollecte / (ev.cotisation_cible * participants.length)) * 100).toFixed(0)}%` : `${cotisants.size}/${participants.length}`, sub: ev.cotisation_cible > 0 ? `objectif ${fmt2(ev.cotisation_cible * participants.length)}` : "participants" },
+    ],
+    sections: [
+      { title: "Répartition par forme", content: catBars },
+      {
+        title: `Détail des cotisations (${cotisations.length})`,
+        content: `<table>
+          <thead><tr><th>Participant</th><th>Forme</th><th>Statut</th><th>Description</th><th style="text-align:right">Montant</th></tr></thead>
+          <tbody>${rows}</tbody>
+          <tfoot><tr><td colspan="4">TOTAL COLLECTÉ</td><td style="text-align:right;color:#2E7D32">${fmt2(totalCollecte)}</td></tr></tfoot>
+        </table>`
+      },
+      nonCotisants.length > 0
+        ? { title: "Participants sans cotisation", content: `<div style="background:#FFEBEE;border:1px solid #FFCDD2;border-radius:8px;padding:12px 16px;color:#C62828;font-size:13px">⚠️ ${nonCotisants.length} participant(s) n'ont pas encore cotisé : <strong>${nonCotisants.join(', ')}</strong></div>` }
+        : { title: "Statut général", content: `<div style="background:#E8F5E9;border:1px solid #C8E6C9;border-radius:8px;padding:12px 16px;color:#2E7D32;font-size:13px">✓ Tous les participants ont cotisé.</div>` }
+    ],
+  });
 }
-
 // ─── CONTRIBUTIONS PAGE (fusion Balance + Cotisations) ────────
 function ContributionsPage({ events, expenses, contributions, user, reload, isMobile, addToast, t }) {
   const [filterEvent, setFilterEvent] = useState(events[0]?.id || "");
@@ -5437,7 +5703,7 @@ function AppInner() {
                      pendingActions={pendingActions} user={user} reload={loadAll} isMobile={isMobile} addToast={addToast} t={t}
                      onMarkAll={async () => { await markAllNotificationsRead(user.id); await loadAll(); addToast(t("notif_mark_all"), "info"); }}
                      onDismiss={async (id) => { await deleteNotification(id); await loadAll(); }} />,
-    settings:      <SettingsPage user={user} onSignOut={handleSignOut} isMobile={isMobile} addToast={addToast} t={t} />,
+    settings:      <SettingsPage user={user} onSignOut={handleSignOut} isMobile={isMobile} addToast={addToast} t={t} events={events} />,
   };
 
   return (
