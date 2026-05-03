@@ -723,9 +723,10 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
     // S'abonner aux pending_actions — notifier l'invité si sa demande est traitée
     const pendingCh = supabase
       .channel(`guest-pending-${guestEmail}`)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "pending_actions",
-        filter: `guest_email=eq.${guestEmail}` },
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "pending_actions" },
         (payload) => {
+          // Filtrer côté client sur l'email de l'invité
+          if (payload.new?.guest_email !== guestEmail) return;
           if (payload.new?.status === "approved") {
             addToast("✅ Votre demande a été approuvée par l'admin !", "success");
             silentReload();
@@ -736,13 +737,16 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
       .subscribe();
 
     // S'abonner aux changements d'invitations (droits modifiés par l'admin)
+    // Note: pas de filtre server-side car l'invité n'est pas auth Supabase → filtre côté client
     const invitCh = supabase
       .channel(`guest-invitations-${guestEmail}`)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "invitations",
-        filter: `email=eq.${guestEmail}` },
-        () => {
-          silentReload();
-          addToast("🔐 Vos droits ont été mis à jour.", "info");
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "invitations" },
+        (payload) => {
+          // Filtrer côté client sur l'email de l'invité
+          if (payload.new?.email === guestEmail) {
+            silentReload();
+            addToast("🔐 Vos droits ont été mis à jour.", "info");
+          }
         })
       .subscribe();
 
@@ -4932,7 +4936,10 @@ function NotificationsPage({ notifications, events, expenses, pendingActions, us
     const currentPerms = normalizePerms(existing.data || []);
     const newPerms = [...new Set([...currentPerms, ...selectedPerms])];
     await updateInvitationPermissions(action.event_id, action.guest_email, newPerms);
-    await rejectPendingAction(action.id, user.id); // ferme la demande
+    // Marquer comme APPROUVÉE (pas rejetée) — sinon l'invité reçoit "refusée"
+    await supabase.from('pending_actions')
+      .update({ status: 'approved', resolved_at: new Date().toISOString(), resolved_by: user.id })
+      .eq('id', action.id);
     setPartialPermsModal(null);
     if (selectedPerms.length === 0) {
       addToast(`Aucun droit accordé à ${action.guest_email} — accès lecture seule conservé.`, "info");
