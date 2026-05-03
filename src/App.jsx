@@ -763,11 +763,40 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
 
   const submitAction = async (actionType, actionData, eventId) => {
     setSaving(true);
-    await submitPendingAction({ eventId, guestEmail, actionType, actionData });
+    const hasPerm = can(eventId, actionType === "add_expense" ? "add_expense"
+      : actionType === "modify_expense" ? "edit_expense"
+      : actionType === "add_cotisation" ? "add_cotisation"
+      : actionType === "edit_cotisation" ? "edit_cotisation"
+      : actionType === "add_participant" ? "add_participant"
+      : null);
+
+    if (hasPerm) {
+      // Action directe — exécuter immédiatement
+      try {
+        if (actionType === "add_expense") {
+          await createExpense({ eventId: actionData.eventId, category: actionData.category, sub: actionData.sub, detail: actionData.detail, qty: actionData.qty, unit: actionData.unit, paidBy: actionData.paidBy, included: actionData.included, comment: actionData.comment || null }, null);
+        } else if (actionType === "modify_expense" && actionData.expense_id) {
+          await updateExpense(actionData.expense_id, { category: actionData.category, sub_category: actionData.sub, detail: actionData.detail, qty: Number(actionData.qty), unit_price: Number(actionData.unit), paid_by: actionData.paidBy, included: actionData.included, comment: actionData.comment || null }, null, null);
+        } else if (actionType === "add_cotisation") {
+          await createCotisation({ event_id: eventId, participant_name: actionData.participant_name, montant: Number(actionData.montant), forme: actionData.forme || "especes", statut: Number(actionData.montant) > 0 ? "paye" : "impaye", description: actionData.description || null });
+        } else if (actionType === "edit_cotisation" && actionData.cotisation_id) {
+          await updateCotisation(actionData.cotisation_id, { montant: Number(actionData.montant), forme: actionData.forme, statut: Number(actionData.montant) > 0 ? "paye" : "impaye", description: actionData.description || null });
+        } else if (actionType === "add_participant") {
+          await addParticipant(eventId, actionData.name);
+        }
+        addToast("✅ Action enregistrée.", "success");
+      } catch (e) {
+        addToast("Erreur : " + (e.message || "action échouée"), "error");
+      }
+    } else {
+      // Pas de droit → soumettre à l'admin
+      await submitPendingAction({ eventId, guestEmail, actionType, actionData });
+      addToast("📤 Demande envoyée à l'admin — vous serez notifié dès approbation.", "info");
+    }
+
     setSaving(false);
     setShowAddExpense(false);
     setEditingExpense(null);
-    addToast("Demande envoyée à l'admin — vous serez notifié dès approbation.", "info");
     await silentReload();
   };
 
@@ -1307,23 +1336,20 @@ function GuestCotisationsView({ ev, cotisations, sym, participants, can, filterE
   const handleAddCotisation = (participantName) => {
     const montant = getMontant();
     if (montant <= 0) { addToast("Montant requis.", "warning"); return; }
-    const data = { participant_name: participantName || formParticipant, montant, forme: formForme, statut: montant > 0 ? "paye" : "impaye", description: formDesc, event_id: filterEventId };
-    if (can(filterEventId, "add_cotisation")) {
-      submitAction("add_cotisation", data, filterEventId);
-    } else {
-      submitAction("add_cotisation", { ...data, needs_approval: true }, filterEventId);
-      addToast("Demande envoyée à l'admin pour approbation.", "info");
+    // Bloquer si participant déjà coté
+    const dejaCoté = cotisations.some(c => c.participant_name === (participantName || formParticipant));
+    if (dejaCoté) {
+      addToast("Ce participant a déjà une cotisation. Utilisez le bouton ✏️ Modifier.", "warning");
+      return;
     }
+    const data = { participant_name: participantName || formParticipant, montant, forme: formForme, statut: montant > 0 ? "paye" : "impaye", description: formDesc, event_id: filterEventId };
+    submitAction("add_cotisation", data, filterEventId);
     setShowForm(false);
     setFormParticipant(""); setFormMontant(""); setFormDesc("");
   };
 
   const handleEditCotisation = (cot) => {
-    if (can(filterEventId, "edit_cotisation")) {
-      submitAction("edit_cotisation", { cotisation_id: cot.id, montant: cot.montant, forme: cot.forme, description: cot.description }, filterEventId);
-    } else {
-      addToast("Vous n'avez pas le droit de modifier les cotisations. Contactez l'admin.", "warning");
-    }
+    submitAction("edit_cotisation", { cotisation_id: cot.id, montant: cot.montant, forme: cot.forme, description: cot.description }, filterEventId);
   };
 
   const handleDeleteCotisation = (cot) => {
@@ -3568,13 +3594,22 @@ function Balance({ events, expenses, contributions, user, reload, isMobile, addT
 
       const content = `CHARGES - ${ev.name}\n${toCSV(expRows)}\n\n\nSOLDES - ${ev.name}\n${toCSV(balRows)}`;
       const blob = new Blob(["\uFEFF" + content], { type: "text/csv;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `SplitLy_${ev.name.replace(/\s+/g, "_")}_${ev.date}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-      addToast("Export CSV téléchargé !", "success");
+      const fileName = `SplitLy_${ev.name.replace(/\s+/g, "_")}_${ev.date}.csv`;
+
+      // Fallback Share API pour iOS Safari (a.download ne fonctionne pas)
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [new File([blob], fileName, { type: "text/csv" })] })) {
+        const file = new File([blob], fileName, { type: "text/csv" });
+        await navigator.share({ files: [file], title: `Export SplitLy — ${ev.name}` });
+        addToast("Export CSV partagé !", "success");
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileName;
+        a.click();
+        URL.revokeObjectURL(url);
+        addToast("Export CSV téléchargé !", "success");
+      }
     } catch (e) {
       addToast("Erreur lors de l'export.", "error");
     }
@@ -3981,13 +4016,19 @@ function Analytics({ events, expenses, contributions, isMobile, t, defaultTab })
       ══════════════════════════════════════════════════════ */}
       {tab === "all" && (
         <div>
-          {/* KPIs globaux */}
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+          {/* KPIs globaux — séparés Split et Budget */}
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 12, marginBottom: splitEvents.length > 0 && budgetEvents.length > 0 ? 8 : 20 }}>
             <StatCard label="Événements" value={events.length} sub={`${splitEvents.length} Split · ${budgetEvents.length} Budget`} accent="#0F0F0F" />
             <StatCard label="Charges totales" value={expenses.length} sub="toutes catégories" accent="#1565C0" />
             <StatCard label="Participants" value={allParticipants.length} sub="profils uniques" accent="#6A1B9A" />
             <StatCard label="Budget cumulé" value={fmt(allTotal)} sub="toutes devises" accent="#2E7D32" />
           </div>
+          {/* Bandeau informatif si mix Split + Budget */}
+          {splitEvents.length > 0 && budgetEvents.length > 0 && (
+            <div style={{ background: "#E3F2FD", border: "1px solid #BBDEFB", borderRadius: 10, padding: "10px 16px", marginBottom: 20, fontSize: 12, color: "#1565C0" }}>
+              ℹ️ Le budget cumulé inclut les charges Split ({splitEvents.length} événement{splitEvents.length > 1 ? "s" : ""}) et les dépenses Budget ({budgetEvents.length} événement{budgetEvents.length > 1 ? "s" : ""}). Les cotisations Budget ne sont pas incluses dans ce total.
+            </div>
+          )}
 
           {/* Tableau synthèse par événement */}
           <div style={{ background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border)", overflow: "hidden", marginBottom: 20 }}>
@@ -4893,7 +4934,12 @@ function NotificationsPage({ notifications, events, expenses, pendingActions, us
     await updateInvitationPermissions(action.event_id, action.guest_email, newPerms);
     await rejectPendingAction(action.id, user.id); // ferme la demande
     setPartialPermsModal(null);
-    addToast(`Droits accordés à ${action.guest_email}.`, "success");
+    if (selectedPerms.length === 0) {
+      addToast(`Aucun droit accordé à ${action.guest_email} — accès lecture seule conservé.`, "info");
+    } else {
+      const labels = selectedPerms.map(p => ALL_PERMISSIONS[p]?.label || p).join(", ");
+      addToast(`Droits accordés à ${action.guest_email} : ${labels}.`, "success");
+    }
     await reload();
     setSaving(null);
   };
@@ -5001,7 +5047,7 @@ function NotificationsPage({ notifications, events, expenses, pendingActions, us
                   <div style={{ display: "flex", gap: 8 }}>
                     <button onClick={() => handleApprove(action)} disabled={saving === action.id}
                       style={{ ...S.btnDark, background: "#2E7D32", padding: "7px 16px", fontSize: 12, flex: 1, justifyContent: "center", display: "flex" }}>
-                      {saving === action.id ? "..." : "✓ Accorder les droits"}
+                      {saving === action.id ? "..." : "🔐 Gérer les droits →"}
                     </button>
                     <button onClick={() => handleReject(action)} disabled={saving === action.id}
                       style={{ padding: "7px 16px", borderRadius: 9, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 12, cursor: "pointer", fontWeight: 700, flex: 1, fontFamily: "inherit" }}>
