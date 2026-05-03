@@ -339,14 +339,14 @@ function Modal({ title, onClose, children, size = 500 }) {
   );
 }
 
-function ConfirmModal({ message, warnings = [], onConfirm, onCancel }) {
+function ConfirmModal({ message, warnings = [], onConfirm, onCancel, confirmOnly = false }) {
   return (
-    <Modal title="Confirmer l'action" onClose={onCancel}>
-      <p style={{ fontSize: 14, color: "#444", marginBottom: 14, lineHeight: 1.5 }}>{message}</p>
-      {warnings.map((w, i) => <div key={i} style={{ background: "#FFF8E1", border: "1px solid #F57F17", borderRadius: 8, padding: "9px 14px", fontSize: 12, color: "#E65100", marginBottom: 8 }}>⚠️ {w}</div>)}
+    <Modal title={confirmOnly ? "⚠️ Action impossible" : "Confirmer l'action"} onClose={onCancel}>
+      <p style={{ fontSize: 14, color: "var(--text)", marginBottom: 14, lineHeight: 1.5 }}>{message}</p>
+      {warnings.map((w, i) => <div key={i} style={{ background: confirmOnly ? "#FFEBEE" : "#FFF8E1", border: `1px solid ${confirmOnly ? "#FFCDD2" : "#F57F17"}`, borderRadius: 8, padding: "9px 14px", fontSize: 12, color: confirmOnly ? "#C62828" : "#E65100", marginBottom: 8 }}>⚠️ {w}</div>)}
       <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
-        <button onClick={onConfirm} style={{ ...S.btnDark, flex: 1, justifyContent: "center", display: "flex" }}>Confirmer</button>
-        <button onClick={onCancel} style={{ ...S.btnGhost, flex: 1, justifyContent: "center", display: "flex" }}>Annuler</button>
+        {!confirmOnly && <button onClick={onConfirm} style={{ ...S.btnDark, flex: 1, justifyContent: "center", display: "flex" }}>Confirmer</button>}
+        <button onClick={onCancel} style={{ ...S.btnGhost, flex: 1, justifyContent: "center", display: "flex" }}>{confirmOnly ? "Fermer" : "Annuler"}</button>
       </div>
     </Modal>
   );
@@ -798,25 +798,21 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
       : null);
 
     if (hasPerm) {
-      // Action directe — exécuter immédiatement
+      // Action directe via API serverless (bypasse les RLS pour les invités non-auth)
       try {
-        if (actionType === "add_expense") {
-          await createExpense({ eventId: actionData.eventId, category: actionData.category, sub: actionData.sub, detail: actionData.detail, qty: actionData.qty, unit: actionData.unit, paidBy: actionData.paidBy, included: actionData.included, comment: actionData.comment || null }, null);
-        } else if (actionType === "modify_expense" && actionData.expense_id) {
-          await updateExpense(actionData.expense_id, { category: actionData.category, sub_category: actionData.sub, detail: actionData.detail, qty: Number(actionData.qty), unit_price: Number(actionData.unit), paid_by: actionData.paidBy, included: actionData.included, comment: actionData.comment || null }, null, null);
-        } else if (actionType === "add_cotisation") {
-          await createCotisation({ event_id: eventId, participant_name: actionData.participant_name, montant: Number(actionData.montant), forme: actionData.forme || "especes", statut: Number(actionData.montant) > 0 ? "paye" : "impaye", description: actionData.description || null });
-        } else if (actionType === "edit_cotisation" && actionData.cotisation_id) {
-          await updateCotisation(actionData.cotisation_id, { montant: Number(actionData.montant), forme: actionData.forme, statut: Number(actionData.montant) > 0 ? "paye" : "impaye", description: actionData.description || null });
-        } else if (actionType === "add_participant") {
-          await addParticipant(eventId, actionData.name);
-        }
+        const res = await fetch("/api/guest-actions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: actionType, guestEmail, eventId, data: actionData }),
+        });
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error || "Erreur serveur");
         addToast("✅ Action enregistrée.", "success");
       } catch (e) {
         addToast("Erreur : " + (e.message || "action échouée"), "error");
       }
     } else {
-      // Pas de droit → soumettre à l'admin
+      // Pas de droit → soumettre à l'admin pour approbation
       await submitPendingAction({ eventId, guestEmail, actionType, actionData });
       addToast("📤 Demande envoyée à l'admin — vous serez notifié dès approbation.", "info");
     }
@@ -2527,8 +2523,27 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
   const [selectedEvent, setSelectedEvent] = useState(null); // null = liste, ev = détail
 
   const handleRemoveParticipant = (ev, name) => {
+    const evExpenses = expenses.filter(e => e.event_id === ev.id);
+    const isPaidBy = evExpenses.some(e => e.paid_by === name && !e.is_unpaid);
+    if (isPaidBy) {
+      const count = evExpenses.filter(e => e.paid_by === name && !e.is_unpaid).length;
+      setConfirm({
+        message: `Impossible de retirer "${name}"`,
+        warnings: [
+          `${name} est responsable de ${count} charge(s) dans "${ev.name}".`,
+          `Modifiez d'abord ces charges (changez le payeur) avant de retirer ce participant.`
+        ],
+        onConfirm: null,
+        onCancel: () => setConfirm(null),
+        confirmOnly: true,
+      });
+      return;
+    }
     setConfirm({
-      message: `Retirer "${name}" de "${ev.name}" ? Les calculs seront recalculés.`,
+      message: `Retirer "${name}" de "${ev.name}" ?`,
+      warnings: evExpenses.some(e => (e.included || []).includes(name))
+        ? [`${name} est inclus dans des charges — sa part sera redistribuée entre les autres participants.`]
+        : [],
       onConfirm: async () => {
         await removeParticipant(ev.id, name);
         await reload();
