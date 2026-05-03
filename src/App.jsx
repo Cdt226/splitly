@@ -3025,7 +3025,7 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
   const [confirm, setConfirm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [unpaid, setUnpaid] = useState(false);
-  const empty = { eventId: defaultEventId || "", category: "", sub: "", detail: "", qty: 1, unit: "", paidBy: "", included: [], comment: "", acompteRecu: "" };
+  const empty = { eventId: defaultEventId || "", category: "", sub: "", detail: "", qty: 1, unit: "", paidBy: "", included: [], comment: "" };
   const [form, setForm] = useState(empty);
 
   const handleEventChange = (evId) => {
@@ -3244,7 +3244,7 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
           {/* Bandeau Budget */}
           {currentEvent?.event_type === "budget" && (
             <div style={{ background: "#FFF8E1", border: "1px solid #FFE082", borderRadius: 10, padding: "10px 14px", marginBottom: 14, fontSize: 12, color: "#F57F17" }}>
-              🏦 <strong>Événement Budget</strong> — Le "Responsable" est la personne qui effectue la dépense. Précisez l'acompte reçu de la caisse si applicable.
+              🏦 <strong>Événement Budget</strong> — Enregistrez les dépenses effectuées. Le responsable est la personne qui a effectué la dépense.
             </div>
           )}
 
@@ -3266,30 +3266,6 @@ function Expenses({ events, expenses, contributions, user, reload, isMobile, add
               {!unpaid && form.eventId && !form.paidBy && <div style={{ fontSize: 11, color: "#F57F17", marginTop: 4 }}>⚠️ Requis</div>}
             </div>
           </div>
-
-          {/* Acompte reçu — uniquement pour Budget */}
-          {currentEvent?.event_type === "budget" && (
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
-              <div>
-                <label style={S.label}>Acompte reçu de la caisse <span style={{ color: "#aaa", fontWeight: 400 }}>(optionnel)</span></label>
-                <input type="number" min="0" step="0.01" style={S.input} placeholder="Ex: 100"
-                  value={form.acompteRecu} onChange={e => setForm({ ...form, acompteRecu: e.target.value })} />
-                {form.acompteRecu && form.unit && form.qty && (
-                  <div style={{ fontSize: 11, marginTop: 4, fontWeight: 600,
-                    color: (Number(form.acompteRecu) - Number(form.qty) * Number(form.unit)) >= 0 ? "#F57F17" : "#C62828" }}>
-                    {(Number(form.acompteRecu) - Number(form.qty) * Number(form.unit)) >= 0
-                      ? `✓ Reste ${(Number(form.acompteRecu) - Number(form.qty) * Number(form.unit)).toFixed(2)} ${sym} à rendre à la caisse`
-                      : `⚠️ Dépassement de ${Math.abs(Number(form.acompteRecu) - Number(form.qty) * Number(form.unit)).toFixed(2)} ${sym} — caisse doit rembourser`}
-                  </div>
-                )}
-              </div>
-              <div style={{ display: "flex", alignItems: "center" }}>
-                <div style={{ background: "#f5f5f5", borderRadius: 10, padding: "12px 14px", fontSize: 12, color: "#888", width: "100%" }}>
-                  💡 Si aucun acompte n'a été reçu, laissez vide. La caisse devra rembourser intégralement ce responsable.
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* Toggle charge non réglée — masqué pour Budget */}
           {currentEvent?.event_type !== "budget" && (
@@ -3672,10 +3648,10 @@ function Balance({ events, expenses, contributions, user, reload, isMobile, addT
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
         {!hideHeader && <div>
           <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2 }}>
-            {ev?.event_type === "budget" ? "🏦 Caisse" : (t ? t("bal_title") : "Répartition")}
+            {ev?.event_type === "budget" ? "🏦 Budget" : (t ? t("bal_title") : "Répartition")}
           </h2>
           <p style={{ color: "var(--text-sub)", fontSize: 12 }}>
-            {ev?.event_type === "budget" ? "Soldes caisse et remboursements responsables" : (t ? t("bal_subtitle") : "Soldes calculés en temps réel")}
+            {ev?.event_type === "budget" ? "Les événements Budget n'ont pas de répartition — voir l'onglet Cotisations" : (t ? t("bal_subtitle") : "Soldes calculés en temps réel")}
           </p>
         </div>}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -3689,9 +3665,17 @@ function Balance({ events, expenses, contributions, user, reload, isMobile, addT
         </div>
       </div>
 
-      {/* ── Si événement Budget → vue Caisse (Phase 4c) ── */}
+      {/* ── Si événement Budget → pas de répartition, rediriger vers Cotisations ── */}
       {ev?.event_type === "budget" && (
-        <BudgetCaisseView ev={ev} expenses={expenses} isMobile={isMobile} addToast={addToast} t={t} />
+        <div style={{ background: "var(--bg-secondary)", borderRadius: 16, padding: 28, border: "1px solid var(--border)", textAlign: "center" }}>
+          <div style={{ fontSize: 32, marginBottom: 12 }}>🏦</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>
+            Pas de répartition pour les événements Budget
+          </div>
+          <div style={{ fontSize: 13, color: "var(--text-sub)", maxWidth: 420, margin: "0 auto", lineHeight: 1.6 }}>
+            Les événements Budget fonctionnent avec des cotisations. Consultez l'onglet <strong>Cotisations</strong> pour voir les participations et le suivi de la collecte.
+          </div>
+        </div>
       )}
 
       {/* ── Si événement Split → vue Répartition normale ── */}
@@ -3796,29 +3780,6 @@ function Balance({ events, expenses, contributions, user, reload, isMobile, addT
 }
 
 // ─── BUDGET CAISSE VIEW (placeholder Phase 4c) ───────────────
-function BudgetCaisseView({ ev, expenses, isMobile, addToast, t }) {
-  const evExp = expenses.filter(e => e.event_id === ev?.id);
-  const sym = currencySymbol(ev?.currency);
-  const totalDepenses = evExp.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
-
-  return (
-    <div>
-      <div style={{ background: "#FFF8E1", border: "1px solid #FFE082", borderRadius: 12, padding: "14px 18px", marginBottom: 20, display: "flex", alignItems: "center", gap: 12 }}>
-        <span style={{ fontSize: 20 }}>🏦</span>
-        <div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#F57F17" }}>Vue Caisse — en cours de développement</div>
-          <div style={{ fontSize: 12, color: "#E65100", marginTop: 2 }}>La gestion complète de la caisse sera disponible dans la prochaine mise à jour (Phase 4c).</div>
-        </div>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 12 }}>
-        <StatCard label="Total dépenses" value={fmt(totalDepenses, sym)} sub={`${evExp.length} charge(s)`} accent="#C62828" />
-        <StatCard label="Invités attendus" value={ev?.nombre_invites || "—"} sub="personnes" accent="#1565C0" />
-        <StatCard label="Cotisation cible" value={ev?.cotisation_cible > 0 ? fmt(ev.cotisation_cible, sym) : "Libre"} sub="par participant" accent="#2E7D32" />
-      </div>
-    </div>
-  );
-}
-
 // ─── HISTORIQUE DES VERSEMENTS ────────────────────────────────
 function PaymentHistory({ eventId, sym }) {
   const [payments, setPayments] = useState([]);
