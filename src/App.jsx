@@ -652,7 +652,15 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
     const { data: invitations } = await supabase
       .from('invitations').select('event_id, role, status, permissions').eq('email', guestEmail);
     if (!invitations || invitations.length === 0) return;
+
+    // Mettre à jour les permissions — c'est la partie critique pour le temps réel
+    const pMap = {};
+    invitations.forEach(i => { pMap[i.event_id] = i.permissions || []; });
+    setPermissionsMap(pMap);
+
     const eventIds = invitations.map(i => i.event_id);
+    eventIdsRef.current = eventIds;
+
     const { data: evData } = await supabase.from('events').select('*, event_participants(name)').in('id', eventIds);
     if (!evData) return;
     setEvents(evData);
