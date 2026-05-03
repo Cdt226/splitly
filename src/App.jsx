@@ -5348,8 +5348,10 @@ function SuperAdminPage({ user, isMobile, addToast }) {
   const load = async () => {
     setLoading(true);
     const { data, error } = await fetchAdminUsers();
-    if (error) { addToast("Erreur chargement : " + error.message, "error"); }
-    else setUsers(data || []);
+    if (error) {
+      const isTokenError = error.message?.toLowerCase().includes("token") || error.message?.toLowerCase().includes("jwt") || error.message?.toLowerCase().includes("unauthorized");
+      addToast(isTokenError ? "Session expirée — veuillez vous reconnecter." : "Erreur chargement : " + error.message, isTokenError ? "warning" : "error");
+    } else setUsers(data || []);
     // Load reports via supabase directly (service key not needed for reads with RLS bypassed via admin)
     try {
       const { data: rData } = await fetchReports();
@@ -6127,12 +6129,12 @@ function CotisationsPage({ events, expenses, user, reload, isMobile, addToast, t
     if (form.participant_name.length > 30) { addToast("Nom trop long (max 30 car.).", "warning"); return; }
     if (form.forme === "nature" && !natureForm.detail.trim()) { addToast("Précisez la nature de l'apport.", "warning"); return; }
 
-    // Vérifier doublon cotisation (sauf en édition)
+    // Bloquer la double cotisation — modifier la cotisation existante si déjà présente
     if (!editingCot) {
       const dejaExiste = cotisations.some(c => c.participant_name === form.participant_name);
       if (dejaExiste) {
-        const confirm = window.confirm(`${form.participant_name} a déjà une cotisation enregistrée. Voulez-vous en ajouter une supplémentaire ?`);
-        if (!confirm) return;
+        addToast(`${form.participant_name} a déjà une cotisation. Utilisez ✏️ Modifier pour la mettre à jour.`, "warning");
+        return;
       }
     }
 
@@ -6787,8 +6789,22 @@ function AppInner() {
         } catch {}
       }
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
-      setUser(s?.user || null);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, s) => {
+      if (event === "TOKEN_REFRESHED") return;
+      const u = s?.user || null;
+      setUser(u);
+      if (event === "SIGNED_OUT" || !u) {
+        setProfile(null);
+        setActiveRaw("dashboard");
+        return;
+      }
+      if (event === "SIGNED_IN") {
+        try {
+          const { data: prof } = await fetchProfile(u.id);
+          setProfile(prof || null);
+          if (prof?.user_role === "admin") setActiveRaw("superadmin");
+        } catch {}
+      }
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -6885,7 +6901,9 @@ function AppInner() {
 
   const handleSignOut = async () => {
     await signOut();
-    setUser(null); setGuestEmail(null); setEvents([]); setExpenses([]);
+    setUser(null); setProfile(null); setGuestEmail(null);
+    setActiveRaw("dashboard");
+    setEvents([]); setExpenses([]);
     setContributions({}); setHistory([]); setNotifications([]); setPendingActions([]);
   };
 
@@ -6960,11 +6978,11 @@ function AppInner() {
   };
 
   return (
-    <div style={{ display: "flex", height: "100vh", width: "100vw", maxWidth: "100vw", background: "var(--bg)", fontFamily: "'DM Sans', sans-serif", overflow: "hidden" }}>
+    <div style={{ display: "flex", height: "100vh", width: "100%", maxWidth: "100%", background: "var(--bg)", fontFamily: "'DM Sans', sans-serif", overflow: "hidden" }}>
       <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
       <style>{`
         *, *::before, *::after { box-sizing: border-box; }
-        html, body { overflow-x: hidden; max-width: 100vw; margin:0; padding:0; }
+        html, body { overflow-x: hidden; max-width: 100%; margin:0; padding:0; }
         table { table-layout: fixed; }
         @keyframes pageFadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         .page-transition { animation: pageFadeIn 0.15s ease; pointer-events: auto; }
