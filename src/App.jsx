@@ -6968,8 +6968,7 @@ function AppInner() {
       supabase.removeChannel(evCh);
       supabase.removeChannel(pendingCh);
     };
-    };
-  }, [user, events.length]);
+  }, [user?.id, events.length]);
 
   const handleSignOut = async () => {
     await signOut();
