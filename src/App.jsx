@@ -5141,23 +5141,25 @@ function SettingsPage({ user, onSignOut, isMobile, addToast, t, events }) {
     typeof Notification !== "undefined" && Notification.permission === "granted"
   );
   const [showReport, setShowReport] = useState(false);
-  const [reportForm, setReportForm] = useState({ category: "bug", message: "", eventId: "" });
+  const [reportCategory, setReportCategory] = useState("bug");
+  const [reportEventId, setReportEventId] = useState("");
+  const [reportMessage, setReportMessage] = useState("");
   const [sendingReport, setSendingReport] = useState(false);
 
   const handleSendReport = async () => {
-    if (!reportForm.message.trim()) { addToast("Décrivez le problème.", "warning"); return; }
+    if (!reportMessage.trim()) { addToast("Décrivez le problème.", "warning"); return; }
     setSendingReport(true);
     const { error } = await createReport({
       userId: user.id,
       userEmail: user.email,
-      category: reportForm.category,
-      message: reportForm.message,
-      eventId: reportForm.eventId || null,
+      category: reportCategory,
+      message: reportMessage,
+      eventId: reportEventId || null,
     });
     setSendingReport(false);
     if (error) { addToast("Erreur lors de l'envoi.", "error"); return; }
     setShowReport(false);
-    setReportForm({ category: "bug", message: "", eventId: "" });
+    setReportCategory("bug"); setReportEventId(""); setReportMessage("");
     addToast("✓ Signalement envoyé à l'équipe SplitLy.", "success");
   };
 
@@ -5245,7 +5247,7 @@ function SettingsPage({ user, onSignOut, isMobile, addToast, t, events }) {
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               <div>
                 <label style={S.label}>Catégorie</label>
-                <select style={S.input} value={reportForm.category} onChange={e => setReportForm({ ...reportForm, category: e.target.value })}>
+                <select style={S.input} value={reportCategory} onChange={e => setReportCategory(e.target.value)}>
                   <option value="bug">🐛 Bug technique</option>
                   <option value="data">📊 Problème de données</option>
                   <option value="access">🔐 Problème d'accès</option>
@@ -5256,7 +5258,7 @@ function SettingsPage({ user, onSignOut, isMobile, addToast, t, events }) {
               {events && events.length > 0 && (
                 <div>
                   <label style={S.label}>Événement concerné <span style={{ color: "#aaa", fontWeight: 400 }}>(optionnel)</span></label>
-                  <select style={S.input} value={reportForm.eventId} onChange={e => setReportForm({ ...reportForm, eventId: e.target.value })}>
+                  <select style={S.input} value={reportEventId} onChange={e => setReportEventId(e.target.value)}>
                     <option value="">Aucun événement spécifique</option>
                     {events.map(ev => <option key={ev.id} value={ev.id}>{ev.event_type === "budget" ? "🏦 " : "💸 "}{ev.name}</option>)}
                   </select>
@@ -5264,23 +5266,23 @@ function SettingsPage({ user, onSignOut, isMobile, addToast, t, events }) {
               )}
               <div>
                 <label style={S.label}>Description du problème <span style={{ color: "#C62828" }}>*</span></label>
-                <textarea style={{ ...S.input, minHeight: 100, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5, borderColor: reportForm.message.trim().length > 10 ? "#4CAF50" : reportForm.message.length > 0 ? "#FFB74D" : undefined, transition: "border-color 0.2s" }}
+                <textarea style={{ ...S.input, minHeight: 100, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5, borderColor: reportMessage.trim().length > 10 ? "#4CAF50" : reportMessage.length > 0 ? "#FFB74D" : undefined }}
                   placeholder="Décrivez le problème en détail : ce que vous faisiez, ce qui s'est passé, le résultat attendu..."
-                  value={reportForm.message}
-                  onChange={e => setReportForm({ ...reportForm, message: e.target.value })}
+                  value={reportMessage}
+                  onChange={e => setReportMessage(e.target.value)}
                   maxLength={1000} />
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 3 }}>
-                  {reportForm.message.trim().length > 0 && reportForm.message.trim().length < 10
+                  {reportMessage.trim().length > 0 && reportMessage.trim().length < 10
                     ? <div style={{ fontSize: 11, color: "#F57F17" }}>⚠️ Description trop courte (min. 10 car.)</div>
                     : <div />
                   }
-                  <div style={{ fontSize: 10, color: "var(--text-sub)" }}>{reportForm.message.length}/1000</div>
+                  <div style={{ fontSize: 10, color: "var(--text-sub)" }}>{reportMessage.length}/1000</div>
                 </div>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={handleSendReport}
-                  disabled={sendingReport || !reportForm.message.trim() || reportForm.message.trim().length < 10}
-                  style={{ ...S.btnDark, flex: 1, justifyContent: "center", display: "flex", opacity: (!reportForm.message.trim() || reportForm.message.trim().length < 10) ? 0.5 : 1 }}>
+                  disabled={sendingReport || !reportMessage.trim() || reportMessage.trim().length < 10}
+                  style={{ ...S.btnDark, flex: 1, justifyContent: "center", display: "flex", opacity: (!reportMessage.trim() || reportMessage.trim().length < 10) ? 0.5 : 1 }}>
                   {sendingReport ? "Envoi..." : "✓ Envoyer le signalement"}
                 </button>
                 <button onClick={() => setShowReport(false)} style={{ ...S.btnGhost, flex: 1, justifyContent: "center", display: "flex" }}>Annuler</button>
@@ -6846,6 +6848,15 @@ function AppInner() {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  // Charger le profil à chaque changement d'utilisateur (connexion / déconnexion)
+  useEffect(() => {
+    if (!user) { setProfile(null); setActiveRaw("dashboard"); return; }
+    fetchProfile(user.id).then(({ data: prof }) => {
+      setProfile(prof || null);
+      if (prof?.user_role === "admin") setActiveRaw("superadmin");
+    }).catch(() => {});
+  }, [user?.id]);
 
   const loadAll = useCallback(async () => {
     if (!user) return;
