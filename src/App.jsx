@@ -446,6 +446,7 @@ function AuthScreen({ onAuth, onGuestAuth, initialMode, onClose }) {
     if (!valid) { setError("Code incorrect ou expiré. Réessayez."); setLoading(false); return; }
     await supabase.from('invitations').update({ status: 'accepted' }).eq('email', form.email.trim()).eq('status', 'pending');
     onGuestAuth(form.email.trim());
+    // La session est mémorisée 30 jours — plus besoin de code au prochain accès
     setLoading(false);
   };
 
@@ -571,6 +572,9 @@ function AuthScreen({ onAuth, onGuestAuth, initialMode, onClose }) {
               style={{ ...S.btnDark, width: "100%", justifyContent: "center", display: "flex", opacity: (loading || !codeValid) ? 0.6 : 1 }}>
               {loading ? "Vérification..." : "Accéder →"}
             </button>
+            <div style={{ textAlign: "center", fontSize: 11, color: "#aaa", marginTop: 8 }}>
+              🔒 Votre session sera mémorisée 30 jours sur cet appareil
+            </div>
             <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
               <button onClick={() => { setMode("guest"); setError(""); setTouched({}); }} style={{ ...S.btnGhost, flex: 1, justifyContent: "center", display: "flex" }}>← Retour</button>
               <button onClick={async () => {
@@ -4566,7 +4570,14 @@ function Invite({ events, user, isMobile, addToast }) {
     for (const evId of selectedEvents) {
       const alreadyExists = invitations.find(i => i.email === email && i.event_id === evId);
       if (!alreadyExists) {
-        await sendInvitation({ eventId: evId, email, role: finalPerms.length > 0 ? "edit" : "read", invitedBy: user.id, permissions: finalPerms });
+        const ev = events.find(e => e.id === evId);
+        // Filtrer les permissions incompatibles avec le type d'événement
+        const compatiblePerms = finalPerms.filter(p => {
+          const pInfo = ALL_PERMISSIONS[p];
+          if (!pInfo) return false;
+          return ev?.event_type === "budget" ? pInfo.budget : pInfo.split;
+        });
+        await sendInvitation({ eventId: evId, email, role: compatiblePerms.length > 0 ? "edit" : "read", invitedBy: user.id, permissions: compatiblePerms });
       }
     }
     setEmail(""); setSelectedEvents([]); setPermissions([]);
@@ -4799,26 +4810,52 @@ function Invite({ events, user, isMobile, addToast }) {
           </div>
         </div>
 
-        {/* Permissions */}
+        {/* Permissions — filtrées selon le type des événements sélectionnés */}
         <div style={{ marginBottom: 16 }}>
           <label style={S.label}>Droits accordés <span style={{ color: "var(--text-sub)", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(lecture seule par défaut)</span></label>
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 8, marginTop: 8 }}>
-            {Object.entries(ALL_PERMISSIONS).map(([key, p]) => (
-              <label key={key} onClick={() => togglePerm(permissions, setPermissions, key)}
-                style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 10, border: `1.5px solid ${permissions.includes(key) ? p.color : "var(--border)"}`, background: permissions.includes(key) ? p.bg : "var(--bg-secondary)", cursor: "pointer", transition: "all 0.15s" }}>
-                <div style={{ width: 16, height: 16, borderRadius: 4, border: `2px solid ${permissions.includes(key) ? p.color : "#ccc"}`, background: permissions.includes(key) ? p.color : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  {permissions.includes(key) && <span style={{ color: "#fff", fontSize: 10 }}>✓</span>}
+          {(() => {
+            const selectedEvObjects = events.filter(e => selectedEvents.includes(e.id));
+            const hasSplit = selectedEvObjects.some(e => e.event_type !== "budget");
+            const hasBudget = selectedEvObjects.some(e => e.event_type === "budget");
+            const hasMixed = hasSplit && hasBudget;
+            // Filtrer : si mix → droits communs aux deux types. Si split seul → split. Si budget seul → budget
+            const availablePerms = Object.entries(ALL_PERMISSIONS).filter(([, p]) => {
+              if (hasMixed) return p.split && p.budget;
+              if (hasBudget) return p.budget;
+              return p.split; // split seul ou aucun sélectionné
+            });
+            return (
+              <>
+                {hasMixed && (
+                  <div style={{ background: "#E3F2FD", border: "1px solid #BBDEFB", borderRadius: 8, padding: "8px 12px", fontSize: 11, color: "#1565C0", marginBottom: 10, marginTop: 6 }}>
+                    ℹ️ Événements Split et Budget mélangés — seuls les droits communs sont disponibles. Les droits spécifiques Budget (cotisations) doivent être accordés séparément.
+                  </div>
+                )}
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 8, marginTop: 8 }}>
+                  {availablePerms.map(([key, p]) => (
+                    <label key={key} onClick={() => togglePerm(permissions, setPermissions, key)}
+                      style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 10, border: `1.5px solid ${permissions.includes(key) ? p.color : "var(--border)"}`, background: permissions.includes(key) ? p.bg : "var(--bg-secondary)", cursor: "pointer", transition: "all 0.15s" }}>
+                      <div style={{ width: 16, height: 16, borderRadius: 4, border: `2px solid ${permissions.includes(key) ? p.color : "#ccc"}`, background: permissions.includes(key) ? p.color : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                        {permissions.includes(key) && <span style={{ color: "#fff", fontSize: 10 }}>✓</span>}
+                      </div>
+                      <span style={{ fontSize: 11 }}>{p.icon}</span>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text)", flex: 1 }}>{p.label}</span>
+                    </label>
+                  ))}
                 </div>
-                <span style={{ fontSize: 11 }}>{p.icon}</span>
-                <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text)", flex: 1 }}>{p.label}</span>
-              </label>
-            ))}
-          </div>
-          {permissions.length === 0 && (
-            <div style={{ marginTop: 8, fontSize: 11, color: "#888", background: "#f5f5f5", borderRadius: 8, padding: "6px 12px", display: "inline-flex", alignItems: "center", gap: 6 }}>
-              👁 Aucun droit sélectionné = <strong>Lecture seule</strong>
-            </div>
-          )}
+                {permissions.length === 0 && (
+                  <div style={{ marginTop: 8, fontSize: 11, color: "#888", background: "#f5f5f5", borderRadius: 8, padding: "6px 12px", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    👁 Aucun droit sélectionné = <strong>Lecture seule</strong>
+                  </div>
+                )}
+                {selectedEvents.length === 0 && (
+                  <div style={{ marginTop: 8, fontSize: 11, color: "#aaa", background: "#f9f9f9", borderRadius: 8, padding: "6px 12px" }}>
+                    Sélectionnez d'abord un événement pour voir les droits disponibles.
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
 
         {/* Événements */}
@@ -6722,7 +6759,35 @@ function useTheme() {
 }
 
 // ─── APP RACINE ───────────────────────────────────────────────
-const GUEST_SESSION_KEY = "splitly_guest_email";
+const GUEST_SESSION_KEY = "splitly_guest_session";
+const GUEST_SESSION_DAYS = 30;
+
+function saveGuestSession(email) {
+  try {
+    const session = { email, expires: Date.now() + GUEST_SESSION_DAYS * 86400000 };
+    localStorage.setItem(GUEST_SESSION_KEY, JSON.stringify(session));
+  } catch {}
+}
+
+function loadGuestSession() {
+  try {
+    const raw = localStorage.getItem(GUEST_SESSION_KEY);
+    if (!raw) return null;
+    const session = JSON.parse(raw);
+    if (!session.email || !session.expires) return null;
+    if (Date.now() > session.expires) {
+      localStorage.removeItem(GUEST_SESSION_KEY);
+      return null;
+    }
+    return session.email;
+  } catch { return null; }
+}
+
+function clearGuestSession() {
+  try { localStorage.removeItem(GUEST_SESSION_KEY); } catch {}
+  // Nettoyage ancienne clé si présente
+  try { localStorage.removeItem("splitly_guest_email"); } catch {}
+}
 
 function AppInner() {
   const [isOnline, setIsOnline] = useState(() => typeof navigator !== "undefined" ? navigator.onLine : true);
@@ -6738,7 +6803,7 @@ function AppInner() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [user, setUser] = useState(null);
   const [guestEmail, setGuestEmail] = useState(() => {
-    try { return localStorage.getItem(GUEST_SESSION_KEY) || null; }
+    try { return loadGuestSession(); }
     catch { return null; }
   });
   const [loading, setLoading] = useState(true);
@@ -6813,14 +6878,14 @@ function AppInner() {
 
   // Sauvegarder la session invité
   const handleGuestAuth = useCallback((email) => {
-    try { localStorage.setItem(GUEST_SESSION_KEY, email); } catch {}
+    try { saveGuestSession(email); } catch {}
     setGuestEmail(email);
     setAuthMode(null);
   }, []);
 
   // Déconnexion invité
   const handleGuestSignOut = useCallback(() => {
-    try { localStorage.removeItem(GUEST_SESSION_KEY); } catch {}
+    try { clearGuestSession(); } catch {}
     setGuestEmail(null);
   }, []);
 
