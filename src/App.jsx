@@ -6827,28 +6827,33 @@ function AppInner() {
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, s) => {
       const u = s?.user || null;
-      setUser(u);
 
-      // TOKEN_REFRESHED : renouvellement silencieux du JWT — rien à faire
+      // TOKEN_REFRESHED : renouvellement silencieux — ne pas toucher à l'état
       if (event === "TOKEN_REFRESHED") return;
+
+      // INITIAL_SESSION : géré par getSession() — ignorer pour éviter les doublons
+      if (event === "INITIAL_SESSION") return;
+
+      setUser(u);
 
       // SIGNED_OUT : nettoyer tout l'état
       if (event === "SIGNED_OUT" || !u) {
         setProfile(null);
         setEvents([]); setExpenses([]); setContributions({});
         setHistory([]); setNotifications([]); setPendingActions([]);
+        setActiveRaw("dashboard");
         return;
       }
 
-      // SIGNED_IN / USER_UPDATED : recharger le profil et rediriger si super admin
+      // SIGNED_IN / USER_UPDATED : recharger le profil
       if (event === "SIGNED_IN" || event === "USER_UPDATED") {
         try {
           const { data: prof } = await fetchProfile(u.id);
           setProfile(prof || null);
           if (prof?.user_role === "admin") {
-            setActive("superadmin");
+            setActiveRaw("superadmin");
           } else {
-            setActive(prev => prev === "superadmin" ? "dashboard" : prev);
+            setActiveRaw(prev => prev === "superadmin" ? "dashboard" : prev);
           }
         } catch {}
       }
@@ -6951,7 +6956,7 @@ function AppInner() {
     setUser(null);
     setProfile(null);
     setGuestEmail(null);
-    setActive("dashboard");
+    setActiveRaw("dashboard");
     setEvents([]); setExpenses([]);
     setContributions({}); setHistory([]); setNotifications([]); setPendingActions([]);
   };
