@@ -6807,7 +6807,11 @@ function AppInner() {
   }, []);
 
   useEffect(() => {
+    // Timeout de sécurité — si getSession échoue silencieusement, on débloque quand même
+    const safetyTimer = setTimeout(() => setLoading(false), 5000);
+
     getSession().then(async s => {
+      clearTimeout(safetyTimer);
       const u = s?.user || null;
       userIdRef.current = u?.id || null;
       setUser(u);
@@ -6817,14 +6821,15 @@ function AppInner() {
           const onboarded = localStorage.getItem(ONBOARDING_KEY);
           if (!onboarded) setShowOnboarding(true);
         } catch {}
-        // Charger le profil pour détecter le rôle admin
         try {
           const { data: prof } = await fetchProfile(u.id);
           setProfile(prof || null);
-          // Rediriger automatiquement le super admin vers sa page dédiée
-          if (prof?.user_role === "admin") setActive("superadmin");
+          if (prof?.user_role === "admin") setActiveRaw("superadmin");
         } catch {}
       }
+    }).catch(() => {
+      clearTimeout(safetyTimer);
+      setLoading(false);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, s) => {
       const u = s?.user || null;
