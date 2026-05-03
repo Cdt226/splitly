@@ -571,7 +571,17 @@ function AuthScreen({ onAuth, onGuestAuth, initialMode, onClose }) {
               style={{ ...S.btnDark, width: "100%", justifyContent: "center", display: "flex", opacity: (loading || !codeValid) ? 0.6 : 1 }}>
               {loading ? "Vérification..." : "Accéder →"}
             </button>
-            <button onClick={() => { setMode("guest"); setError(""); setTouched({}); }} style={{ ...S.btnGhost, width: "100%", justifyContent: "center", display: "flex", marginTop: 8 }}>← Retour</button>
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <button onClick={() => { setMode("guest"); setError(""); setTouched({}); }} style={{ ...S.btnGhost, flex: 1, justifyContent: "center", display: "flex" }}>← Retour</button>
+              <button onClick={async () => {
+                setLoading(true); setError("");
+                await sendGuestCode(form.email, null);
+                setLoading(false);
+                addToast ? addToast("Nouveau code envoyé !", "success") : setError("Code renvoyé !");
+              }} disabled={loading} style={{ ...S.btnGhost, flex: 1, justifyContent: "center", display: "flex", fontSize: 12 }}>
+                🔄 Renvoyer le code
+              </button>
+            </div>
           </>
         )}
       </div>
@@ -596,6 +606,8 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
   const [filterEventId, setFilterEventId] = useState("");
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
+  const [myPendingActions, setMyPendingActions] = useState([]);
+  const [showMyPending, setShowMyPending] = useState(false);
 
   // Ref pour les event IDs — accessible dans les callbacks Realtime sans dépendances stale
   const eventIdsRef = useRef([]);
@@ -656,6 +668,14 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
       }
     }
     setExpenses(allExp); setContributions(allContrib); setCotisations(allCot);
+
+    // Charger les demandes en attente de l'invité
+    const { data: pendingData } = await supabase
+      .from('pending_actions')
+      .select('*')
+      .eq('guest_email', guestEmail)
+      .order('created_at', { ascending: false });
+    if (pendingData) setMyPendingActions(pendingData);
   }, [guestEmail]);
 
   // Chargement initial
@@ -715,7 +735,18 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
         })
       .subscribe();
 
-    // Polling de secours toutes les 30s (au cas où Realtime rate une mise à jour)
+    // S'abonner aux changements d'invitations (droits modifiés par l'admin)
+    const invitCh = supabase
+      .channel(`guest-invitations-${guestEmail}`)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "invitations",
+        filter: `email=eq.${guestEmail}` },
+        () => {
+          silentReload();
+          addToast("🔐 Vos droits ont été mis à jour.", "info");
+        })
+      .subscribe();
+
+    // Polling de secours toutes les 30s
     const pollInterval = setInterval(() => { silentReload(); }, 30000);
 
     return () => {
@@ -723,6 +754,7 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
       supabase.removeChannel(cotCh);
       supabase.removeChannel(contCh);
       supabase.removeChannel(pendingCh);
+      supabase.removeChannel(invitCh);
       clearInterval(pollInterval);
     };
   }, [guestEmail, silentReload, addToast]);
@@ -761,9 +793,10 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
 
   // Navigation : même modèle que l'admin
   const navItems = [
-    { key: "events",       icon: "◉", label: "Événements" },
-    { key: "expenses",     icon: "◫", label: "Charges" },
-    { key: "contributions",icon: "⊜", label: "Contributions" },
+    { key: "events",        icon: "◉", label: "Événements" },
+    { key: "expenses",      icon: "◫", label: "Charges" },
+    { key: "contributions", icon: "⊜", label: "Contributions" },
+    { key: "pending",       icon: "⏳", label: "Mes demandes", badge: myPendingActions.filter(a => a.status === "pending").length },
   ];
 
   // Sélecteur événement commun (réutilisé dans chaque onglet)
@@ -806,9 +839,10 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
       <div style={{ background: "#fff", borderBottom: "1px solid #eee", display: "flex", position: "sticky", top: 52, zIndex: 99 }}>
         {navItems.map(n => (
           <button key={n.key} onClick={() => setActive(n.key)}
-            style={{ flex: 1, padding: "12px 4px", border: "none", background: "none", fontSize: 12, fontWeight: active === n.key ? 700 : 400, color: active === n.key ? "#0F0F0F" : "#888", cursor: "pointer", borderBottom: active === n.key ? "2px solid #0F0F0F" : "2px solid transparent", transition: "all 0.15s", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+            style={{ flex: 1, padding: "12px 4px", border: "none", background: "none", fontSize: 12, fontWeight: active === n.key ? 700 : 400, color: active === n.key ? "#0F0F0F" : "#888", cursor: "pointer", borderBottom: active === n.key ? "2px solid #0F0F0F" : "2px solid transparent", transition: "all 0.15s", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, position: "relative" }}>
             <span style={{ fontSize: 15 }}>{n.icon}</span>
             <span style={{ fontSize: 10 }}>{n.label}</span>
+            {n.badge > 0 && <span style={{ position: "absolute", top: 6, right: "20%", background: "#C62828", color: "#fff", borderRadius: 10, fontSize: 9, fontWeight: 700, padding: "1px 5px", minWidth: 16, textAlign: "center" }}>{n.badge}</span>}
           </button>
         ))}
       </div>
@@ -863,8 +897,19 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
       {/* Contenu principal */}
       <main style={{ flex: 1, padding: isMobile ? "16px 14px 80px" : "24px 28px", maxWidth: 860, width: "100%", margin: "0 auto", boxSizing: "border-box" }}>
 
+        {/* ── Bandeau événement bouclé ── */}
+        {filterEventId && selectedEv?.status === "closed" && active !== "events" && active !== "pending" && (
+          <div style={{ background: "#f0f0f0", border: "1px solid #ddd", borderRadius: 10, padding: "10px 14px", marginBottom: 14, display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 16 }}>🔒</span>
+            <div>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "#555" }}>Événement bouclé</span>
+              <span style={{ fontSize: 12, color: "#888", marginLeft: 8 }}>Cet événement est archivé — aucune modification possible.</span>
+            </div>
+          </div>
+        )}
+
         {/* ── Bandeau droits sur l'événement sélectionné ── */}
-        {filterEventId && active !== "events" && (
+        {filterEventId && active !== "events" && active !== "pending" && selectedEv?.status === "open" && (
           <div style={{ background: "#f5f5f5", borderRadius: 10, padding: "8px 14px", marginBottom: 14, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <span style={{ fontSize: 11, color: "#888" }}>Vos droits sur <strong>{selectedEv?.name}</strong> :</span>
             <MyPermsBadge eventId={filterEventId} />
@@ -1066,6 +1111,52 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
             ) : (
               /* Split → Répartition */
               <GuestBalanceSection ev={selectedEv} evExp={evExpenses} evContribMap={evContribs} sym={sym} />
+            )}
+          </div>
+        )}
+
+        {/* ─── ONGLET MES DEMANDES ─── */}
+        {active === "pending" && (
+          <div>
+            <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700, color: "#0F0F0F", marginBottom: 16 }}>⏳ Mes demandes</h2>
+            {myPendingActions.length === 0 ? (
+              <EmptyState icon="✅" title="Aucune demande" subtitle="Vous n'avez soumis aucune demande pour l'instant." />
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {myPendingActions.map(action => {
+                  const ev = events.find(e => e.id === action.event_id);
+                  const statusConfig = {
+                    pending:  { label: "⏳ En attente",  bg: "#FFF8E1", color: "#F57F17", border: "#FFE082" },
+                    approved: { label: "✅ Approuvée",   bg: "#E8F5E9", color: "#2E7D32", border: "#C8E6C9" },
+                    rejected: { label: "❌ Refusée",     bg: "#FFEBEE", color: "#C62828", border: "#FFCDD2" },
+                  }[action.status] || { label: action.status, bg: "#f5f5f5", color: "#888", border: "#eee" };
+                  const typeLabels = {
+                    add_expense:        "➕ Ajout de charge",
+                    modify_expense:     "✏️ Modification de charge",
+                    add_cotisation:     "💰 Ajout de cotisation",
+                    edit_cotisation:    "💰 Modification de cotisation",
+                    add_participant:    "👤 Ajout de participant",
+                    request_permissions:"🔐 Demande de droits",
+                  };
+                  return (
+                    <div key={action.id} style={{ background: "#fff", borderRadius: 12, padding: "14px 16px", border: `1px solid ${statusConfig.border}` }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 8 }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 700 }}>{typeLabels[action.action_type] || action.action_type}</div>
+                          <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>{ev?.event_type === "budget" ? "🏦" : "💸"} {ev?.name}</div>
+                        </div>
+                        <span style={{ fontSize: 11, padding: "3px 10px", borderRadius: 20, background: statusConfig.bg, color: statusConfig.color, fontWeight: 700, flexShrink: 0 }}>
+                          {statusConfig.label}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 10, color: "#aaa" }}>{new Date(action.created_at).toLocaleString("fr-FR")}</div>
+                      {action.status === "pending" && (
+                        <div style={{ fontSize: 11, color: "#F57F17", marginTop: 6 }}>En attente d'approbation. Vous serez notifié automatiquement.</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
         )}
@@ -1503,24 +1594,24 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
 
   // Utilisateur normal : nav complète
   const userNav = [
-    { key: "dashboard",       icon: "◈", label: t("nav_dashboard") },
-    { key: "events",          icon: "◉", label: t("nav_events") },
-    { key: "expenses",        icon: "◫", label: t("nav_expenses") },
-    { key: "contributions",   icon: "⊜", label: "Contributions" },
-    { key: "analytics",       icon: "◐", label: t("nav_analytics") },
-    { key: "history",         icon: "◷", label: t("nav_history") },
-    { key: "invite",          icon: "◎", label: t("nav_invite") },
-    { key: "notifications",   icon: "◬", label: t("nav_notifications"), badge: totalBadge },
-    { key: "settings",        icon: "⚙", label: t("nav_settings") || "Paramètres" },
+    { key: "dashboard",       icon: "🏠", label: t("nav_dashboard") },
+    { key: "events",          icon: "🎊", label: t("nav_events") },
+    { key: "expenses",        icon: "🧾", label: t("nav_expenses") },
+    { key: "contributions",   icon: "💰", label: "Contributions" },
+    { key: "analytics",       icon: "📊", label: t("nav_analytics") },
+    { key: "history",         icon: "📋", label: t("nav_history") },
+    { key: "invite",          icon: "👥", label: t("nav_invite") },
+    { key: "notifications",   icon: "🔔", label: t("nav_notifications"), badge: totalBadge },
+    { key: "settings",        icon: "⚙️", label: t("nav_settings") || "Paramètres" },
   ];
 
   // Bottom nav mobile : 5 onglets fixes
   const mobileNav = [
-    { key: "dashboard",      icon: "◈", label: t("nav_dashboard") },
-    { key: "events",         icon: "◉", label: t("nav_events") },
-    { key: "expenses",       icon: "◫", label: t("nav_expenses") },
-    { key: "contributions",  icon: "⊜", label: "Contributions" },
-    { key: "analytics",      icon: "◐", label: t("nav_analytics") },
+    { key: "dashboard",      icon: "🏠", label: t("nav_dashboard") },
+    { key: "events",         icon: "🎊", label: t("nav_events") },
+    { key: "expenses",       icon: "🧾", label: t("nav_expenses") },
+    { key: "contributions",  icon: "💰", label: "Contributions" },
+    { key: "analytics",      icon: "📊", label: t("nav_analytics") },
   ];
 
   const nav = isAdmin ? adminNav : userNav;
@@ -2131,6 +2222,16 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
     if (!editForm.name?.trim()) { addToast("Le nom est obligatoire.", "warning"); return; }
     if (editForm.name.trim().length > 30) { addToast("Nom trop long (max 30 car.).", "warning"); return; }
     if (!editForm.date) { addToast("La date est obligatoire.", "warning"); return; }
+
+    // Bloquer le changement de type si des données existent
+    if (editForm.event_type !== editingEv.event_type) {
+      const hasExpenses = expenses.some(e => e.event_id === editingEv.id);
+      if (hasExpenses) {
+        addToast(`Impossible de changer le type : cet événement contient des charges. Supprimez-les d'abord.`, "warning");
+        return;
+      }
+    }
+
     setEditLoading(true);
     const fields = {
       name: editForm.name.trim(),
@@ -4403,10 +4504,14 @@ function Invite({ events, user, isMobile, addToast }) {
     if (!email) { addToast("Entrez un email.", "warning"); return; }
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) { addToast("Format d'email invalide.", "warning"); return; }
+    // Empêcher de s'inviter soi-même
+    if (email.trim().toLowerCase() === user?.email?.toLowerCase()) {
+      addToast("Vous ne pouvez pas vous inviter vous-même.", "warning"); return;
+    }
     if (selectedEvents.length === 0) { addToast("Sélectionnez au moins un événement.", "warning"); return; }
     setSaving(true);
     const finalPerms = normalizePerms(permissions);
-    // Vérifier doublons
+    // Vérifier doublons — si TOUS les événements ont déjà cet invité → ouvrir droits
     const existing = invitations.filter(i => i.email === email && selectedEvents.includes(i.event_id));
     if (existing.length > 0 && existing.length === selectedEvents.length) {
       setSaving(false);
@@ -4750,30 +4855,45 @@ function Invite({ events, user, isMobile, addToast }) {
 // ─── NOTIFICATIONS ────────────────────────────────────────────
 function NotificationsPage({ notifications, events, expenses, pendingActions, user, onMarkAll, onDismiss, reload, isMobile, addToast }) {
   const [saving, setSaving] = useState(null);
+  const [partialPermsModal, setPartialPermsModal] = useState(null); // { action, selectedPerms }
 
   const handleApprove = async (action) => {
     setSaving(action.id);
     if (action.action_type === "request_permissions") {
-      const existing = await fetchInvitationPermissions(action.event_id, action.guest_email);
-      const currentPerms = normalizePerms(existing.data || []);
-      const requested = normalizePerms(action.action_data?.requested || []);
-      const newPerms = [...new Set([...currentPerms, ...requested])];
-      await updateInvitationPermissions(action.event_id, action.guest_email, newPerms);
-      await rejectPendingAction(action.id, user.id);
-      addToast(`Droits accordés à ${action.guest_email}.`, "success");
-      await reload();
+      // Ouvrir la modale de sélection partielle
+      setPartialPermsModal({
+        action,
+        selectedPerms: normalizePerms(action.action_data?.requested || []),
+      });
       setSaving(null);
       return;
     }
     const { error } = await approvePendingAction(action.id, user.id, {
       action_type: action.action_type,
       action_data: action.action_data,
+      event_id: action.event_id,
+      guest_email: action.guest_email,
     });
     if (error) {
       addToast("Erreur lors de l'approbation : " + error.message, "error");
     } else {
       addToast("Action approuvée et exécutée.", "success");
     }
+    await reload();
+    setSaving(null);
+  };
+
+  const handleApprovePartialPerms = async () => {
+    if (!partialPermsModal) return;
+    const { action, selectedPerms } = partialPermsModal;
+    setSaving(action.id);
+    const existing = await fetchInvitationPermissions(action.event_id, action.guest_email);
+    const currentPerms = normalizePerms(existing.data || []);
+    const newPerms = [...new Set([...currentPerms, ...selectedPerms])];
+    await updateInvitationPermissions(action.event_id, action.guest_email, newPerms);
+    await rejectPendingAction(action.id, user.id); // ferme la demande
+    setPartialPermsModal(null);
+    addToast(`Droits accordés à ${action.guest_email}.`, "success");
     await reload();
     setSaving(null);
   };
@@ -4791,6 +4911,53 @@ function NotificationsPage({ notifications, events, expenses, pendingActions, us
 
   return (
     <div>
+      {/* Modal sélection droits partiels */}
+      {partialPermsModal && (
+        <Modal title="🔐 Accorder des droits" onClose={() => setPartialPermsModal(null)}>
+          <div style={{ fontSize: 13, color: "var(--text-sub)", marginBottom: 4 }}>
+            <strong>{partialPermsModal.action.guest_email}</strong> demande les droits suivants sur <strong>{partialPermsModal.action.action_data?.event_name || events.find(e => e.id === partialPermsModal.action.event_id)?.name}</strong>.
+          </div>
+          <div style={{ fontSize: 12, color: "var(--text-sub)", marginBottom: 16 }}>Décochez les droits que vous ne souhaitez pas accorder.</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+            {normalizePerms(partialPermsModal.action.action_data?.requested || []).map(p => {
+              const info = ALL_PERMISSIONS[p];
+              if (!info) return null;
+              const checked = partialPermsModal.selectedPerms.includes(p);
+              return (
+                <label key={p} onClick={() => setPartialPermsModal(prev => ({
+                  ...prev,
+                  selectedPerms: checked ? prev.selectedPerms.filter(x => x !== p) : [...prev.selectedPerms, p]
+                }))} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderRadius: 10, border: `1.5px solid ${checked ? info.color : "var(--border)"}`, background: checked ? info.bg : "var(--bg-secondary)", cursor: "pointer", transition: "all 0.15s" }}>
+                  <div style={{ width: 18, height: 18, borderRadius: 5, border: `2px solid ${checked ? info.color : "#ccc"}`, background: checked ? info.color : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    {checked && <span style={{ color: "#fff", fontSize: 11 }}>✓</span>}
+                  </div>
+                  <span style={{ fontSize: 14 }}>{info.icon}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{info.label}</div>
+                    <div style={{ fontSize: 11, color: "var(--text-sub)" }}>{info.desc}</div>
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+          {partialPermsModal.selectedPerms.length === 0 && (
+            <div style={{ fontSize: 12, color: "#F57F17", background: "#FFF8E1", borderRadius: 8, padding: "8px 12px", marginBottom: 12 }}>
+              ⚠️ Aucun droit sélectionné — l'invité restera en lecture seule.
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={handleApprovePartialPerms} disabled={saving === partialPermsModal.action.id}
+              style={{ ...S.btnDark, flex: 1, justifyContent: "center", display: "flex", background: "#2E7D32" }}>
+              {saving === partialPermsModal.action.id ? "..." : `✓ Accorder ${partialPermsModal.selectedPerms.length > 0 ? `(${partialPermsModal.selectedPerms.length} droit${partialPermsModal.selectedPerms.length > 1 ? "s" : ""})` : ""}`}
+            </button>
+            <button onClick={() => { handleReject(partialPermsModal.action); setPartialPermsModal(null); }}
+              style={{ padding: "10px 16px", borderRadius: 10, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 13, cursor: "pointer", fontWeight: 700, fontFamily: "inherit" }}>
+              ✗ Refuser tout
+            </button>
+          </div>
+        </Modal>
+      )}
+
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <div>
           <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2 }}>Notifications</h2>
@@ -5343,15 +5510,27 @@ function SuperAdminPage({ user, isMobile, addToast }) {
         <Modal title="Confirmer l'action" onClose={() => setConfirm(null)}>
           <div style={{ fontSize: 14, color: "var(--text)", marginBottom: 16, lineHeight: 1.6 }}>
             {confirm.action === "delete" && (
-              <div style={{ background: "#FFEBEE", border: "1px solid #FFCDD2", borderRadius: 10, padding: "12px 16px", marginBottom: 14, fontSize: 13, color: "#C62828" }}>
-                ⚠️ Cette action est <strong>irréversible</strong>. Tous les événements et charges de cet utilisateur seront supprimés.
-              </div>
+              <>
+                <div style={{ background: "#FFEBEE", border: "1px solid #FFCDD2", borderRadius: 10, padding: "12px 16px", marginBottom: 14, fontSize: 13, color: "#C62828" }}>
+                  ⚠️ Cette action est <strong>irréversible</strong>. Tous les événements, charges et données de cet utilisateur seront supprimés définitivement.
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: "#C62828", display: "block", marginBottom: 6 }}>
+                    Tapez <strong>SUPPRIMER</strong> pour confirmer
+                  </label>
+                  <input style={{ ...S.input, borderColor: "#ffcdd2" }}
+                    placeholder="SUPPRIMER"
+                    value={confirm.deleteConfirm || ""}
+                    onChange={e => setConfirm({ ...confirm, deleteConfirm: e.target.value })} />
+                </div>
+              </>
             )}
             <span>Action : <strong>{confirm.action === "block" ? "Bloquer" : confirm.action === "unblock" ? "Débloquer" : "Supprimer"}</strong> le compte de <strong>{confirm.userName}</strong></span>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={handleAction} disabled={!!acting}
-              style={{ ...S.btnDark, flex: 1, justifyContent: "center", display: "flex", background: confirm.action === "delete" ? "#C62828" : confirm.action === "block" ? "#F57F17" : "#2E7D32" }}>
+            <button onClick={handleAction}
+              disabled={!!acting || (confirm.action === "delete" && confirm.deleteConfirm !== "SUPPRIMER")}
+              style={{ ...S.btnDark, flex: 1, justifyContent: "center", display: "flex", background: confirm.action === "delete" ? "#C62828" : confirm.action === "block" ? "#F57F17" : "#2E7D32", opacity: (confirm.action === "delete" && confirm.deleteConfirm !== "SUPPRIMER") ? 0.5 : 1 }}>
               {acting ? "..." : "Confirmer"}
             </button>
             <button onClick={() => setConfirm(null)} style={{ ...S.btnGhost, flex: 1, justifyContent: "center", display: "flex" }}>Annuler</button>
@@ -5942,12 +6121,20 @@ function CotisationsPage({ events, expenses, user, reload, isMobile, addToast, t
     if (!form.participant_name.trim()) { addToast("Sélectionnez un participant.", "warning"); return; }
     const montantEffectif = getMontantEffectif();
     if (!montantEffectif || montantEffectif <= 0) { addToast("Le montant doit être supérieur à 0.", "warning"); return; }
-    // B2: Validation montant libre >= cible si cible définie
     if (montantMode === "libre" && cotisationCible > 0 && montantEffectif < cotisationCible) {
       addToast(`Le montant doit être au moins égal à la cotisation cible (${fmt(cotisationCible, sym)}).`, "warning"); return;
     }
     if (form.participant_name.length > 30) { addToast("Nom trop long (max 30 car.).", "warning"); return; }
     if (form.forme === "nature" && !natureForm.detail.trim()) { addToast("Précisez la nature de l'apport.", "warning"); return; }
+
+    // Vérifier doublon cotisation (sauf en édition)
+    if (!editingCot) {
+      const dejaExiste = cotisations.some(c => c.participant_name === form.participant_name);
+      if (dejaExiste) {
+        const confirm = window.confirm(`${form.participant_name} a déjà une cotisation enregistrée. Voulez-vous en ajouter une supplémentaire ?`);
+        if (!confirm) return;
+      }
+    }
 
     setSaving(true);
     const cotData = {

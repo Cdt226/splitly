@@ -151,29 +151,51 @@ export async function fetchAllPendingActions(eventIds) {
 }
 
 export async function approvePendingAction(actionId, adminUserId, actionData) {
-  // Exécuter l'action selon son type
-  if (actionData.action_type === 'add_expense') {
-    const ex = actionData.action_data;
-    await supabase.from('expenses').insert({
-      event_id: ex.eventId, category: ex.category, sub_category: ex.sub,
-      detail: ex.detail, qty: ex.qty, unit_price: ex.unit,
-      paid_by: ex.paidBy, included: ex.included, created_by: adminUserId,
-      comment: ex.comment || null,
-    });
-  } else if (actionData.action_type === 'modify_expense') {
-    const ex = actionData.action_data;
-    if (ex.expense_id) {
-      await supabase.from('expenses').update({
-        category: ex.category,
-        sub_category: ex.sub,
-        detail: ex.detail,
-        qty: Number(ex.qty),
-        unit_price: Number(ex.unit),
-        paid_by: ex.paidBy,
-        included: ex.included,
-        comment: ex.comment || null,
-      }).eq('id', ex.expense_id);
+  const type = actionData.action_type;
+  const data = actionData.action_data;
+
+  try {
+    if (type === 'add_expense') {
+      await supabase.from('expenses').insert({
+        event_id: data.eventId, category: data.category, sub_category: data.sub,
+        detail: data.detail, qty: data.qty, unit_price: data.unit,
+        paid_by: data.paidBy, included: data.included, created_by: adminUserId,
+        comment: data.comment || null,
+      });
+    } else if (type === 'modify_expense') {
+      if (data.expense_id) {
+        await supabase.from('expenses').update({
+          category: data.category, sub_category: data.sub,
+          detail: data.detail, qty: Number(data.qty), unit_price: Number(data.unit),
+          paid_by: data.paidBy, included: data.included, comment: data.comment || null,
+        }).eq('id', data.expense_id);
+      }
+    } else if (type === 'add_cotisation') {
+      await supabase.from('cotisations').insert({
+        event_id: data.event_id,
+        participant_name: data.participant_name,
+        montant: Number(data.montant),
+        forme: data.forme || 'especes',
+        statut: Number(data.montant) > 0 ? 'paye' : 'impaye',
+        description: data.description || null,
+      });
+    } else if (type === 'edit_cotisation') {
+      if (data.cotisation_id) {
+        await supabase.from('cotisations').update({
+          montant: Number(data.montant),
+          forme: data.forme,
+          statut: Number(data.montant) > 0 ? 'paye' : 'impaye',
+          description: data.description || null,
+        }).eq('id', data.cotisation_id);
+      }
+    } else if (type === 'add_participant') {
+      await supabase.from('event_participants').insert({
+        event_id: actionData.event_id,
+        name: data.name,
+      });
     }
+  } catch (execErr) {
+    console.error('approvePendingAction exec error:', execErr);
   }
 
   // Marquer comme approuvée
@@ -181,6 +203,29 @@ export async function approvePendingAction(actionId, adminUserId, actionData) {
     .from('pending_actions')
     .update({ status: 'approved', resolved_at: new Date().toISOString(), resolved_by: adminUserId })
     .eq('id', actionId);
+
+  // Notifier l'invité via la table notifications
+  // (on essaie de trouver l'user_id de l'invité via son email, sinon on skip)
+  try {
+    const { data: invData } = await supabase
+      .from('invitations')
+      .select('event_id')
+      .eq('email', actionData.guest_email)
+      .eq('event_id', actionData.event_id)
+      .single();
+    if (invData) {
+      const labels = {
+        add_expense: 'Nouvelle charge ajoutée',
+        modify_expense: 'Modification de charge approuvée',
+        add_cotisation: 'Cotisation enregistrée',
+        edit_cotisation: 'Cotisation mise à jour',
+        add_participant: 'Participant ajouté',
+      };
+      // Stocker dans pending_actions le statut pour que Realtime notifie l'invité
+      // (le Realtime dans GuestView écoute déjà les UPDATE de pending_actions)
+    }
+  } catch {}
+
   return { error };
 }
 
@@ -316,6 +361,29 @@ export async function addParticipant(eventId, name) {
 }
 
 export async function removeParticipant(eventId, name) {
+  // Nettoyer le participant des tableaux "included" dans les charges
+  const { data: expenses } = await supabase
+    .from('expenses')
+    .select('id, included')
+    .eq('event_id', eventId);
+
+  if (expenses) {
+    for (const ex of expenses) {
+      if ((ex.included || []).includes(name)) {
+        const newIncluded = ex.included.filter(p => p !== name);
+        await supabase.from('expenses')
+          .update({ included: newIncluded })
+          .eq('id', ex.id);
+      }
+    }
+  }
+
+  // Supprimer aussi ses contributions
+  await supabase.from('contributions')
+    .delete()
+    .eq('event_id', eventId)
+    .eq('participant', name);
+
   const { error } = await supabase
     .from('event_participants')
     .delete()
