@@ -6789,22 +6789,8 @@ function AppInner() {
         } catch {}
       }
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, s) => {
-      if (event === "TOKEN_REFRESHED") return;
-      const u = s?.user || null;
-      setUser(u);
-      if (event === "SIGNED_OUT" || !u) {
-        setProfile(null);
-        setActiveRaw("dashboard");
-        return;
-      }
-      if (event === "SIGNED_IN") {
-        try {
-          const { data: prof } = await fetchProfile(u.id);
-          setProfile(prof || null);
-          if (prof?.user_role === "admin") setActiveRaw("superadmin");
-        } catch {}
-      }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
+      setUser(s?.user || null);
     });
     return () => subscription.unsubscribe();
   }, []);
