@@ -376,8 +376,22 @@ function StatCard({ label, value, sub, color, accent }) {
 
 // ─── AUTH SCREEN ──────────────────────────────────────────────
 function AuthScreen({ onAuth, onGuestAuth, initialMode, onClose }) {
-  const [mode, setMode] = useState(initialMode || "login");
-  const [form, setForm] = useState({ email: "", password: "", name: "", code: "" });
+  // Pré-remplir l'email invité si l'URL contient ?guest=email (lien d'invitation)
+  const urlGuestEmail = (() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const g = params.get("guest") || "";
+      if (g) {
+        // Nettoyer l'URL sans recharger la page
+        const clean = window.location.pathname;
+        window.history.replaceState({}, "", clean);
+      }
+      return g;
+    } catch { return ""; }
+  })();
+
+  const [mode, setMode] = useState(urlGuestEmail ? "guest" : (initialMode || "login"));
+  const [form, setForm] = useState({ email: urlGuestEmail, password: "", name: "", code: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [touched, setTouched] = useState({});
@@ -4552,13 +4566,13 @@ function Invite({ events, user, isMobile, addToast }) {
     if (!email) { addToast("Entrez un email.", "warning"); return; }
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) { addToast("Format d'email invalide.", "warning"); return; }
-    // Empêcher de s'inviter soi-même
     if (email.trim().toLowerCase() === user?.email?.toLowerCase()) {
       addToast("Vous ne pouvez pas vous inviter vous-même.", "warning"); return;
     }
     if (selectedEvents.length === 0) { addToast("Sélectionnez au moins un événement.", "warning"); return; }
     setSaving(true);
     const finalPerms = normalizePerms(permissions);
+
     // Vérifier doublons — si TOUS les événements ont déjà cet invité → ouvrir droits
     const existing = invitations.filter(i => i.email === email && selectedEvents.includes(i.event_id));
     if (existing.length > 0 && existing.length === selectedEvents.length) {
@@ -4567,23 +4581,44 @@ function Invite({ events, user, isMobile, addToast }) {
       openManager(email);
       return;
     }
+
+    const newlyInvitedEventNames = [];
     for (const evId of selectedEvents) {
       const alreadyExists = invitations.find(i => i.email === email && i.event_id === evId);
       if (!alreadyExists) {
         const ev = events.find(e => e.id === evId);
-        // Filtrer les permissions incompatibles avec le type d'événement
         const compatiblePerms = finalPerms.filter(p => {
           const pInfo = ALL_PERMISSIONS[p];
           if (!pInfo) return false;
           return ev?.event_type === "budget" ? pInfo.budget : pInfo.split;
         });
         await sendInvitation({ eventId: evId, email, role: compatiblePerms.length > 0 ? "edit" : "read", invitedBy: user.id, permissions: compatiblePerms });
+        if (ev) newlyInvitedEventNames.push(`${ev.event_type === "budget" ? "🏦" : "💸"} ${ev.name}`);
       }
     }
+
+    // Envoyer l'email d'invitation avec le lien d'accès direct
+    if (newlyInvitedEventNames.length > 0) {
+      try {
+        const adminName = user.user_metadata?.full_name || user.email?.split("@")[0] || "Un utilisateur";
+        await fetch("/api/send-invite", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            to: email,
+            guestEmail: email,
+            adminName,
+            eventNames: newlyInvitedEventNames,
+            appUrl: window.location.origin,
+          }),
+        });
+      } catch {} // L'invitation en base est créée même si l'email échoue
+    }
+
     setEmail(""); setSelectedEvents([]); setPermissions([]);
     await loadInvites();
     setSaving(false);
-    addToast(`Invitation envoyée à ${email}.`, "success");
+    addToast(`✉️ Invitation envoyée à ${email}.`, "success");
   };
 
   const handleRemove = async (inv) => {
