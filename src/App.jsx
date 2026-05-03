@@ -3552,7 +3552,7 @@ function Balance({ events, expenses, contributions, user, reload, isMobile, addT
     addToast("PDF généré !", "success");
   };
 
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
     if (!ev || evExp.length === 0) { addToast("Aucune charge à exporter.", "warning"); return; }
     try {
       const sym = currencySymbol(ev.currency);
