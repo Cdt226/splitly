@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, createContext, useContext } from "react";
-import LandingPage from "./LandingPage.jsx";
+import { exportSplitExcel, exportBudgetExcel } from "./exportExcel.jsx";
 import { useTranslation, LanguageSwitcher, LanguageMenu } from "./i18n.jsx";
 import {
   supabase, signUp, signIn, signOut, getSession,
@@ -3679,6 +3679,13 @@ function Balance({ events, expenses, contributions, user, reload, isMobile, addT
           {ev?.event_type !== "budget" && <>
             <button onClick={handleExportPDF} style={{ ...S.btnGhost, padding: "8px 14px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>{t ? t("bal_pdf") : "📄 PDF"}</button>
             <button onClick={handleExportExcel} style={{ ...S.btnGhost, padding: "8px 14px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>📊 CSV</button>
+            <button onClick={async () => {
+              try {
+                const contribMap = contributions[ev.id] || {};
+                await exportSplitExcel({ ev, expenses: evExp, contributions: { [ev.id]: evContribMap }, participants, sym: currencySymbol(ev.currency) });
+                addToast("Export Excel téléchargé !", "success");
+              } catch { addToast("Erreur lors de l'export Excel.", "error"); }
+            }} style={{ ...S.btnGhost, padding: "8px 14px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>📗 Excel</button>
           </>}
         </div>
       </div>
@@ -6141,10 +6148,22 @@ function ContributionsPage({ events, expenses, contributions, user, reload, isMo
             {events.map(ev => <option key={ev.id} value={ev.id}>{ev.event_type === "budget" ? "🏦 " : "💸 "}{ev.name}</option>)}
           </select>
           {isBudget && (
-            <button onClick={() => exportCotisationsPDF(ev, cotisations)}
-              style={{ ...S.btnGhost, fontSize: 12, padding: "8px 14px", whiteSpace: "nowrap" }}>
-              📄 PDF Cotisations
-            </button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => exportCotisationsPDF(ev, cotisations)}
+                style={{ ...S.btnGhost, fontSize: 12, padding: "8px 14px", whiteSpace: "nowrap" }}>
+                📄 PDF Cotisations
+              </button>
+              <button onClick={async () => {
+                try {
+                  const evParticipants = (ev?.event_participants || []).map(p => p.name);
+                  const sym = currencySymbol(ev?.currency);
+                  await exportBudgetExcel({ ev, expenses: expenses.filter(e => e.event_id === ev?.id), cotisations, participants: evParticipants, sym });
+                  addToast("Export Excel téléchargé !", "success");
+                } catch { addToast("Erreur lors de l'export Excel.", "error"); }
+              }} style={{ ...S.btnGhost, fontSize: 12, padding: "8px 14px", whiteSpace: "nowrap" }}>
+                📗 Excel
+              </button>
+            </div>
           )}
         </div>
       </div>
