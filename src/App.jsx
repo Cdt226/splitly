@@ -6807,74 +6807,45 @@ function AppInner() {
   }, []);
 
   useEffect(() => {
-    // Timeout de sécurité — si getSession échoue silencieusement, on débloque quand même
-    const safetyTimer = setTimeout(() => setLoading(false), 5000);
-
     getSession().then(async s => {
-      clearTimeout(safetyTimer);
       const u = s?.user || null;
-      userIdRef.current = u?.id || null;
       setUser(u);
       setLoading(false);
       if (u) {
-        try {
-          const onboarded = localStorage.getItem(ONBOARDING_KEY);
-          if (!onboarded) setShowOnboarding(true);
-        } catch {}
+        try { const onboarded = localStorage.getItem(ONBOARDING_KEY); if (!onboarded) setShowOnboarding(true); } catch {}
         try {
           const { data: prof } = await fetchProfile(u.id);
           setProfile(prof || null);
           if (prof?.user_role === "admin") setActiveRaw("superadmin");
         } catch {}
       }
-    }).catch(() => {
-      clearTimeout(safetyTimer);
-      setLoading(false);
-    });
+    }).catch(() => { setLoading(false); });
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, s) => {
-      const u = s?.user || null;
-
-      // Ignorer les événements qui ne changent pas l'état
       if (event === "TOKEN_REFRESHED") return;
-
-      // Éviter de recréer user si c'est le même ID (Supabase crée un nouvel objet à chaque event)
-      const sameUser = u?.id && u.id === userIdRef.current;
-
+      const u = s?.user || null;
       if (event === "SIGNED_OUT" || !u) {
-        userIdRef.current = null;
-        setUser(null);
-        setProfile(null);
+        setUser(null); setProfile(null);
         setEvents([]); setExpenses([]); setContributions({});
         setHistory([]); setNotifications([]); setPendingActions([]);
         setActiveRaw("dashboard");
         return;
       }
-
-      if (!sameUser) {
-        userIdRef.current = u.id;
+      if (event === "SIGNED_IN") {
         setUser(u);
-      }
-
-      // Charger le profil uniquement lors d'une vraie connexion
-      if (event === "SIGNED_IN" && !sameUser) {
         try {
           const { data: prof } = await fetchProfile(u.id);
           setProfile(prof || null);
-          if (prof?.user_role === "admin") {
-            setActiveRaw("superadmin");
-          }
+          if (prof?.user_role === "admin") setActiveRaw("superadmin");
         } catch {}
       }
     });
     return () => subscription.unsubscribe();
   }, []);
 
-  const userIdRef = useRef(null);
-
   const loadAll = useCallback(async () => {
-    const uid = userIdRef.current;
-    if (!uid) return;
-    const { data: evData } = await fetchEvents(uid);
+    if (!user) return;
+    const { data: evData } = await fetchEvents(user.id);
     if (!evData) return;
     setEvents(evData);
     const allExp = [], allContrib = {}, allHist = [];
@@ -6887,18 +6858,15 @@ function AppInner() {
       if (hData) allHist.push(...hData);
     }
     setExpenses(allExp); setContributions(allContrib); setHistory(allHist);
-    const { data: nData } = await fetchNotifications(uid);
+    const { data: nData } = await fetchNotifications(user.id);
     if (nData) setNotifications(nData);
     if (evData.length > 0) {
       const { data: paData } = await fetchAllPendingActions(evData.map(e => e.id));
       if (paData) setPendingActions(paData);
     }
-  }, []); // ← pas de dépendance sur user, on utilise le ref
+  }, [user?.id]);
 
-  useEffect(() => {
-    userIdRef.current = user?.id || null;
-    if (user) loadAll();
-  }, [user?.id]); // ← dépendance sur user.id uniquement, pas l'objet entier
+  useEffect(() => { if (user) loadAll(); }, [user?.id]);
 
   // ─── Notifications Realtime ───────────────────────────────────
   useEffect(() => {
