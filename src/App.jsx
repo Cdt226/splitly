@@ -695,37 +695,50 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
 
     const handleChange = (table, payload) => {
       const evId = payload.new?.event_id || payload.old?.event_id;
-      if (!evId || !eventIdsRef.current.includes(evId)) return;
+      // Si eventIdsRef vide (chargement initial), recharger quand même
+      if (evId && eventIdsRef.current.length > 0 && !eventIdsRef.current.includes(evId)) return;
       silentReload();
-      // Notification contextuelle selon la table et l'action
       const labels = {
         expenses:      { INSERT: "📝 Nouvelle charge ajoutée", UPDATE: "✏️ Charge modifiée", DELETE: "🗑 Charge supprimée" },
         cotisations:   { INSERT: "💰 Nouvelle cotisation", UPDATE: "💰 Cotisation mise à jour", DELETE: "💰 Cotisation supprimée" },
         contributions: { INSERT: "⊜ Contribution mise à jour", UPDATE: "⊜ Contribution mise à jour", DELETE: "⊜ Contribution mise à jour" },
+        event_participants: { INSERT: "👤 Participant ajouté", DELETE: "👤 Participant retiré" },
+        events:        { UPDATE: "📋 Événement mis à jour" },
       };
       const msg = labels[table]?.[payload.eventType];
       if (msg) addToast(msg, "info");
     };
 
-    // S'abonner aux charges
     const expCh = supabase
       .channel(`guest-expenses-${guestEmail}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "expenses" },
         (p) => handleChange("expenses", p))
       .subscribe();
 
-    // S'abonner aux cotisations
     const cotCh = supabase
       .channel(`guest-cotisations-${guestEmail}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "cotisations" },
         (p) => handleChange("cotisations", p))
       .subscribe();
 
-    // S'abonner aux contributions (soldes Split)
     const contCh = supabase
       .channel(`guest-contributions-${guestEmail}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "contributions" },
         (p) => handleChange("contributions", p))
+      .subscribe();
+
+    // Participants — visible si admin en ajoute/supprime
+    const partCh = supabase
+      .channel(`guest-participants-${guestEmail}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "event_participants" },
+        (p) => handleChange("event_participants", p))
+      .subscribe();
+
+    // Événements — modification par l'admin (statut, nom, date...)
+    const evCh = supabase
+      .channel(`guest-events-${guestEmail}`)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "events" },
+        (p) => handleChange("events", p))
       .subscribe();
 
     // S'abonner aux pending_actions — notifier l'invité si sa demande est traitée
@@ -765,6 +778,8 @@ function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
       supabase.removeChannel(expCh);
       supabase.removeChannel(cotCh);
       supabase.removeChannel(contCh);
+      supabase.removeChannel(partCh);
+      supabase.removeChannel(evCh);
       supabase.removeChannel(pendingCh);
       supabase.removeChannel(invitCh);
       clearInterval(pollInterval);
@@ -6895,29 +6910,20 @@ function AppInner() {
     if (!user || events.length === 0) return;
     const eventIds = events.map(e => e.id);
 
-    // S'abonner aux changements des charges
     const expCh = supabase
       .channel("expenses-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "expenses" }, (payload) => {
         const evId = payload.new?.event_id || payload.old?.event_id;
-        if (evId && eventIds.includes(evId)) {
-          loadAll();
-        }
-      })
-      .subscribe();
+        if (evId && eventIds.includes(evId)) loadAll();
+      }).subscribe();
 
-    // S'abonner aux changements des contributions
     const contCh = supabase
       .channel("contributions-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "contributions" }, (payload) => {
         const evId = payload.new?.event_id || payload.old?.event_id;
-        if (evId && eventIds.includes(evId)) {
-          loadAll();
-        }
-      })
-      .subscribe();
+        if (evId && eventIds.includes(evId)) loadAll();
+      }).subscribe();
 
-    // S'abonner aux cotisations (Budget)
     const cotCh = supabase
       .channel("cotisations-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "cotisations" }, (payload) => {
@@ -6926,23 +6932,42 @@ function AppInner() {
           loadAll();
           addToast("💰 Cotisations mises à jour", "info");
         }
-      })
-      .subscribe();
+      }).subscribe();
 
-    // S'abonner aux pending actions
+    // Participants — ajout/suppression par un invité autorisé
+    const partCh = supabase
+      .channel("participants-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "event_participants" }, (payload) => {
+        const evId = payload.new?.event_id || payload.old?.event_id;
+        if (evId && eventIds.includes(evId)) loadAll();
+      }).subscribe();
+
+    // Événements — modification par un invité
+    const evCh = supabase
+      .channel("events-realtime")
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "events" }, (payload) => {
+        if (eventIds.includes(payload.new?.id)) loadAll();
+      }).subscribe();
+
+    // Demandes en attente — INSERT et UPDATE (approbation/refus)
     const pendingCh = supabase
       .channel("pending-actions-realtime")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "pending_actions" }, () => {
         loadAll();
         addToast("📬 Nouvelle demande d'un invité", "info");
       })
-      .subscribe();
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "pending_actions" }, () => {
+        loadAll();
+      }).subscribe();
 
     return () => {
       supabase.removeChannel(expCh);
       supabase.removeChannel(contCh);
       supabase.removeChannel(cotCh);
+      supabase.removeChannel(partCh);
+      supabase.removeChannel(evCh);
       supabase.removeChannel(pendingCh);
+    };
     };
   }, [user, events.length]);
 
