@@ -6809,6 +6809,7 @@ function AppInner() {
   useEffect(() => {
     getSession().then(async s => {
       const u = s?.user || null;
+      userIdRef.current = u?.id || null;
       setUser(u);
       setLoading(false);
       if (u) {
@@ -6828,16 +6829,15 @@ function AppInner() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, s) => {
       const u = s?.user || null;
 
-      // TOKEN_REFRESHED : renouvellement silencieux — ne pas toucher à l'état
+      // Ignorer les événements qui ne changent pas l'état
       if (event === "TOKEN_REFRESHED") return;
 
-      // INITIAL_SESSION : géré par getSession() — ignorer pour éviter les doublons
-      if (event === "INITIAL_SESSION") return;
+      // Éviter de recréer user si c'est le même ID (Supabase crée un nouvel objet à chaque event)
+      const sameUser = u?.id && u.id === userIdRef.current;
 
-      setUser(u);
-
-      // SIGNED_OUT : nettoyer tout l'état
       if (event === "SIGNED_OUT" || !u) {
+        userIdRef.current = null;
+        setUser(null);
         setProfile(null);
         setEvents([]); setExpenses([]); setContributions({});
         setHistory([]); setNotifications([]); setPendingActions([]);
@@ -6845,15 +6845,18 @@ function AppInner() {
         return;
       }
 
-      // SIGNED_IN / USER_UPDATED : recharger le profil
-      if (event === "SIGNED_IN" || event === "USER_UPDATED") {
+      if (!sameUser) {
+        userIdRef.current = u.id;
+        setUser(u);
+      }
+
+      // Charger le profil uniquement lors d'une vraie connexion
+      if (event === "SIGNED_IN" && !sameUser) {
         try {
           const { data: prof } = await fetchProfile(u.id);
           setProfile(prof || null);
           if (prof?.user_role === "admin") {
             setActiveRaw("superadmin");
-          } else {
-            setActiveRaw(prev => prev === "superadmin" ? "dashboard" : prev);
           }
         } catch {}
       }
@@ -6861,9 +6864,12 @@ function AppInner() {
     return () => subscription.unsubscribe();
   }, []);
 
+  const userIdRef = useRef(null);
+
   const loadAll = useCallback(async () => {
-    if (!user) return;
-    const { data: evData } = await fetchEvents(user.id);
+    const uid = userIdRef.current;
+    if (!uid) return;
+    const { data: evData } = await fetchEvents(uid);
     if (!evData) return;
     setEvents(evData);
     const allExp = [], allContrib = {}, allHist = [];
@@ -6876,15 +6882,18 @@ function AppInner() {
       if (hData) allHist.push(...hData);
     }
     setExpenses(allExp); setContributions(allContrib); setHistory(allHist);
-    const { data: nData } = await fetchNotifications(user.id);
+    const { data: nData } = await fetchNotifications(uid);
     if (nData) setNotifications(nData);
     if (evData.length > 0) {
       const { data: paData } = await fetchAllPendingActions(evData.map(e => e.id));
       if (paData) setPendingActions(paData);
     }
-  }, [user]);
+  }, []); // ← pas de dépendance sur user, on utilise le ref
 
-  useEffect(() => { if (user) loadAll(); }, [user, loadAll]);
+  useEffect(() => {
+    userIdRef.current = user?.id || null;
+    if (user) loadAll();
+  }, [user?.id]); // ← dépendance sur user.id uniquement, pas l'objet entier
 
   // ─── Notifications Realtime ───────────────────────────────────
   useEffect(() => {
@@ -6893,7 +6902,7 @@ function AppInner() {
       fetchNotifications(user.id).then(({ data }) => { if (data) setNotifications(data); });
     });
     return () => unsubscribe(ch);
-  }, [user]);
+  }, [user?.id]);
 
   // ─── Charges & Contributions Realtime ────────────────────────
   useEffect(() => {
@@ -6949,7 +6958,7 @@ function AppInner() {
       supabase.removeChannel(cotCh);
       supabase.removeChannel(pendingCh);
     };
-  }, [user, events.length]);
+  }, [user?.id, events.length]);
 
   const handleSignOut = async () => {
     await signOut();
