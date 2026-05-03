@@ -1307,12 +1307,6 @@ function GuestCotisationsView({ ev, cotisations, sym, participants, can, filterE
   const handleAddCotisation = (participantName) => {
     const montant = getMontant();
     if (montant <= 0) { addToast("Montant requis.", "warning"); return; }
-    // Bloquer si participant déjà coté
-    const dejaCoté = cotisations.some(c => c.participant_name === (participantName || formParticipant));
-    if (dejaCoté) {
-      addToast("Ce participant a déjà une cotisation. Utilisez le bouton ✏️ Modifier.", "warning");
-      return;
-    }
     const data = { participant_name: participantName || formParticipant, montant, forme: formForme, statut: montant > 0 ? "paye" : "impaye", description: formDesc, event_id: filterEventId };
     if (can(filterEventId, "add_cotisation")) {
       submitAction("add_cotisation", data, filterEventId);
@@ -1480,23 +1474,15 @@ function GuestCotisationsView({ ev, cotisations, sym, participants, can, filterE
                       {!hasCot ? "⏳ En attente" : allPaid ? "✓ Soldé" : "~ Partiel"}
                     </span>
                     {ev?.status === "open" && (
-                      hasCot ? (
-                        // Déjà coté → ouvrir en mode édition sur la dernière cotisation
-                        <button onClick={() => handleEditCotisation(cotP[cotP.length - 1])}
-                          style={{ fontSize: 11, padding: "4px 10px", borderRadius: 8, border: "1.5px solid #FFE082", background: "#FFF8E1", color: "#F57F17", cursor: "pointer", fontWeight: 600, flexShrink: 0 }}>
-                          {can(filterEventId, "edit_cotisation") ? "✏️ Modifier" : "📤 Modifier"}
-                        </button>
-                      ) : (
-                        <button onClick={() => {
-                          setFormParticipant(p);
-                          setMontantMode(cotisationCible > 0 ? "minimal" : "libre");
-                          setFormMontant(""); setFormForme("especes"); setFormDesc("");
-                          setShowForm(true);
-                          window.scrollTo({ top: 0, behavior: "smooth" });
-                        }} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 8, border: "1.5px solid #eee", background: "#f9f9f9", color: "#555", cursor: "pointer", fontWeight: 600, flexShrink: 0 }}>
-                          {can(filterEventId, "add_cotisation") ? "+ Cotisation" : "📤 + Cotisation"}
-                        </button>
-                      )
+                      <button onClick={() => {
+                        setFormParticipant(p);
+                        setMontantMode(cotisationCible > 0 ? "minimal" : "libre");
+                        setFormMontant(""); setFormForme("especes"); setFormDesc("");
+                        setShowForm(true);
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      }} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 8, border: "1.5px solid #eee", background: "#f9f9f9", color: "#555", cursor: "pointer", fontWeight: 600, flexShrink: 0 }}>
+                        {can(filterEventId, "add_cotisation") ? "+ Cotisation" : "📤 + Cotisation"}
+                      </button>
                     )}
                   </div>
                 </div>
@@ -1753,7 +1739,7 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
   );
 
   return (
-    <aside style={{ width: 260, minWidth: 260, maxWidth: 260, background: "#0F0F0F", display: "flex", flexDirection: "column", flexShrink: 0, height: "100vh", overflowX: "hidden", overflowY: "auto" }}>
+    <aside style={{ width: 260, minWidth: 260, background: "#0F0F0F", display: "flex", flexDirection: "column", flexShrink: 0, position: "sticky", top: 0, height: "100vh", overflowX: "hidden", overflowY: "auto" }}>
       {/* Logo */}
       <div style={{ padding: "22px 20px 16px", borderBottom: "1px solid #1e1e1e" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -5362,10 +5348,8 @@ function SuperAdminPage({ user, isMobile, addToast }) {
   const load = async () => {
     setLoading(true);
     const { data, error } = await fetchAdminUsers();
-    if (error) {
-      const isTokenError = error.message?.toLowerCase().includes("token") || error.message?.toLowerCase().includes("jwt") || error.message?.toLowerCase().includes("unauthorized");
-      addToast(isTokenError ? "Session expirée — veuillez vous reconnecter." : "Erreur chargement : " + error.message, isTokenError ? "warning" : "error");
-    } else setUsers(data || []);
+    if (error) { addToast("Erreur chargement : " + error.message, "error"); }
+    else setUsers(data || []);
     // Load reports via supabase directly (service key not needed for reads with RLS bypassed via admin)
     try {
       const { data: rData } = await fetchReports();
@@ -6143,12 +6127,12 @@ function CotisationsPage({ events, expenses, user, reload, isMobile, addToast, t
     if (form.participant_name.length > 30) { addToast("Nom trop long (max 30 car.).", "warning"); return; }
     if (form.forme === "nature" && !natureForm.detail.trim()) { addToast("Précisez la nature de l'apport.", "warning"); return; }
 
-    // Bloquer la double cotisation — modifier la cotisation existante si le participant en a déjà une
+    // Vérifier doublon cotisation (sauf en édition)
     if (!editingCot) {
-      const dejaExiste = cotisations.find(c => c.participant_name === form.participant_name);
+      const dejaExiste = cotisations.some(c => c.participant_name === form.participant_name);
       if (dejaExiste) {
-        addToast(`${form.participant_name} a déjà une cotisation. Utilisez le bouton ✏️ Modifier pour la mettre à jour.`, "warning");
-        return;
+        const confirm = window.confirm(`${form.participant_name} a déjà une cotisation enregistrée. Voulez-vous en ajouter une supplémentaire ?`);
+        if (!confirm) return;
       }
     }
 
@@ -6400,14 +6384,7 @@ function CotisationsPage({ events, expenses, user, reload, isMobile, addToast, t
                 <select style={{ ...S.input, borderColor: form.participant_name ? "#4CAF50" : "#FFB74D" }}
                   value={form.participant_name} onChange={e => setForm({ ...form, participant_name: e.target.value })}>
                   <option value="">Sélectionner...</option>
-                  {participants.map(p => {
-                    const dejaCote = cotisations.some(c => c.participant_name === p);
-                    return (
-                      <option key={p} value={p} disabled={dejaCote}>
-                        {p}{dejaCote ? " (déjà coté — modifier via ✏️)" : ""}
-                      </option>
-                    );
-                  })}
+                  {participants.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
               )}
               {!form.participant_name && <div style={{ fontSize: 11, color: "#F57F17", marginTop: 3 }}>⚠️ Sélectionnez un participant</div>}
@@ -6561,25 +6538,10 @@ function CotisationsPage({ events, expenses, user, reload, isMobile, addToast, t
                     <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 20, background: !hasCot ? "#FFF8E1" : allPaid ? "#E8F5E9" : "#FFEBEE", color: !hasCot ? "#F57F17" : allPaid ? "#2E7D32" : "#C62828", fontWeight: 700 }}>
                       {!hasCot ? "⏳ En attente" : allPaid ? "✓ Soldé" : "~ Partiel"}
                     </span>
-                    {hasCot ? (
-                      // Déjà une cotisation → ouvrir en mode édition sur la dernière cotisation
-                      <button onClick={() => {
-                        const derniereCot = cotP[cotP.length - 1];
-                        setEditingCot(derniereCot);
-                        setForm({ participant_name: derniereCot.participant_name, montant: derniereCot.montant, forme: derniereCot.forme, description: derniereCot.description || "" });
-                        setMontantMode("libre");
-                        setShowForm(true);
-                        setShowGroupForm(false);
-                        window.scrollTo({ top: 0, behavior: "smooth" });
-                      }} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 8, border: "1.5px solid #FFE082", background: "#FFF8E1", color: "#F57F17", cursor: "pointer", fontWeight: 600, flexShrink: 0 }}>
-                        ✏️ Modifier
-                      </button>
-                    ) : (
-                      <button onClick={() => { setForm({ ...emptyForm, participant_name: p }); setEditingCot(null); setShowForm(true); window.scrollTo({ top: 0, behavior: "smooth" }); }}
-                        style={{ fontSize: 11, padding: "4px 10px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--hover-bg)", color: "var(--text-muted)", cursor: "pointer", fontWeight: 600, flexShrink: 0 }}>
-                        + Cotisation
-                      </button>
-                    )}
+                    <button onClick={() => { setForm({ ...emptyForm, participant_name: p }); setEditingCot(null); setShowForm(true); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+                      style={{ fontSize: 11, padding: "4px 10px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--hover-bg)", color: "var(--text-muted)", cursor: "pointer", fontWeight: 600, flexShrink: 0 }}>
+                      + Cotisation
+                    </button>
                   </div>
                 </div>
 
@@ -6812,33 +6774,21 @@ function AppInner() {
       setUser(u);
       setLoading(false);
       if (u) {
-        try { const onboarded = localStorage.getItem(ONBOARDING_KEY); if (!onboarded) setShowOnboarding(true); } catch {}
+        try {
+          const onboarded = localStorage.getItem(ONBOARDING_KEY);
+          if (!onboarded) setShowOnboarding(true);
+        } catch {}
+        // Charger le profil pour détecter le rôle admin
         try {
           const { data: prof } = await fetchProfile(u.id);
           setProfile(prof || null);
-          if (prof?.user_role === "admin") setActiveRaw("superadmin");
+          // Rediriger automatiquement le super admin vers sa page dédiée
+          if (prof?.user_role === "admin") setActive("superadmin");
         } catch {}
       }
-    }).catch(() => { setLoading(false); });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, s) => {
-      if (event === "TOKEN_REFRESHED") return;
-      const u = s?.user || null;
-      if (event === "SIGNED_OUT" || !u) {
-        setUser(null); setProfile(null);
-        setEvents([]); setExpenses([]); setContributions({});
-        setHistory([]); setNotifications([]); setPendingActions([]);
-        setActiveRaw("dashboard");
-        return;
-      }
-      if (event === "SIGNED_IN") {
-        setUser(u);
-        try {
-          const { data: prof } = await fetchProfile(u.id);
-          setProfile(prof || null);
-          if (prof?.user_role === "admin") setActiveRaw("superadmin");
-        } catch {}
-      }
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
+      setUser(s?.user || null);
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -6864,9 +6814,9 @@ function AppInner() {
       const { data: paData } = await fetchAllPendingActions(evData.map(e => e.id));
       if (paData) setPendingActions(paData);
     }
-  }, [user?.id]);
+  }, [user]);
 
-  useEffect(() => { if (user) loadAll(); }, [user?.id]);
+  useEffect(() => { if (user) loadAll(); }, [user, loadAll]);
 
   // ─── Notifications Realtime ───────────────────────────────────
   useEffect(() => {
@@ -6875,7 +6825,7 @@ function AppInner() {
       fetchNotifications(user.id).then(({ data }) => { if (data) setNotifications(data); });
     });
     return () => unsubscribe(ch);
-  }, [user?.id]);
+  }, [user]);
 
   // ─── Charges & Contributions Realtime ────────────────────────
   useEffect(() => {
@@ -6931,15 +6881,11 @@ function AppInner() {
       supabase.removeChannel(cotCh);
       supabase.removeChannel(pendingCh);
     };
-  }, [user?.id, events.length]);
+  }, [user, events.length]);
 
   const handleSignOut = async () => {
     await signOut();
-    setUser(null);
-    setProfile(null);
-    setGuestEmail(null);
-    setActiveRaw("dashboard");
-    setEvents([]); setExpenses([]);
+    setUser(null); setGuestEmail(null); setEvents([]); setExpenses([]);
     setContributions({}); setHistory([]); setNotifications([]); setPendingActions([]);
   };
 
@@ -7014,11 +6960,11 @@ function AppInner() {
   };
 
   return (
-    <div style={{ display: "flex", height: "100vh", width: "100%", maxWidth: "100%", background: "var(--bg)", fontFamily: "'DM Sans', sans-serif", overflow: "hidden", boxSizing: "border-box" }}>
+    <div style={{ display: "flex", height: "100vh", width: "100vw", maxWidth: "100vw", background: "var(--bg)", fontFamily: "'DM Sans', sans-serif", overflow: "hidden" }}>
       <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
       <style>{`
         *, *::before, *::after { box-sizing: border-box; }
-        html, body { overflow-x: hidden; max-width: 100%; margin:0; padding:0; }
+        html, body { overflow-x: hidden; max-width: 100vw; margin:0; padding:0; }
         table { table-layout: fixed; }
         @keyframes pageFadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         .page-transition { animation: pageFadeIn 0.15s ease; pointer-events: auto; }
