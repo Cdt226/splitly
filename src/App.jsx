@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, createContext, useContext } from "react";
+import LandingPage from "./LandingPage.jsx";
 import { useTranslation, LanguageSwitcher, LanguageMenu } from "./i18n.jsx";
 import {
   supabase, signUp, signIn, signOut, getSession,
