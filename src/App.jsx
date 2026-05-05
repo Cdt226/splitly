@@ -4375,18 +4375,19 @@ function History({ events, history, user, reload, isMobile, addToast }) {
   const handleRollback = (entry) => {
     const later = history.filter(h => h.event_id === entry.event_id && h.created_at >= entry.created_at && !h.invalidated);
     setConfirm({
-      message: `Invalider "${entry.action}" du ${new Date(entry.created_at).toLocaleString("fr-FR")} ?`,
+      message: `Annuler "${entry.action}" du ${new Date(entry.created_at).toLocaleString("fr-FR")} ?`,
       warnings: later.length > 1 ? [`${later.length - 1} modification(s) ultérieure(s) seront également invalidées.`] : [],
       onConfirm: async () => {
         try {
           const before = entry.before_data;
           const after = entry.after_data;
 
+          // ── Charges ──────────────────────────────────────────
           if (entry.action === "Charge modifiée" && before) {
             const { error } = await supabase.from('expenses').update({
               category: before.category, sub_category: before.sub_category,
               detail: before.detail, qty: before.qty, unit_price: before.unit_price,
-              paid_by: before.paid_by, included: before.included, version: before.version,
+              paid_by: before.paid_by, included: before.included,
             }).eq('id', before.id);
             if (error) throw new Error("Restauration impossible : " + error.message);
 
@@ -4403,6 +4404,7 @@ function History({ events, history, user, reload, isMobile, addToast }) {
             const { error } = await supabase.from('expenses').delete().eq('id', after.id);
             if (error) throw new Error("Impossible d'annuler l'ajout : " + error.message);
 
+          // ── Contributions ─────────────────────────────────────
           } else if (entry.action.startsWith("Contribution") && before) {
             const person = before.participant;
             if (person) {
@@ -4412,6 +4414,39 @@ function History({ events, history, user, reload, isMobile, addToast }) {
                 await supabase.from('contributions').upsert({ event_id: entry.event_id, participant: person, amount: before.amount }, { onConflict: 'event_id,participant' });
               }
             }
+
+          // ── Cotisations ───────────────────────────────────────
+          } else if (entry.action === "Cotisation ajoutée" && after) {
+            const { error } = await supabase.from('cotisations').delete().eq('id', after.id);
+            if (error) throw new Error("Impossible d'annuler la cotisation : " + error.message);
+
+          } else if (entry.action === "Cotisation modifiée" && before) {
+            const { error } = await supabase.from('cotisations').update({
+              montant: before.montant, forme: before.forme,
+              statut: before.statut, description: before.description,
+            }).eq('id', before.id);
+            if (error) throw new Error("Restauration cotisation impossible : " + error.message);
+
+          } else if (entry.action === "Cotisation supprimée" && before) {
+            const { error } = await supabase.from('cotisations').insert({
+              id: before.id, event_id: before.event_id,
+              participant_name: before.participant_name, montant: before.montant,
+              forme: before.forme, statut: before.statut, description: before.description,
+            });
+            if (error) throw new Error("Restauration cotisation impossible : " + error.message);
+
+          // ── Participants ──────────────────────────────────────
+          } else if (entry.action === "Participant ajouté" && after) {
+            const { error } = await supabase.from('event_participants')
+              .delete().eq('event_id', entry.event_id).eq('name', after.name);
+            if (error) throw new Error("Impossible d'annuler l'ajout du participant : " + error.message);
+
+          } else if (entry.action === "Participant supprimé" && before) {
+            const { error } = await supabase.from('event_participants').insert({
+              event_id: entry.event_id, name: before.name,
+            });
+            if (error) throw new Error("Impossible de restaurer le participant : " + error.message);
+
           } else {
             addToast("Ce type de modification ne peut pas être annulé automatiquement.", "warning");
             setConfirm(null);
@@ -4421,7 +4456,7 @@ function History({ events, history, user, reload, isMobile, addToast }) {
           await invalidateHistory(entry.id, entry.event_id);
           await reload();
           setConfirm(null);
-          addToast("✓ Rollback effectué — données restaurées.", "success");
+          addToast("✓ Annulation effectuée — données restaurées.", "success");
 
         } catch (err) {
           setConfirm(null);

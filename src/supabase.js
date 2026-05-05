@@ -278,25 +278,37 @@ export async function fetchCotisations(eventId) {
   return { data, error };
 }
 
-export async function createCotisation(cotisation) {
+export async function createCotisation(cotisation, actorId = null) {
   const { data, error } = await supabase
     .from('cotisations')
     .insert(cotisation)
     .select().single();
+  if (data && !error) {
+    await addHistory({ eventId: cotisation.event_id, action: "Cotisation ajoutée", actorId, before: null, after: data });
+  }
   return { data, error };
 }
 
-export async function updateCotisation(id, updates) {
+export async function updateCotisation(id, updates, actorId = null) {
+  // Sauvegarder l'état avant
+  const { data: before } = await supabase.from('cotisations').select('*').eq('id', id).single();
   const { data, error } = await supabase
     .from('cotisations')
     .update(updates)
     .eq('id', id)
     .select().single();
+  if (data && !error && before) {
+    await addHistory({ eventId: before.event_id, action: "Cotisation modifiée", actorId, before, after: data });
+  }
   return { data, error };
 }
 
-export async function deleteCotisation(id) {
+export async function deleteCotisation(id, actorId = null) {
+  const { data: before } = await supabase.from('cotisations').select('*').eq('id', id).single();
   const { error } = await supabase.from('cotisations').delete().eq('id', id);
+  if (!error && before) {
+    await addHistory({ eventId: before.event_id, action: "Cotisation supprimée", actorId, before, after: null });
+  }
   return { error };
 }
 
@@ -352,15 +364,18 @@ export async function deleteEvent(eventId) {
 }
 
 // ─── PARTICIPANTS ─────────────────────────────────────────────
-export async function addParticipant(eventId, name) {
+export async function addParticipant(eventId, name, actorId = null) {
   const { data, error } = await supabase
     .from('event_participants')
     .insert({ event_id: eventId, name })
     .select().single();
+  if (data && !error) {
+    await addHistory({ eventId, action: "Participant ajouté", actorId, before: null, after: { name } });
+  }
   return { data, error };
 }
 
-export async function removeParticipant(eventId, name) {
+export async function removeParticipant(eventId, name, actorId = null) {
   // Nettoyer le participant des tableaux "included" dans les charges
   const { data: expenses } = await supabase
     .from('expenses')
@@ -389,6 +404,10 @@ export async function removeParticipant(eventId, name) {
     .delete()
     .eq('event_id', eventId)
     .eq('name', name);
+
+  if (!error) {
+    await addHistory({ eventId, action: "Participant supprimé", actorId, before: { name }, after: null });
+  }
   return { error };
 }
 
