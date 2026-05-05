@@ -2325,6 +2325,9 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
       id: Date.now().toString(),
       name: ev.name,
       currency: ev.currency,
+      event_type: ev.event_type || "split",
+      cotisation_cible: ev.cotisation_cible || 0,
+      nombre_invites: ev.nombre_invites || 0,
       participants,
       savedAt: new Date().toISOString(),
     };
@@ -2340,6 +2343,9 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
       name: template.name,
       date: new Date().toISOString().split("T")[0],
       currency: template.currency,
+      event_type: template.event_type || "split",
+      cotisation_cible: template.cotisation_cible || "",
+      nombre_invites: template.nombre_invites || "",
       participants: [...template.participants],
     });
     setShowTemplates(false);
@@ -2725,8 +2731,11 @@ function Events({ events, expenses, contributions, user, reload, isMobile, addTo
               <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "#fafafa", borderRadius: 10, border: "1px solid #eee" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</div>
-                  <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>
-                    {t.participants.length} participants · {currencySymbol(t.currency)} · Sauvegardé le {new Date(t.savedAt).toLocaleDateString("fr-FR")}
+                  <div style={{ fontSize: 11, color: "#aaa", marginTop: 2, display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 10, padding: "1px 7px", borderRadius: 20, background: t.event_type === "budget" ? "#FFF8E1" : "#F3E5F5", color: t.event_type === "budget" ? "#F57F17" : "#6A1B9A", fontWeight: 700 }}>
+                      {t.event_type === "budget" ? "🏦 Budget" : "💸 Split"}
+                    </span>
+                    {t.participants.length} participants · {currencySymbol(t.currency)} · {new Date(t.savedAt).toLocaleDateString("fr-FR")}
                   </div>
                   <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
                     {t.participants.slice(0, 5).map(p => (
