@@ -1,4 +1,4 @@
-const CACHE_NAME = "splitly-v3";
+const CACHE_NAME = "splitly-v4";
 const STATIC_ASSETS = ["/", "/index.html"];
 
 self.addEventListener("install", (event) => {
@@ -20,12 +20,6 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const url = event.request.url;
   const method = event.request.method;
-
-  // Ne jamais mettre en cache :
-  // - Les requêtes POST, PUT, PATCH, DELETE
-  // - Les URLs /api/
-  // - Les URLs Supabase
-  // - Les URLs Resend
   if (
     method !== "GET" ||
     url.includes("/api/") ||
@@ -36,12 +30,9 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(fetch(event.request));
     return;
   }
-
-  // Pour les requêtes GET uniquement : réseau d'abord, cache en fallback
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        // Ne mettre en cache que les réponses valides
         if (response && response.status === 200 && response.type === "basic") {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
@@ -52,7 +43,41 @@ self.addEventListener("fetch", (event) => {
   );
 });
 
-// Mise à jour automatique
+// ── Notifications push ─────────────────────────────────────
+self.addEventListener("push", (event) => {
+  if (!event.data) return;
+  try {
+    const data = event.data.json();
+    event.waitUntil(
+      self.registration.showNotification(data.title || "SplitLy", {
+        body: data.body || "",
+        icon: data.icon || "/icon-192.png",
+        badge: data.badge || "/icon-192.png",
+        data: { url: data.url || "/" },
+        vibrate: [200, 100, 200],
+        requireInteraction: false,
+      })
+    );
+  } catch {}
+});
+
+// Clic sur la notification → ouvrir l'app
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = event.notification.data?.url || "/";
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((windowClients) => {
+      for (const client of windowClients) {
+        if (client.url.includes(self.location.origin) && "focus" in client) {
+          client.navigate(url);
+          return client.focus();
+        }
+      }
+      if (clients.openWindow) return clients.openWindow(url);
+    })
+  );
+});
+
 self.addEventListener("message", (event) => {
   if (event.data === "SKIP_WAITING") self.skipWaiting();
 });

@@ -1712,23 +1712,47 @@ function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut
 
     const handlePushToggle = async () => {
       try {
-        if (!("Notification" in window)) {
+        if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
           addToast("Notifications non supportées sur ce navigateur.", "warning");
           return;
         }
-        if (Notification.permission === "granted") {
-          addToast("Notifications push déjà activées.", "info");
+        if (pushEnabled) {
+          // Désactiver — supprimer l'abonnement
+          const reg = await navigator.serviceWorker.ready;
+          const sub = await reg.pushManager.getSubscription();
+          if (sub) {
+            await fetch("/api/save-push-sub", {
+              method: "DELETE",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ endpoint: sub.endpoint }),
+            });
+            await sub.unsubscribe();
+          }
+          setPushEnabled(false);
+          addToast("🔕 Notifications désactivées.", "info");
           return;
         }
         const permission = await Notification.requestPermission();
-        if (permission === "granted") {
-          setPushEnabled(true);
-          addToast("🔔 Notifications activées !", "success");
-        } else {
+        if (permission !== "granted") {
           addToast("Notifications refusées. Autorisez-les dans les paramètres du navigateur.", "warning");
+          return;
         }
+        // Créer l'abonnement push
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: import.meta.env.VITE_VAPID_PUBLIC_KEY,
+        });
+        // Sauvegarder en base
+        await fetch("/api/save-push-sub", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: user?.id, subscription: sub.toJSON() }),
+        });
+        setPushEnabled(true);
+        addToast("🔔 Notifications activées !", "success");
       } catch (e) {
-        addToast("Impossible d'activer les notifications.", "warning");
+        addToast("Impossible d'activer les notifications : " + e.message, "warning");
       }
     };
 
@@ -5038,6 +5062,17 @@ function NotificationsPage({ notifications, events, expenses, pendingActions, us
       addToast("Erreur lors de l'approbation : " + error.message, "error");
     } else {
       addToast("Action approuvée et exécutée.", "success");
+      // Notifier l'invité via push
+      fetch("/api/send-push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          guestEmail: action.guest_email,
+          title: "✅ Demande approuvée",
+          body: `Votre demande a été approuvée par l'admin.`,
+          url: "/",
+        }),
+      }).catch(() => {});
     }
     await reload();
     setSaving(null);
@@ -5280,18 +5315,43 @@ function SettingsPage({ user, onSignOut, isMobile, addToast, t, events }) {
   };
 
   const handlePushToggle = async () => {
-    if (typeof Notification === "undefined") {
+    if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
       addToast("Notifications non supportées sur ce navigateur.", "warning"); return;
     }
-    if (Notification.permission === "granted") {
-      addToast("Notifications déjà activées.", "info"); return;
+    if (pushEnabled) {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        await fetch("/api/save-push-sub", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: sub.endpoint }),
+        });
+        await sub.unsubscribe();
+      }
+      setPushEnabled(false);
+      addToast("🔕 Notifications désactivées.", "info");
+      return;
     }
     const permission = await Notification.requestPermission();
-    if (permission === "granted") {
+    if (permission !== "granted") {
+      addToast("Notifications refusées. Autorisez-les dans les paramètres du navigateur.", "warning"); return;
+    }
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: import.meta.env.VITE_VAPID_PUBLIC_KEY,
+      });
+      await fetch("/api/save-push-sub", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user?.id, subscription: sub.toJSON() }),
+      });
       setPushEnabled(true);
       addToast("🔔 Notifications activées !", "success");
-    } else {
-      addToast("Notifications refusées. Autorisez-les dans les paramètres du navigateur.", "warning");
+    } catch (e) {
+      addToast("Erreur lors de l'activation : " + e.message, "warning");
     }
   };
 
