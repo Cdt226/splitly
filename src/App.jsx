@@ -25,6 +25,9 @@ import { fmt, currencySymbol, computeOwed, computeNetBalance, isSettled, isExact
 
 import { useIsMobile, useToast, ToastContainer, Avatar, EmojiPicker, AvatarStack, Truncate, Badge, EmptyState, Chip, ParticipantInput, ParticipantToggle, Modal, ConfirmModal, Spinner, StatCard } from "./components/ui/index.jsx";
 import { S } from "./styles.js";
+import { ThemeContext, ThemeProvider, useTheme } from "./hooks/useTheme.jsx";
+import { saveGuestSession, loadGuestSession, clearGuestSession } from "./hooks/useGuestSession.js";
+import { TEMPLATES_KEY, getTemplates, saveTemplates, ONBOARDING_KEY } from "./hooks/storage.js";
 // ─── AUTH SCREEN ──────────────────────────────────────────────
 function AuthScreen({ onAuth, onGuestAuth, initialMode, onClose }) {
   // Pré-remplir l'email invité si l'URL contient ?guest=email (lien d'invitation)
@@ -1918,15 +1921,6 @@ function EventDetail({ ev, events, expenses, contributions, user, reload, isMobi
 }
 
 // ─── ÉVÉNEMENTS ───────────────────────────────────────────────
-const TEMPLATES_KEY = "splitly_templates";
-
-function getTemplates() {
-  try { return JSON.parse(localStorage.getItem(TEMPLATES_KEY) || "[]"); } catch { return []; }
-}
-function saveTemplates(templates) {
-  try { localStorage.setItem(TEMPLATES_KEY, JSON.stringify(templates)); } catch {}
-}
-
 function Events({ events, expenses, contributions, user, reload, isMobile, addToast, t }) {
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState({ name: "", date: "", currency: "EUR €", participants: [], event_type: "split", cotisation_cible: "", nombre_invites: "" });
@@ -5137,8 +5131,6 @@ function SettingsPage({ user, onSignOut, isMobile, addToast, t, events }) {
 }
 
 // ─── ONBOARDING WIZARD ────────────────────────────────────────
-const ONBOARDING_KEY = "splitly_onboarded";
-
 function OnboardingWizard({ onComplete }) {
   const [step, setStep] = useState(0);
 
@@ -6465,110 +6457,6 @@ function CotisationsPage({ events, expenses, user, reload, isMobile, addToast, t
 }
 
 // ─── THEME CONTEXT ────────────────────────────────────────────
-const THEME_KEY = "splitly_theme";
-const ThemeContext = createContext({ dark: false, toggle: () => {} });
-
-function ThemeProvider({ children }) {
-  const [dark, setDark] = useState(() => {
-    try { return localStorage.getItem(THEME_KEY) === "dark"; } catch { return false; }
-  });
-
-  const toggle = useCallback(() => {
-    setDark(d => {
-      const next = !d;
-      try { localStorage.setItem(THEME_KEY, next ? "dark" : "light"); } catch {}
-      return next;
-    });
-  }, []);
-
-  // Injecter les CSS variables selon le thème
-  useEffect(() => {
-    const root = document.documentElement;
-    if (dark) {
-      root.style.setProperty("--bg", "#111");
-      root.style.setProperty("--bg-secondary", "#1a1a1a");
-      root.style.setProperty("--card-bg", "#1e1e1e");
-      root.style.setProperty("--border", "#2a2a2a");
-      root.style.setProperty("--text", "#f0f0f0");
-      root.style.setProperty("--text-muted", "#888");
-      root.style.setProperty("--text-sub", "#666");
-      root.style.setProperty("--input-bg", "#252525");
-      root.style.setProperty("--btn-dark-bg", "#fff");
-      root.style.setProperty("--btn-dark-text", "#0F0F0F");
-      root.style.setProperty("--hover-bg", "#252525");
-      root.style.setProperty("--stat-bg", "#1e1e1e");
-      document.body.style.background = "#111";
-      document.body.style.color = "#f0f0f0";
-    } else {
-      root.style.setProperty("--bg", "#f2f2f2");
-      root.style.setProperty("--bg-secondary", "#fff");
-      root.style.setProperty("--card-bg", "#f9f9f9");
-      root.style.setProperty("--border", "#e5e5e5");
-      root.style.setProperty("--text", "#1a1a1a");
-      root.style.setProperty("--text-muted", "#555");
-      root.style.setProperty("--text-sub", "#aaa");
-      root.style.setProperty("--input-bg", "#fff");
-      root.style.setProperty("--btn-dark-bg", "#0F0F0F");
-      root.style.setProperty("--btn-dark-text", "#fff");
-      root.style.setProperty("--hover-bg", "#f5f5f5");
-      root.style.setProperty("--stat-bg", "#f9f9f9");
-      document.body.style.background = "#f2f2f2";
-      document.body.style.color = "#1a1a1a";
-    }
-  }, [dark]);
-
-  return (
-    <ThemeContext.Provider value={{ dark, toggle }}>
-      <style>{`
-        :root {
-          --bg: #f2f2f2; --bg-secondary: #fff; --card-bg: #f9f9f9;
-          --border: #e5e5e5; --text: #1a1a1a; --text-muted: #555;
-          --text-sub: #aaa; --input-bg: #fff; --btn-dark-bg: #0F0F0F;
-          --btn-dark-text: #fff; --hover-bg: #f5f5f5; --stat-bg: #f9f9f9;
-        }
-        * { box-sizing: border-box; transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease; }
-        body { margin: 0; }
-      `}</style>
-      {children}
-    </ThemeContext.Provider>
-  );
-}
-
-function useTheme() {
-  return useContext(ThemeContext);
-}
-
-// ─── APP RACINE ───────────────────────────────────────────────
-const GUEST_SESSION_KEY = "splitly_guest_session";
-const GUEST_SESSION_DAYS = 30;
-
-function saveGuestSession(email) {
-  try {
-    const session = { email, expires: Date.now() + GUEST_SESSION_DAYS * 86400000 };
-    localStorage.setItem(GUEST_SESSION_KEY, JSON.stringify(session));
-  } catch {}
-}
-
-function loadGuestSession() {
-  try {
-    const raw = localStorage.getItem(GUEST_SESSION_KEY);
-    if (!raw) return null;
-    const session = JSON.parse(raw);
-    if (!session.email || !session.expires) return null;
-    if (Date.now() > session.expires) {
-      localStorage.removeItem(GUEST_SESSION_KEY);
-      return null;
-    }
-    return session.email;
-  } catch { return null; }
-}
-
-function clearGuestSession() {
-  try { localStorage.removeItem(GUEST_SESSION_KEY); } catch {}
-  // Nettoyage ancienne clé si présente
-  try { localStorage.removeItem("splitly_guest_email"); } catch {}
-}
-
 function AppInner() {
   const [isOnline, setIsOnline] = useState(() => typeof navigator !== "undefined" ? navigator.onLine : true);
   useEffect(() => {
