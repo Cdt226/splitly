@@ -5,7 +5,7 @@ import { CATEGORIES, CURRENCIES, AVATAR_EMOJIS } from "../constants.js";
 import { fmt, currencySymbol, computeOwed, computeNetBalance, isSettled, isExactlySettled, settleStatus, validateAmount, computeTransactions, getAvatarMap, saveAvatarEmoji } from "../utils.js";
 import { S } from "../styles.js";
 import { Avatar, AvatarStack, EmojiPicker, Truncate, Badge, EmptyState, Chip, ParticipantInput, ParticipantToggle, Modal, ConfirmModal, Spinner, StatCard } from "../components/ui/index.jsx";
-import { sendInvitation, removeInvitation, updateInvitationRole, updateInvitationPermissions, fetchInvitationPermissions, requestPermissions } from "../supabase.js";
+import { sendInvitation, removeInvitation, updateInvitationRole, updateInvitationPermissions, fetchInvitationPermissions, requestPermissions, fetchInvitations } from "../supabase.js";
 
 const ALL_PERMISSIONS = {
   add_expense:         { label: "Ajouter charge",          icon: "➕",  desc: "Créer de nouvelles charges", color: "#1565C0", bg: "#E3F2FD", split: true, budget: true },

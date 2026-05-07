@@ -1,6 +1,6 @@
 // src/pages/ContributionsPage.jsx
 import { useState, useEffect, useCallback, useRef } from "react";
-import { supabase } from "../supabase.js";
+import { supabase, fetchCotisations } from "../supabase.js";
 import { CATEGORIES, CURRENCIES, AVATAR_EMOJIS } from "../constants.js";
 import { fmt, currencySymbol, computeOwed, computeNetBalance, isSettled, isExactlySettled, settleStatus, validateAmount, computeTransactions, getAvatarMap, saveAvatarEmoji } from "../utils.js";
 import { S } from "../styles.js";
