@@ -6,6 +6,7 @@ import { fmt, currencySymbol, computeOwed, computeNetBalance, isSettled, isExact
 import { S } from "../styles.js";
 import { Avatar, AvatarStack, EmojiPicker, Truncate, Badge, EmptyState, Chip, ParticipantInput, ParticipantToggle, Modal, ConfirmModal, Spinner, StatCard } from "../components/ui/index.jsx";
 import { useTranslation, LanguageSwitcher, LanguageMenu } from "../i18n.jsx";
+import { useTheme } from "../hooks/useTheme.jsx";
 
 export function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut, isMobile, menuOpen, setMenuOpen, t, lang, setLang, searchQuery, setSearchQuery, isAdmin, hasBudgetEvents }) {
   const totalBadge = unreadCount + pendingCount;
