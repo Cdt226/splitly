@@ -17,6 +17,15 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
+  // ── Vérifier les variables d'environnement ────────────────
+  console.log('ENV CHECK:', {
+    url: !!process.env.VITE_SUPABASE_URL,
+    key: !!process.env.SUPABASE_SERVICE_KEY,
+  });
+  if (!process.env.VITE_SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
+    return res.status(500).json({ error: 'Variables environnement manquantes (VITE_SUPABASE_URL ou SUPABASE_SERVICE_KEY)' });
+  }
+
   try {
     // ── Vérifier que l'appelant est admin ──────────────────
     const authHeader = req.headers.authorization;
