@@ -136,7 +136,7 @@ export function AuthScreen({ onAuth, onGuestAuth, initialMode, onClose }) {
 
         {/* Admin forms */}
         {!isGuest && (
-          <>
+          <form onSubmit={e => { e.preventDefault(); handleAdmin(); }}>
             {mode === "register" && (
               <div style={{ marginBottom: 14 }}>
                 <label style={S.label}>Nom complet</label>
@@ -148,73 +148,70 @@ export function AuthScreen({ onAuth, onGuestAuth, initialMode, onClose }) {
             )}
             <div style={{ marginBottom: 14 }}>
               <label style={S.label}>Email</label>
-              <input style={inp("email")} type="email" placeholder="alice@mail.com" value={form.email}
+              <input style={inp("email")} type="email" autoComplete="email" placeholder="alice@mail.com" value={form.email}
                 onChange={e => setForm({ ...form, email: e.target.value })}
                 onBlur={() => touch("email")} />
               <FErr field="email" />
             </div>
             <div style={{ marginBottom: 20 }}>
               <label style={S.label}>Mot de passe {mode === "register" && <span style={{ color: "#aaa", fontWeight: 400 }}>(8 car. min.)</span>}</label>
-              <input style={inp("password")} type="password" placeholder="••••••••" value={form.password}
+              <input style={inp("password")} type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} placeholder="••••••••" value={form.password}
                 onChange={e => setForm({ ...form, password: e.target.value })}
-                onBlur={() => touch("password")}
-                onKeyDown={e => e.key === "Enter" && handleAdmin()} />
+                onBlur={() => touch("password")} />
               <FErr field="password" />
             </div>
             {error && <div style={{ background: "#fff5f5", border: "1px solid #ffcdd2", borderRadius: 10, padding: "10px 14px", fontSize: 12, color: "#C62828", marginBottom: 14 }}>⚠️ {error}</div>}
-            <button onClick={handleAdmin} disabled={loading || !canSubmit}
+            <button type="submit" disabled={loading || !canSubmit}
               style={{ ...S.btnDark, width: "100%", justifyContent: "center", display: "flex", opacity: (loading || !canSubmit) ? 0.6 : 1 }}>
               {loading ? "Connexion..." : mode === "login" ? "Se connecter" : "Créer le compte"}
             </button>
             <div style={{ textAlign: "center", marginTop: 16, fontSize: 13, color: "#aaa" }}>
               {mode === "login" ? "Pas de compte ? " : "Déjà un compte ? "}
-              <button onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); setTouched({}); }}
+              <button type="button" onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); setTouched({}); }}
                 style={{ background: "none", border: "none", color: "#0F0F0F", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>
                 {mode === "login" ? "S'inscrire" : "Se connecter"}
               </button>
             </div>
-          </>
+          </form>
         )}
 
         {/* Guest step 1 */}
         {mode === "guest" && (
-          <>
+          <form onSubmit={e => { e.preventDefault(); handleGuestRequest(); }}>
             <div style={{ background: "#E3F2FD", borderRadius: 10, padding: "12px 16px", marginBottom: 20, fontSize: 13, color: "#1565C0", lineHeight: 1.5 }}>
               Entrez votre email pour recevoir un code d'accès à usage unique.
             </div>
             <div style={{ marginBottom: 20 }}>
               <label style={S.label}>Votre email</label>
-              <input style={inp("email")} type="email" placeholder="votre@email.com" value={form.email}
+              <input style={inp("email")} type="email" autoComplete="email" placeholder="votre@email.com" value={form.email}
                 onChange={e => setForm({ ...form, email: e.target.value })}
-                onBlur={() => touch("email")}
-                onKeyDown={e => e.key === "Enter" && handleGuestRequest()} />
+                onBlur={() => touch("email")} />
               <FErr field="email" />
             </div>
             {error && <div style={{ background: "#fff5f5", border: "1px solid #ffcdd2", borderRadius: 10, padding: "10px 14px", fontSize: 12, color: "#C62828", marginBottom: 14 }}>⚠️ {error}</div>}
-            <button onClick={handleGuestRequest} disabled={loading || !emailValid}
+            <button type="submit" disabled={loading || !emailValid}
               style={{ ...S.btnDark, width: "100%", justifyContent: "center", display: "flex", opacity: (loading || !emailValid) ? 0.6 : 1 }}>
               {loading ? "Envoi..." : "Recevoir le code →"}
             </button>
-          </>
+          </form>
         )}
 
         {/* Guest step 2 */}
         {mode === "guest_verify" && (
-          <>
+          <form onSubmit={e => { e.preventDefault(); handleGuestVerify(); }}>
             <div style={{ background: "#E8F5E9", borderRadius: 10, padding: "12px 16px", marginBottom: 20, fontSize: 13, color: "#2E7D32", lineHeight: 1.5 }}>
               Code envoyé à <strong>{form.email}</strong>. Vérifiez votre boîte mail.
             </div>
             <div style={{ marginBottom: 20 }}>
               <label style={S.label}>Code d'accès (6 chiffres)</label>
               <input style={{ ...inp("code"), fontSize: 24, letterSpacing: 8, textAlign: "center", fontWeight: 700 }}
-                placeholder="000000" maxLength={6} value={form.code}
+                placeholder="000000" maxLength={6} autoComplete="one-time-code" value={form.code}
                 onChange={e => setForm({ ...form, code: e.target.value.replace(/\D/g, "") })}
-                onBlur={() => touch("code")}
-                onKeyDown={e => e.key === "Enter" && handleGuestVerify()} />
+                onBlur={() => touch("code")} />
               <FErr field="code" />
             </div>
             {error && <div style={{ background: "#fff5f5", border: "1px solid #ffcdd2", borderRadius: 10, padding: "10px 14px", fontSize: 12, color: "#C62828", marginBottom: 14 }}>⚠️ {error}</div>}
-            <button onClick={handleGuestVerify} disabled={loading || !codeValid}
+            <button type="submit" disabled={loading || !codeValid}
               style={{ ...S.btnDark, width: "100%", justifyContent: "center", display: "flex", opacity: (loading || !codeValid) ? 0.6 : 1 }}>
               {loading ? "Vérification..." : "Accéder →"}
             </button>
@@ -222,8 +219,8 @@ export function AuthScreen({ onAuth, onGuestAuth, initialMode, onClose }) {
               🔒 Votre session sera mémorisée 30 jours sur cet appareil
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-              <button onClick={() => { setMode("guest"); setError(""); setTouched({}); }} style={{ ...S.btnGhost, flex: 1, justifyContent: "center", display: "flex" }}>← Retour</button>
-              <button onClick={async () => {
+              <button type="button" onClick={() => { setMode("guest"); setError(""); setTouched({}); }} style={{ ...S.btnGhost, flex: 1, justifyContent: "center", display: "flex" }}>← Retour</button>
+              <button type="button" onClick={async () => {
                 setLoading(true); setError("");
                 await sendGuestCode(form.email, null);
                 setLoading(false);
@@ -232,7 +229,7 @@ export function AuthScreen({ onAuth, onGuestAuth, initialMode, onClose }) {
                 🔄 Renvoyer le code
               </button>
             </div>
-          </>
+          </form>
         )}
       </div>
     </div>
