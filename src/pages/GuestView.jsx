@@ -753,7 +753,7 @@ function GuestCotisationForm({ ev, onSubmit, saving }) {
 }
 
 // Vue cotisations invité — identique à l'admin, droits vérifiés à l'action
-function GuestCotisationsView({ ev, cotisations, sym, participants, can, filterEventId, submitAction, saving, isMobile, addToast, onReload, guestEmail }) {
+function GuestCotisationsView({ ev, cotisations, sym, participants, can, filterEventId, submitAction, saving, isMobile, addToast, onReload, guestEmail, t }) {
   const [showForm, setShowForm] = useState(false);
   const [formParticipant, setFormParticipant] = useState("");
   const [formMontant, setFormMontant] = useState("");
