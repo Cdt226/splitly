@@ -8,19 +8,19 @@ import { useTranslation } from "../i18n.jsx";
 import { Avatar, AvatarStack, EmojiPicker, Truncate, Badge, EmptyState, Chip, ParticipantInput, ParticipantToggle, Modal, ConfirmModal, Spinner, StatCard } from "../components/ui/index.jsx";
 import { sendInvitation, removeInvitation, updateInvitationRole, updateInvitationPermissions, fetchInvitationPermissions, requestPermissions, fetchInvitations } from "../supabase.js";
 
-const ALL_PERMISSIONS = {
-  add_expense:         { label: t ? t("inv_perm_add") : "Ajouter charge",          icon: "➕",  desc: "Créer de nouvelles charges", color: "#1565C0", bg: "#E3F2FD", split: true, budget: true },
-  edit_expense:        { label: t ? t("inv_perm_edit") : "Modifier charge",         icon: "✏️",  desc: "Modifier les charges existantes", color: "#F57F17", bg: "#FFF8E1", split: true, budget: true },
-  delete_expense:      { label: t ? t("inv_perm_delete") : "Supprimer charge",        icon: "🗑",  desc: "Supprimer des charges", color: "#C62828", bg: "#FFEBEE", split: true, budget: true },
-  add_participant:     { label: t ? t("inv_perm_add_part") : "Ajouter participant",     icon: "👤+", desc: "Ajouter des participants", color: "#2E7D32", bg: "#E8F5E9", split: true, budget: true },
-  remove_participant:  { label: t ? t("inv_perm_delete_part") : "Supprimer participant",   icon: "👤-", desc: "Retirer des participants", color: "#C62828", bg: "#FFEBEE", split: true, budget: true },
+export const ALL_PERMISSIONS = {
+  add_expense:         { label: "Ajouter charge",          icon: "➕",  desc: "Créer de nouvelles charges", color: "#1565C0", bg: "#E3F2FD", split: true, budget: true },
+  edit_expense:        { label: "Modifier charge",         icon: "✏️",  desc: "Modifier les charges existantes", color: "#F57F17", bg: "#FFF8E1", split: true, budget: true },
+  delete_expense:      { label: "Supprimer charge",        icon: "🗑",  desc: "Supprimer des charges", color: "#C62828", bg: "#FFEBEE", split: true, budget: true },
+  add_participant:     { label: "Ajouter participant",     icon: "👤+", desc: "Ajouter des participants", color: "#2E7D32", bg: "#E8F5E9", split: true, budget: true },
+  remove_participant:  { label: "Supprimer participant",   icon: "👤-", desc: "Retirer des participants", color: "#C62828", bg: "#FFEBEE", split: true, budget: true },
   add_cotisation:      { label: "Ajouter cotisation",      icon: "💰+", desc: "Créer des cotisations", color: "#6A1B9A", bg: "#F3E5F5", split: false, budget: true },
   edit_cotisation:     { label: "Modifier cotisation",     icon: "💰✏", desc: "Modifier les cotisations", color: "#6A1B9A", bg: "#F3E5F5", split: false, budget: true },
-  export_pdf:          { label: t ? t("inv_perm_pdf") : "Exporter PDF",            icon: "📄",  desc: "Générer des PDF", color: "#0F0F0F", bg: "#f0f0f0", split: true, budget: true },
+  export_pdf:          { label: "Exporter PDF",            icon: "📄",  desc: "Générer des PDF", color: "#0F0F0F", bg: "#f0f0f0", split: true, budget: true },
 };
 
 // Retourne les permissions disponibles pour un type d'événement (jamais read_only)
-function getAvailablePermissions(eventType) {
+export function getAvailablePermissions(eventType) {
   return Object.entries(ALL_PERMISSIONS)
     .filter(([, p]) => eventType === "budget" ? p.budget : p.split)
     .map(([key, p]) => ({ key, ...p }));
@@ -36,7 +36,7 @@ function hasPermission(permissions, perm) {
 }
 
 // Normalise les permissions : retire read_only, déduplique
-function normalizePerms(perms) {
+export function normalizePerms(perms) {
   if (!perms) return [];
   return [...new Set(perms.filter(p => p !== "read_only"))];
 }

@@ -7,6 +7,7 @@ import { S } from "../styles.js";
 import { Avatar, AvatarStack, EmojiPicker, Truncate, Badge, EmptyState, Chip, ParticipantInput, ParticipantToggle, Modal, ConfirmModal, Spinner, StatCard } from "../components/ui/index.jsx";
 import { fetchEvents, fetchExpenses, fetchContributions, fetchCotisations, createExpense, createCotisation, updateCotisation, deleteCotisation, fetchAvances, createAvance, updateAvance, deleteAvance, submitPendingAction, fetchAllPendingActions } from "../supabase.js";
 import { useTranslation } from "../i18n.jsx";
+import { ALL_PERMISSIONS, normalizePerms, getAvailablePermissions } from "./Invite.jsx";
 
 export function GuestView({ guestEmail, onSignOut, isMobile, addToast}) {
   const { t } = useTranslation();
