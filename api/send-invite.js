@@ -1,8 +1,13 @@
 // api/send-invite.js
 // Envoie un email d'invitation à un invité avec lien d'accès direct
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const allowedOrigins = ['https://splitmeapp.com', 'https://www.splitmeapp.com'];
+  const origin = req.headers.origin;
+  res.setHeader('Access-Control-Allow-Origin', allowedOrigins.includes(origin) ? origin : allowedOrigins[0]);
+  res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -11,6 +16,9 @@ export default async function handler(req, res) {
   const { to, guestEmail, adminName, eventNames, appUrl } = req.body;
   if (!to || !guestEmail || !adminName || !eventNames?.length) {
     return res.status(400).json({ error: 'Paramètres manquants' });
+  }
+  if (!EMAIL_RE.test(to) || !EMAIL_RE.test(guestEmail)) {
+    return res.status(400).json({ error: 'Format email invalide' });
   }
 
   const baseUrl = appUrl || 'https://splitmeapp.com';

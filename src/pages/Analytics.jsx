@@ -1,5 +1,5 @@
 // src/pages/Analytics.jsx
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { supabase } from "../supabase.js";
 import { CATEGORIES, CURRENCIES, AVATAR_EMOJIS } from "../constants.js";
 import { fmt, currencySymbol, computeOwed, computeNetBalance, isSettled, isExactlySettled, settleStatus, validateAmount, computeTransactions, getAvatarMap, saveAvatarEmoji } from "../utils.js";
@@ -13,23 +13,26 @@ export function Analytics({ events, expenses, contributions, isMobile, defaultTa
   const [sel, setSel] = useState(events[0]?.id || "");
 
   // ── Données événement sélectionné ─────────────────────────
-  const ev = events.find(e => e.id === sel);
-  const evExp = expenses.filter(e => e.event_id === sel);
+  const ev = useMemo(() => events.find(e => e.id === sel), [events, sel]);
+  const evExp = useMemo(() => expenses.filter(e => e.event_id === sel), [expenses, sel]);
   const sym = currencySymbol(ev?.currency);
-  const budget = evExp.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
-  const participants = (ev?.event_participants || []).map(p => p.name);
-  const evContribMap = {};
-  (contributions[sel] || []).forEach(c => { evContribMap[c.participant] = c.amount; });
-  const byCategory = Object.keys(CATEGORIES).map(cat => ({
+  const budget = useMemo(() => evExp.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0), [evExp]);
+  const participants = useMemo(() => (ev?.event_participants || []).map(p => p.name), [ev]);
+  const evContribMap = useMemo(() => {
+    const m = {};
+    (contributions[sel] || []).forEach(c => { m[c.participant] = c.amount; });
+    return m;
+  }, [contributions, sel]);
+  const byCategory = useMemo(() => Object.keys(CATEGORIES).map(cat => ({
     cat, total: evExp.filter(e => e.category === cat).reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0)
-  })).filter(c => c.total > 0).sort((a, b) => b.total - a.total);
+  })).filter(c => c.total > 0).sort((a, b) => b.total - a.total), [evExp]);
 
   // ── Données tous événements (onglet "Tous") ───────────────
-  const allTotal = expenses.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
-  const splitEvents = events.filter(e => e.event_type !== "budget");
-  const budgetEvents = events.filter(e => e.event_type === "budget");
+  const allTotal = useMemo(() => expenses.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0), [expenses]);
+  const splitEvents = useMemo(() => events.filter(e => e.event_type !== "budget"), [events]);
+  const budgetEvents = useMemo(() => events.filter(e => e.event_type === "budget"), [events]);
 
-  const evRows = events.map(ev => {
+  const evRows = useMemo(() => events.map(ev => {
     const exps = expenses.filter(e => e.event_id === ev.id);
     const total = exps.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
     const parts = (ev.event_participants || []).map(p => p.name);
@@ -38,7 +41,7 @@ export function Analytics({ events, expenses, contributions, isMobile, defaultTa
     const settled = parts.filter(p => isSettled(computeNetBalance(exps, contribs, p))).length;
     const pct = parts.length > 0 ? Math.round((settled / parts.length) * 100) : 0;
     return { ev, total, parts, settled, pct, expCount: exps.length, sym: currencySymbol(ev.currency) };
-  });
+  }), [events, expenses, contributions]);
 
   // ── Données par charge (onglet "Par charge") ──────────────
   const allByCat = Object.keys(CATEGORIES).map(cat => {

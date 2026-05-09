@@ -19,7 +19,7 @@ export function fmt(amount, sym = "") {
 export function computeOwed(expenses, person) {
   return expenses.reduce((sum, ex) => {
     const inc = ex.included || [];
-    if (!inc.includes(person)) return sum;
+    if (inc.length === 0 || !inc.includes(person)) return sum;
     return sum + (ex.qty * (ex.unit_price ?? 0)) / inc.length;
   }, 0);
 }

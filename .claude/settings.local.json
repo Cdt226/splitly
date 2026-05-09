@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\user\\\\splitly\" -Recurse -Filter \"*.tsx\" -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object -First 20)",
+      "Bash(npm run *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\user\\\\splitly\\\\src\" -Recurse -File)",
+      "Bash(Select-Object FullName)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\user\\\\splitly\" -Recurse -Force)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\user\\\\splitly\\\\src\" -Recurse | Where-Object { $_.Extension -in '.jsx', '.js' } | Select-Object -ExpandProperty FullName | Sort-Object)"
+    ]
+  }
+}

@@ -49,7 +49,9 @@ export function Sidebar({ active, setActive, unreadCount, pendingCount, user, on
 
   const NavButton = ({ n }) => (
     <button onClick={() => { setActive(n.key); if (isMobile) setMenuOpen(false); }}
-      title={`${n.label} (G+${SHORTCUTS[n.key]})`}
+      title={`${n.label}${SHORTCUTS[n.key] ? ` (G+${SHORTCUTS[n.key]})` : ""}`}
+      aria-label={n.label}
+      aria-current={active === n.key ? "page" : undefined}
       style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, border: "none", cursor: "pointer", background: active === n.key ? "#1a1a1a" : "transparent", color: active === n.key ? "#fff" : "#777", fontSize: 13, fontWeight: active === n.key ? 600 : 400, textAlign: "left", width: "100%", transition: "all 0.2s", minWidth: 0, position: "relative" }}>
       {/* Indicateur actif animé */}
       {active === n.key && (
@@ -125,6 +127,8 @@ export function Sidebar({ active, setActive, unreadCount, pendingCount, user, on
       </div>
       {/* Toggle mode sombre */}
       <button onClick={toggle}
+        aria-label={dark ? "Passer en mode clair" : "Passer en mode sombre"}
+        aria-pressed={dark}
         style={{ width: "100%", marginBottom: 8, padding: "8px 12px", borderRadius: 9, border: "1px solid #2a2a2a", background: "rgba(255,255,255,0.05)", color: "#aaa", fontSize: 12, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" }}>
         <span>{t ? (dark ? "☀️ " + t("settings_theme_light") : "🌙 " + t("settings_theme_dark")) : (dark ? "☀️ Mode clair" : "🌙 Mode sombre")}</span>
         <div style={{ width: 32, height: 18, borderRadius: 9, background: dark ? "#fff" : "#333", position: "relative", transition: "background 0.2s" }}>
@@ -133,6 +137,8 @@ export function Sidebar({ active, setActive, unreadCount, pendingCount, user, on
       </button>
       {/* Toggle notifications push */}
       <button onClick={handlePushToggle}
+        aria-label={pushEnabled ? "Désactiver les notifications push" : "Activer les notifications push"}
+        aria-pressed={pushEnabled}
         style={{ width: "100%", marginBottom: 10, padding: "8px 12px", borderRadius: 9, border: "1px solid #2a2a2a", background: pushEnabled ? "rgba(46,125,50,0.15)" : "rgba(255,255,255,0.05)", color: pushEnabled ? "#4CAF50" : "#aaa", fontSize: 12, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 8 }}>
         <span>{t ? (pushEnabled ? "🔔 " + t("settings_notif_enabled_short") : "🔕 " + t("settings_notif_activate")) : (pushEnabled ? "🔔 Notifications activées" : "🔕 Activer les notifications")}</span>
       </button>
@@ -155,7 +161,7 @@ export function Sidebar({ active, setActive, unreadCount, pendingCount, user, on
         <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, color: "#fff", cursor: "pointer" }} onClick={() => setActive("dashboard")}>SplitLy</div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           {totalBadge > 0 && <span style={{ background: "#C62828", color: "#fff", borderRadius: 10, fontSize: 10, fontWeight: 700, padding: "2px 7px" }}>{totalBadge}</span>}
-          <button onClick={() => setMenuOpen(!menuOpen)} style={{ background: "none", border: "none", color: "#fff", fontSize: 22, cursor: "pointer", padding: 4 }}>☰</button>
+          <button onClick={() => setMenuOpen(!menuOpen)} aria-label={menuOpen ? "Fermer le menu" : "Ouvrir le menu"} aria-expanded={menuOpen} style={{ background: "none", border: "none", color: "#fff", fontSize: 22, cursor: "pointer", padding: 4 }}>☰</button>
         </div>
       </div>
       {menuOpen && (
@@ -164,7 +170,7 @@ export function Sidebar({ active, setActive, unreadCount, pendingCount, user, on
           <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 270, background: "#0F0F0F", display: "flex", flexDirection: "column" }}>
             <div style={{ padding: "20px 20px 16px", borderBottom: "1px solid #1e1e1e", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, color: "#fff", cursor: "pointer" }} onClick={() => { setActive("dashboard"); setMenuOpen(false); }}>SplitLy</div>
-              <button onClick={() => setMenuOpen(false)} style={{ background: "#1a1a1a", border: "none", color: "#aaa", width: 30, height: 30, borderRadius: "50%", cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+              <button onClick={() => setMenuOpen(false)} aria-label="Fermer le menu" style={{ background: "#1a1a1a", border: "none", color: "#aaa", width: 30, height: 30, borderRadius: "50%", cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
             </div>
             <div style={{ flex: 1, overflow: "auto", padding: "12px 8px" }}>
               {nav.map(n => <NavButton key={n.key} n={n} />)}
@@ -175,7 +181,7 @@ export function Sidebar({ active, setActive, unreadCount, pendingCount, user, on
       )}
       <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, height: 62, background: "#0F0F0F", display: "flex", alignItems: "center", justifyContent: "space-around", zIndex: 200, borderTop: "1px solid #1e1e1e" }}>
         {(isAdmin ? adminNav : mobileNav).map(n => (
-          <button key={n.key} onClick={() => setActive(n.key)} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, background: "none", border: "none", cursor: "pointer", color: active === n.key ? "#fff" : "#555", padding: "6px 4px", position: "relative", flex: 1, textAlign: "center" }}>
+          <button key={n.key} onClick={() => setActive(n.key)} aria-label={n.label} aria-current={active === n.key ? "page" : undefined} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, background: "none", border: "none", cursor: "pointer", color: active === n.key ? "#fff" : "#555", padding: "6px 4px", position: "relative", flex: 1, textAlign: "center" }}>
             <span style={{ fontSize: 19, display: "block", textAlign: "center" }}>{n.icon}</span>
             <span style={{ fontSize: 9, fontWeight: active === n.key ? 700 : 400, display: "block", textAlign: "center", width: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {(n.label || "").replace(/^[⚡◈◉◫⊜◐◷◎◬⚙]\s*/, "").split(" ")[0] || n.label}
@@ -188,7 +194,7 @@ export function Sidebar({ active, setActive, unreadCount, pendingCount, user, on
   );
 
   return (
-    <aside style={{ width: 260, minWidth: 260, background: "#0F0F0F", display: "flex", flexDirection: "column", flexShrink: 0, position: "sticky", top: 0, height: "100vh", overflowX: "hidden", overflowY: "auto" }}>
+    <aside role="navigation" aria-label="Navigation principale" style={{ width: 260, minWidth: 260, background: "#0F0F0F", display: "flex", flexDirection: "column", flexShrink: 0, position: "sticky", top: 0, height: "100vh", overflowX: "hidden", overflowY: "auto" }}>
       {/* Logo */}
       <div style={{ padding: "22px 20px 16px", borderBottom: "1px solid #1e1e1e" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -203,6 +209,7 @@ export function Sidebar({ active, setActive, unreadCount, pendingCount, user, on
           <span style={{ fontSize: 13, opacity: 0.5 }}>🔍</span>
           <input
             placeholder={t ? t("search") + "..." : "Rechercher..."}
+            aria-label={t ? t("search") : "Rechercher dans l'application"}
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             style={{ background: "none", border: "none", outline: "none", color: "#fff", fontSize: 13, width: "100%", fontFamily: "inherit" }}

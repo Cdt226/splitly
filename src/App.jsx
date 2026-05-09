@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, useRef, createContext, useContext } from "react";
+import { useState, useEffect, useCallback, useRef, createContext, useContext, lazy, Suspense, useMemo } from "react";
 import LandingPage from "./LandingPage.jsx";
 import { useTranslation, LanguageSwitcher, LanguageMenu } from "./i18n.jsx";
+import { ErrorBoundary } from "./components/ErrorBoundary.jsx";
 import {
   supabase, signUp, signIn, signOut, getSession,
   fetchEvents, createEvent, updateEventStatus, updateEvent, deleteEvent,
@@ -28,22 +29,25 @@ import { S } from "./styles.js";
 import { ThemeContext, ThemeProvider, useTheme } from "./hooks/useTheme.jsx";
 import { saveGuestSession, loadGuestSession, clearGuestSession } from "./hooks/useGuestSession.js";
 import { TEMPLATES_KEY, getTemplates, saveTemplates, ONBOARDING_KEY } from "./hooks/storage.js";
-import { AuthScreen } from "./pages/AuthScreen.jsx";
-import { GuestView } from "./pages/GuestView.jsx";
+// Sidebar chargé eagerly (toujours visible quand connecté)
 import { Sidebar } from "./pages/Sidebar.jsx";
-import { Dashboard } from "./pages/Dashboard.jsx";
-import { Events } from "./pages/Events.jsx";
-import { Expenses } from "./pages/Expenses.jsx";
-import { Balance } from "./pages/Balance.jsx";
-import { Analytics } from "./pages/Analytics.jsx";
-import { History } from "./pages/History.jsx";
-import { Invite } from "./pages/Invite.jsx";
-import { NotificationsPage } from "./pages/NotificationsPage.jsx";
-import { SettingsPage } from "./pages/SettingsPage.jsx";
-import { OnboardingWizard } from "./pages/OnboardingWizard.jsx";
-import { SuperAdminPage } from "./pages/SuperAdminPage.jsx";
-import { ContributionsPage } from "./pages/ContributionsPage.jsx";
-import { CotisationsPage } from "./pages/CotisationsPage.jsx";
+
+// Pages chargées en lazy pour réduire le bundle initial (~830 KB → chunks séparés)
+const AuthScreen       = lazy(() => import("./pages/AuthScreen.jsx").then(m => ({ default: m.AuthScreen })));
+const GuestView        = lazy(() => import("./pages/GuestView.jsx").then(m => ({ default: m.GuestView })));
+const Dashboard        = lazy(() => import("./pages/Dashboard.jsx").then(m => ({ default: m.Dashboard })));
+const Events           = lazy(() => import("./pages/Events.jsx").then(m => ({ default: m.Events })));
+const Expenses         = lazy(() => import("./pages/Expenses.jsx").then(m => ({ default: m.Expenses })));
+const Balance          = lazy(() => import("./pages/Balance.jsx").then(m => ({ default: m.Balance })));
+const Analytics        = lazy(() => import("./pages/Analytics.jsx").then(m => ({ default: m.Analytics })));
+const History          = lazy(() => import("./pages/History.jsx").then(m => ({ default: m.History })));
+const Invite           = lazy(() => import("./pages/Invite.jsx").then(m => ({ default: m.Invite })));
+const NotificationsPage = lazy(() => import("./pages/NotificationsPage.jsx").then(m => ({ default: m.NotificationsPage })));
+const SettingsPage     = lazy(() => import("./pages/SettingsPage.jsx").then(m => ({ default: m.SettingsPage })));
+const OnboardingWizard = lazy(() => import("./pages/OnboardingWizard.jsx").then(m => ({ default: m.OnboardingWizard })));
+const SuperAdminPage   = lazy(() => import("./pages/SuperAdminPage.jsx").then(m => ({ default: m.SuperAdminPage })));
+const ContributionsPage = lazy(() => import("./pages/ContributionsPage.jsx").then(m => ({ default: m.ContributionsPage })));
+const CotisationsPage  = lazy(() => import("./pages/CotisationsPage.jsx").then(m => ({ default: m.CotisationsPage })));
 
 function AppInner() {
   const [isOnline, setIsOnline] = useState(() => typeof navigator !== "undefined" ? navigator.onLine : true);
@@ -155,15 +159,13 @@ function AppInner() {
           const onboarded = localStorage.getItem(ONBOARDING_KEY);
           if (!onboarded) setShowOnboarding(true);
         } catch {}
-        // Charger le profil pour détecter le rôle admin
         try {
           const { data: prof } = await fetchProfile(u.id);
           setProfile(prof || null);
-          // Rediriger automatiquement le super admin vers sa page dédiée
           if (prof?.user_role === "admin") setActive("superadmin");
         } catch {}
       }
-    });
+    }).catch(() => setLoading(false));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
       setUser(s?.user || null);
     });
@@ -181,6 +183,7 @@ function AppInner() {
 
   const loadAll = useCallback(async () => {
     if (!user) return;
+    try {
     const { data: evData } = await fetchEvents(user.id);
     if (!evData) return;
     setEvents(evData);
@@ -200,6 +203,7 @@ function AppInner() {
       const { data: paData } = await fetchAllPendingActions(evData.map(e => e.id));
       if (paData) setPendingActions(paData);
     }
+    } catch {} // Les erreurs réseau sont silencieuses — l'UI conserve son état précédent
   }, [user]);
 
   useEffect(() => { if (user) loadAll(); }, [user, loadAll]);
@@ -291,28 +295,36 @@ function AppInner() {
   // Afficher la landing page si pas connecté et pas invité
   if (!user && !guestEmail) {
     return (
-      <>
+      <ErrorBoundary>
         <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
         <ToastContainer toasts={toasts} removeToast={removeToast} />
-        {authMode ? (
-          <AuthScreen
-            initialMode={authMode}
-            onAuth={(u) => { setAuthMode(null); setUser(u); }}
-            onGuestAuth={handleGuestAuth}
-            onClose={() => setAuthMode(null)}
-          />
-        ) : (
-          <LandingPage
-            onSignUp={() => setAuthMode("register")}
-            onSignIn={() => setAuthMode("login")}
-            onGuest={() => setAuthMode("guest")}
-          />
-        )}
-      </>
+        <Suspense fallback={<Spinner />}>
+          {authMode ? (
+            <AuthScreen
+              initialMode={authMode}
+              onAuth={(u) => { setAuthMode(null); setUser(u); }}
+              onGuestAuth={handleGuestAuth}
+              onClose={() => setAuthMode(null)}
+            />
+          ) : (
+            <LandingPage
+              onSignUp={() => setAuthMode("register")}
+              onSignIn={() => setAuthMode("login")}
+              onGuest={() => setAuthMode("guest")}
+            />
+          )}
+        </Suspense>
+      </ErrorBoundary>
     );
   }
 
-  if (guestEmail) return <GuestView guestEmail={guestEmail} onSignOut={handleGuestSignOut} isMobile={isMobile} addToast={addToast} t={t} />;
+  if (guestEmail) return (
+    <ErrorBoundary>
+      <Suspense fallback={<Spinner />}>
+        <GuestView guestEmail={guestEmail} onSignOut={handleGuestSignOut} isMobile={isMobile} addToast={addToast} t={t} />
+      </Suspense>
+    </ErrorBoundary>
+  );
 
   const unreadCount = notifications.filter(n => !n.is_read).length;
   const pendingCount = pendingActions.length;
@@ -323,7 +335,11 @@ function AppInner() {
     contribNorm[evId] = Array.isArray(arr) ? arr : [];
   });
 
-  const sharedProps = { events, expenses, contributions: contribNorm, user, reload: loadAll, isMobile, addToast, t };
+  const sharedProps = useMemo(
+    () => ({ events, expenses, contributions: contribNorm, user, reload: loadAll, isMobile, addToast, t }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [events, expenses, contribNorm, user, isMobile, t]
+  );
 
   // Résultats de recherche globale
   const showSearch = searchQuery.trim().length > 1;
@@ -379,7 +395,7 @@ function AppInner() {
         t={t} lang={lang} setLang={setLang} searchQuery={searchQuery} setSearchQuery={setSearchQuery}
         isAdmin={isAdmin} hasBudgetEvents={hasBudgetEvents} />
 
-      <main style={{ flex: 1, overflow: "hidden", minWidth: 0, background: "var(--bg)", display: "flex", flexDirection: "column" }}>
+      <main role="main" style={{ flex: 1, overflow: "hidden", minWidth: 0, background: "var(--bg)", display: "flex", flexDirection: "column" }}>
         {/* Topbar desktop — breadcrumb léger */}
         {!isMobile && (
           <div style={{ padding: "10px 32px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10, background: "var(--bg)", flexShrink: 0 }}>
@@ -399,6 +415,8 @@ function AppInner() {
         <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: isMobile ? "72px 16px 80px" : "28px 32px" }}>
           <div style={{ maxWidth: 1100, margin: "0 auto", width: "100%" }}>
             <div key={pageKey} className="page-transition">
+          <ErrorBoundary>
+          <Suspense fallback={<div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: 200 }}><Spinner /></div>}>
           {showSearch ? (
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
@@ -469,6 +487,8 @@ function AppInner() {
           ) : (
             pages[active]
           )}
+          </Suspense>
+          </ErrorBoundary>
             </div>
           </div>
         </div>
@@ -479,8 +499,10 @@ function AppInner() {
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <AppInner />
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <AppInner />
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }

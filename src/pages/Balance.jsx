@@ -1,5 +1,5 @@
 // src/pages/Balance.jsx
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { supabase } from "../supabase.js";
 import { CATEGORIES, CURRENCIES, AVATAR_EMOJIS } from "../constants.js";
 import { fmt, currencySymbol, computeOwed, computeNetBalance, isSettled, isExactlySettled, settleStatus, validateAmount, computeTransactions, getAvatarMap, saveAvatarEmoji } from "../utils.js";
@@ -17,12 +17,15 @@ export function Balance({ events, expenses, contributions, user, reload, isMobil
   const [emojiPickerFor, setEmojiPickerFor] = useState(null);
   const [, forceUpdate] = useState(0); // Force re-render après changement d'emoji
 
-  const ev = events.find(e => e.id === filterEvent);
-  const evExp = expenses.filter(e => e.event_id === filterEvent);
+  const ev = useMemo(() => events.find(e => e.id === filterEvent), [events, filterEvent]);
+  const evExp = useMemo(() => expenses.filter(e => e.event_id === filterEvent), [expenses, filterEvent]);
   const sym = currencySymbol(ev?.currency);
-  const participants = (ev?.event_participants || []).map(p => p.name);
-  const evContribMap = {};
-  (contributions[filterEvent] || []).forEach(c => { evContribMap[c.participant] = c.amount; });
+  const participants = useMemo(() => (ev?.event_participants || []).map(p => p.name), [ev]);
+  const evContribMap = useMemo(() => {
+    const m = {};
+    (contributions[filterEvent] || []).forEach(c => { m[c.participant] = c.amount; });
+    return m;
+  }, [contributions, filterEvent]);
 
   // Nouvelle logique Solder :
   // - Débiteur (net < -1) : redistribue sa part aux créditeurs par priorité (celui à qui on doit le plus en premier)

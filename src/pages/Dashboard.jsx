@@ -80,7 +80,7 @@ export function Dashboard({ events, expenses, contributions, user, isMobile, nav
         </div>
         {navigateTo && (
           <button onClick={() => navigateTo("events")} style={{ ...S.btnDark, fontSize: 12, padding: "8px 16px" }}>
-            + Nouvel événement
+            + {t("dash_create_event_btn")}
           </button>
         )}
       </div>
@@ -102,7 +102,7 @@ export function Dashboard({ events, expenses, contributions, user, isMobile, nav
           {evProgression.length > 0 && (
             <div style={{ background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border)", padding: 20, marginBottom: 20 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>📈 Progression vers bouclage</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{t("dash_progression")}</div>
                 <button onClick={() => navigateTo && navigateTo("balance")} style={{ fontSize: 11, color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>{t("dash_see_balances")}</button>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -115,7 +115,7 @@ export function Dashboard({ events, expenses, contributions, user, isMobile, nav
                         <span style={{ fontSize: 10, color: "var(--text-sub)", flexShrink: 0 }}>{ev.date}</span>
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-                        <span style={{ fontSize: 11, color: "var(--text-sub)" }}>{settled}/{participants.length} " " + t("dash_settled_count")</span>
+                        <span style={{ fontSize: 11, color: "var(--text-sub)" }}>{settled}/{participants.length} {t("dash_settled_count")}</span>
                         <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{fmt(total, sym)}</span>
                         <span style={{ fontSize: 11, fontWeight: 700, color: pct === 100 ? "#2E7D32" : "#F57F17" }}>{pct}%</span>
                       </div>
@@ -135,7 +135,7 @@ export function Dashboard({ events, expenses, contributions, user, isMobile, nav
             {/* Top catégories */}
             <div style={{ background: "var(--bg-secondary)", borderRadius: 16, padding: 20, border: "1px solid var(--border)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>🏷️ Top catégories</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>🏷️ {t("dash_top_categories")}</div>
                 <button onClick={() => navigateTo && navigateTo("analytics")} style={{ fontSize: 11, color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>{t("dash_analytics_link")}</button>
               </div>
               {byCategory.length === 0 ? (
@@ -162,7 +162,7 @@ export function Dashboard({ events, expenses, contributions, user, isMobile, nav
             {/* Activité récente */}
             <div style={{ background: "var(--bg-secondary)", borderRadius: 16, padding: 20, border: "1px solid var(--border)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>🕐 Activité récente</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>🕐 {t("dash_recent_activity")}</div>
                 <button onClick={() => navigateTo && navigateTo("expenses")} style={{ fontSize: 11, color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>{t("dash_all_expenses")}</button>
               </div>
               {recentExpenses.length === 0 ? (
