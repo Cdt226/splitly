@@ -8,7 +8,7 @@ import { Avatar, AvatarStack, EmojiPicker, Truncate, Badge, EmptyState, Chip, Pa
 import { fetchEvents, fetchExpenses, fetchContributions, fetchCotisations, createExpense, createCotisation, updateCotisation, deleteCotisation, fetchAvances, createAvance, updateAvance, deleteAvance, submitPendingAction, fetchAllPendingActions } from "../supabase.js";
 import { useTranslation } from "../i18n.jsx";
 
-export function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
+export function GuestView({ guestEmail, onSignOut, isMobile, addToast, t }) {
   const [events, setEvents] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [contributions, setContributions] = useState({});
