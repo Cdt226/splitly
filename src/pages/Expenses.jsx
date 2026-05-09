@@ -470,7 +470,7 @@ export function Expenses({ events, expenses, contributions, user, reload, isMobi
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 600 }}>
             <thead>
               <tr style={{ background: "#f8f8f8", borderBottom: "1.5px solid #eee" }}>
-                {[t ? t("exp_col_category") : "Catégorie", t ? t("exp_col_detail") : "Détail", t ? t("exp_col_event") : "Événement", t ? t("exp_col_qty") : "Qté", t ? t("exp_col_unit") : "Unitaire", t ? t("exp_col_total") : "Total", t ? t("exp_col_share") : "Part/p.", t ? t("exp_col_paid_by") : "Payé par", t ? t("exp_col_included") : "Inclus", ""].map(h => (
+                {[t ? t("exp_col_category") : "Catégorie", t ? t("exp_col_detail") : "Détail", t ? t("exp_col_event") : "Événement", t ? t("exp_col_qty") : "Qté", t ? t("exp_col_unit") : "Unitaire", t ? t("exp_col_total") : "Total", t ? t("exp_col_share") : "Part/p.", t ? t("exp_col_paid_by") : "Payé par", t ? t("exp_col_comment") : "Commentaire", t ? t("exp_col_included") : "Inclus", ""].map(h => (
                   <th key={h} style={{ padding: "12px 12px", fontSize: 10, fontWeight: 700, color: "#999", textAlign: "left", textTransform: "uppercase", letterSpacing: 0.7, whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
@@ -508,6 +508,9 @@ export function Expenses({ events, expenses, contributions, user, reload, isMobi
                           <span style={{ fontSize: 12, maxWidth: 70, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ex.paid_by}</span>
                         </div>
                       )}
+                    </td>
+                    <td style={{ padding: "11px 12px", maxWidth: 160 }}>
+                      {ex.comment && <span style={{ fontSize: 11, color: "#888", fontStyle: "italic", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={ex.comment}>💬 {ex.comment}</span>}
                     </td>
                     <td style={{ padding: "11px 12px" }}><AvatarStack names={inc} size={20} /></td>
                     <td style={{ padding: "11px 12px" }}>

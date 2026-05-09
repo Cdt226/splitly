@@ -312,37 +312,6 @@ export async function deleteCotisation(id, actorId = null) {
   return { error };
 }
 
-// ─── AVANCES (Option 2 — Budget) ─────────────────────────────
-export async function fetchAvances(eventId) {
-  const { data, error } = await supabase
-    .from('avances')
-    .select('*')
-    .eq('event_id', eventId)
-    .order('created_at', { ascending: true });
-  return { data, error };
-}
-
-export async function createAvance(avance) {
-  const { data, error } = await supabase
-    .from('avances')
-    .insert(avance)
-    .select().single();
-  return { data, error };
-}
-
-export async function updateAvance(id, updates) {
-  const { data, error } = await supabase
-    .from('avances')
-    .update(updates)
-    .eq('id', id)
-    .select().single();
-  return { data, error };
-}
-
-export async function deleteAvance(id) {
-  const { error } = await supabase.from('avances').delete().eq('id', id);
-  return { error };
-}
 
 export async function updateEventStatus(eventId, status) {
   const { data, error } = await supabase.from('events').update({ status }).eq('id', eventId).select().single();
@@ -436,7 +405,7 @@ export async function updateExpense(expenseId, updates, userId, before) {
     category: updates.category, sub_category: updates.sub, detail: updates.detail,
     qty: updates.qty, unit_price: updates.unit,
     paid_by: updates.is_unpaid ? null : updates.paidBy,
-    included: updates.included, version: (before.version || 1) + 1,
+    included: updates.included,
     is_unpaid: updates.is_unpaid || false,
     comment: updates.comment || null,
   }).eq('id', expenseId).select().single();
@@ -982,5 +951,22 @@ export async function adminUserAction(action, userId) {
   });
   const json = await response.json();
   if (!response.ok) return { error: new Error(json.error) };
+  return { data: json, error: null };
+}
+
+// ─── REMINDERS ────────────────────────────────────────────────
+export async function sendReminderForEvent(eventId) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return { error: new Error("Not authenticated") };
+  const response = await fetch("/api/send-reminder-event", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({ eventId }),
+  });
+  const json = await response.json();
+  if (!response.ok) return { error: new Error(json.error || "Erreur serveur") };
   return { data: json, error: null };
 }

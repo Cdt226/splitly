@@ -52,10 +52,10 @@ export function Sidebar({ active, setActive, unreadCount, pendingCount, user, on
       title={`${n.label}${SHORTCUTS[n.key] ? ` (G+${SHORTCUTS[n.key]})` : ""}`}
       aria-label={n.label}
       aria-current={active === n.key ? "page" : undefined}
-      style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, border: "none", cursor: "pointer", background: active === n.key ? "#1a1a1a" : "transparent", color: active === n.key ? "#fff" : "#777", fontSize: 13, fontWeight: active === n.key ? 600 : 400, textAlign: "left", width: "100%", transition: "all 0.2s", minWidth: 0, position: "relative" }}>
+      style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, border: "none", cursor: "pointer", background: active === n.key ? "#1a1a1a" : "transparent", color: active === n.key ? "#fff" : "#777", fontSize: 13, fontWeight: active === n.key ? 600 : 400, textAlign: "start", width: "100%", transition: "all 0.2s", minWidth: 0, position: "relative" }}>
       {/* Indicateur actif animé */}
       {active === n.key && (
-        <div style={{ position: "absolute", left: 0, top: "50%", transform: "translateY(-50%)", width: 3, height: 20, background: "#fff", borderRadius: "0 3px 3px 0", transition: "all 0.2s" }} />
+        <div style={{ position: "absolute", insetInlineStart: 0, top: "50%", transform: "translateY(-50%)", width: 3, height: 20, background: "#fff", borderRadius: "0 3px 3px 0", transition: "all 0.2s" }} />
       )}
       <span style={{ fontSize: 15, opacity: active === n.key ? 1 : 0.5, flexShrink: 0, transition: "all 0.2s" }}>{n.icon}</span>
       <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 13 }}>{n.label}</span>

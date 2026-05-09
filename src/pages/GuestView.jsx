@@ -5,11 +5,11 @@ import { CATEGORIES, CURRENCIES, AVATAR_EMOJIS } from "../constants.js";
 import { fmt, currencySymbol, computeOwed, computeNetBalance, isSettled, isExactlySettled, settleStatus, validateAmount, computeTransactions, getAvatarMap, saveAvatarEmoji } from "../utils.js";
 import { S } from "../styles.js";
 import { Avatar, AvatarStack, EmojiPicker, Truncate, Badge, EmptyState, Chip, ParticipantInput, ParticipantToggle, Modal, ConfirmModal, Spinner, StatCard } from "../components/ui/index.jsx";
-import { fetchEvents, fetchExpenses, fetchContributions, fetchCotisations, createExpense, createCotisation, updateCotisation, deleteCotisation, fetchAvances, createAvance, updateAvance, deleteAvance, submitPendingAction, fetchAllPendingActions } from "../supabase.js";
+import { fetchEvents, fetchExpenses, fetchContributions, fetchCotisations, createExpense, createCotisation, updateCotisation, deleteCotisation, submitPendingAction, fetchAllPendingActions } from "../supabase.js";
 import { useTranslation } from "../i18n.jsx";
 import { ALL_PERMISSIONS, normalizePerms, getAvailablePermissions } from "./Invite.jsx";
 
-export function GuestView({ guestEmail, onSignOut, isMobile, addToast}) {
+export function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
   const { t } = useTranslation();
   const [events, setEvents] = useState([]);
   const [expenses, setExpenses] = useState([]);
@@ -38,7 +38,11 @@ export function GuestView({ guestEmail, onSignOut, isMobile, addToast}) {
       .from('invitations')
       .select('event_id, role, status, permissions')
       .eq('email', guestEmail);
-    if (!invitations || invitations.length === 0) { setLoading(false); return; }
+    if (!invitations || invitations.length === 0) {
+      setLoading(false);
+      onSignOut();
+      return;
+    }
 
     const pMap = {};
     invitations.forEach(i => { pMap[i.event_id] = i.permissions || []; });

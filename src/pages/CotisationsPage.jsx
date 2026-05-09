@@ -5,7 +5,7 @@ import { CATEGORIES, CURRENCIES, AVATAR_EMOJIS } from "../constants.js";
 import { fmt, currencySymbol, computeOwed, computeNetBalance, isSettled, isExactlySettled, settleStatus, validateAmount, computeTransactions, getAvatarMap, saveAvatarEmoji } from "../utils.js";
 import { S } from "../styles.js";
 import { Avatar, AvatarStack, EmojiPicker, Truncate, Badge, EmptyState, Chip, ParticipantInput, ParticipantToggle, Modal, ConfirmModal, Spinner, StatCard } from "../components/ui/index.jsx";
-import { addParticipant, fetchCotisations, createCotisation, updateCotisation, deleteCotisation, fetchAvances, createAvance, updateAvance, deleteAvance, upsertContribution } from "../supabase.js";
+import { addParticipant, fetchCotisations, createCotisation, updateCotisation, deleteCotisation, upsertContribution } from "../supabase.js";
 import { useTranslation } from "../i18n.jsx";
 
 export function CotisationsPage({ events, expenses, user, reload, isMobile, addToast, hideHeader }) {

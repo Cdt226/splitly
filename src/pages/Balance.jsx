@@ -5,7 +5,7 @@ import { CATEGORIES, CURRENCIES, AVATAR_EMOJIS } from "../constants.js";
 import { fmt, currencySymbol, computeOwed, computeNetBalance, isSettled, isExactlySettled, settleStatus, validateAmount, computeTransactions, getAvatarMap, saveAvatarEmoji } from "../utils.js";
 import { S } from "../styles.js";
 import { Avatar, AvatarStack, EmojiPicker, Truncate, Badge, EmptyState, Chip, ParticipantInput, ParticipantToggle, Modal, ConfirmModal, Spinner, StatCard } from "../components/ui/index.jsx";
-import { upsertContribution, recordPayment, fetchPayments, exportPDF } from "../supabase.js";
+import { upsertContribution, recordPayment, fetchPayments, exportPDF, sendReminderForEvent } from "../supabase.js";
 import { useTranslation } from "../i18n.jsx";
 
 export function Balance({ events, expenses, contributions, user, reload, isMobile, addToast, initialEvent, hideHeader }) {
@@ -14,6 +14,7 @@ export function Balance({ events, expenses, contributions, user, reload, isMobil
   const [settleModal, setSettleModal] = useState(null);
   const [versement, setVersement] = useState({});
   const [saving, setSaving] = useState(false);
+  const [sendingReminders, setSendingReminders] = useState(false);
   const [emojiPickerFor, setEmojiPickerFor] = useState(null);
   const [, forceUpdate] = useState(0); // Force re-render après changement d'emoji
 
@@ -95,6 +96,19 @@ export function Balance({ events, expenses, contributions, user, reload, isMobil
     setVersement(v => ({ ...v, [person]: "" }));
     addToast(`Versement de ${fmt(amount, sym)} enregistré pour ${person}.`, "success");
     setSaving(false);
+  };
+
+  const handleSendReminders = async () => {
+    if (!filterEvent) return;
+    setSendingReminders(true);
+    const { data, error } = await sendReminderForEvent(filterEvent);
+    setSendingReminders(false);
+    if (error) { addToast(t ? t("bal_reminders_error") : "Erreur lors de l'envoi des rappels.", "error"); return; }
+    if (data?.message === "all_settled" || data?.sent === 0) {
+      addToast(t ? t("bal_reminders_none") : "Tous les participants sont déjà soldés.", "info");
+    } else {
+      addToast(t ? t("bal_reminders_sent") : "Rappels envoyés !", "success");
+    }
   };
 
   const transactions = participants.length > 0 ? computeTransactions(evExp, evContribMap, participants) : [];
@@ -196,6 +210,9 @@ export function Balance({ events, expenses, contributions, user, reload, isMobil
           {ev?.event_type !== "budget" && <>
             <button onClick={handleExportPDF} style={{ ...S.btnGhost, padding: "8px 14px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>{t ? t("bal_pdf") : "📄 PDF"}</button>
             <button onClick={handleExportExcel} style={{ ...S.btnGhost, padding: "8px 14px", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>📊 CSV</button>
+            <button onClick={handleSendReminders} disabled={sendingReminders} style={{ ...S.btnGhost, padding: "8px 14px", fontSize: 12, display: "flex", alignItems: "center", gap: 6, opacity: sendingReminders ? 0.6 : 1 }}>
+              {sendingReminders ? (t ? t("bal_reminders_sending") : "Envoi...") : (t ? t("bal_send_reminders") : "📧 Rappeler les débiteurs")}
+            </button>
           </>}
         </div>
       </div>

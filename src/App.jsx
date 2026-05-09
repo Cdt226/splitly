@@ -18,7 +18,6 @@ import {
   exportPDF,
   fetchProfile, fetchAdminUsers, adminUserAction,
   fetchCotisations, createCotisation, updateCotisation, deleteCotisation,
-  fetchAvances, createAvance, updateAvance, deleteAvance,
   createReport, fetchReports,
 } from "./supabase.js";
 import { CATEGORIES, CURRENCIES, AVATAR_EMOJIS, AVATAR_STORAGE_KEY } from "./constants.js";
@@ -82,6 +81,12 @@ function AppInner() {
   const { toasts, addToast, removeToast } = useToast();
   const { t, lang, setLang } = useTranslation();
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Refs for stable Realtime callbacks (avoid channel teardown on events/loadAll changes)
+  const eventIdsRef = useRef([]);
+  const loadAllRef = useRef(null);
+  const addToastRef = useRef(addToast);
+  const tRef = useRef(t);
 
   // Navigation avec historique et animation
   const setActive = useCallback((page) => {
@@ -208,6 +213,12 @@ function AppInner() {
 
   useEffect(() => { if (user) loadAll(); }, [user, loadAll]);
 
+  // Keep refs in sync so Realtime callbacks always call the latest version
+  useEffect(() => { loadAllRef.current = loadAll; }, [loadAll]);
+  useEffect(() => { addToastRef.current = addToast; }, [addToast]);
+  useEffect(() => { tRef.current = t; }, [t]);
+  useEffect(() => { eventIdsRef.current = events.map(e => e.id); }, [events]);
+
   // ─── Notifications Realtime ───────────────────────────────────
   useEffect(() => {
     if (!user) return;
@@ -218,58 +229,57 @@ function AppInner() {
   }, [user]);
 
   // ─── Charges & Contributions Realtime ────────────────────────
+  // Channels are stable per user session — callbacks use refs to avoid stale closures
   useEffect(() => {
-    if (!user || events.length === 0) return;
-    const eventIds = events.map(e => e.id);
+    if (!user) return;
 
     const expCh = supabase
       .channel("expenses-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "expenses" }, (payload) => {
         const evId = payload.new?.event_id || payload.old?.event_id;
-        if (evId && eventIds.includes(evId)) loadAll();
+        if (evId && eventIdsRef.current.includes(evId)) loadAllRef.current?.();
       }).subscribe();
 
     const contCh = supabase
       .channel("contributions-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "contributions" }, (payload) => {
         const evId = payload.new?.event_id || payload.old?.event_id;
-        if (evId && eventIds.includes(evId)) loadAll();
+        if (evId && eventIdsRef.current.includes(evId)) loadAllRef.current?.();
       }).subscribe();
 
     const cotCh = supabase
       .channel("cotisations-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "cotisations" }, (payload) => {
         const evId = payload.new?.event_id || payload.old?.event_id;
-        if (evId && eventIds.includes(evId)) {
-          loadAll();
-          addToast(t ? "💰 " + t("app_cotisations_updated") : "💰 Cotisations mises à jour", "info");
+        if (evId && eventIdsRef.current.includes(evId)) {
+          loadAllRef.current?.();
+          const t = tRef.current;
+          addToastRef.current?.("💰 " + (t ? t("app_cotisations_updated") : "Cotisations mises à jour"), "info");
         }
       }).subscribe();
 
-    // Participants — ajout/suppression par un invité autorisé
     const partCh = supabase
       .channel("participants-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "event_participants" }, (payload) => {
         const evId = payload.new?.event_id || payload.old?.event_id;
-        if (evId && eventIds.includes(evId)) loadAll();
+        if (evId && eventIdsRef.current.includes(evId)) loadAllRef.current?.();
       }).subscribe();
 
-    // Événements — modification par un invité
     const evCh = supabase
       .channel("events-realtime")
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "events" }, (payload) => {
-        if (eventIds.includes(payload.new?.id)) loadAll();
+        if (eventIdsRef.current.includes(payload.new?.id)) loadAllRef.current?.();
       }).subscribe();
 
-    // Demandes en attente — INSERT et UPDATE (approbation/refus)
     const pendingCh = supabase
       .channel("pending-actions-realtime")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "pending_actions" }, () => {
-        loadAll();
-        addToast(t ? "📬 " + t("app_new_guest_request") : "📬 Nouvelle demande d'un invité", "info");
+        loadAllRef.current?.();
+        const t = tRef.current;
+        addToastRef.current?.("📬 " + (t ? t("app_new_guest_request") : "Nouvelle demande d'un invité"), "info");
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "pending_actions" }, () => {
-        loadAll();
+        loadAllRef.current?.();
       }).subscribe();
 
     return () => {
@@ -280,7 +290,7 @@ function AppInner() {
       supabase.removeChannel(evCh);
       supabase.removeChannel(pendingCh);
     };
-  }, [user?.id, events.length]);
+  }, [user?.id]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -384,6 +394,8 @@ function AppInner() {
         @keyframes pageFadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         .page-transition { animation: pageFadeIn 0.15s ease; pointer-events: auto; }
         .kbd-hint { display:inline-flex;align-items:center;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:4px;padding:1px 6px;font-size:10px;font-family:monospace;color:#666; }
+        [dir="rtl"] input, [dir="rtl"] textarea, [dir="rtl"] select { text-align: start; }
+        [dir="rtl"] .page-transition { direction: rtl; }
       `}</style>
       <ToastContainer toasts={toasts} removeToast={removeToast} />
       {!isOnline && (
