@@ -146,12 +146,12 @@ export function EventDetail({ ev, events, expenses, contributions, user, reload,
 
       {/* KPIs rapides */}
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 10, marginBottom: 20 }}>
-        <StatCard label="Budget" value={fmt(totalDepenses, sym)} sub={`${evExp.length} charge(s)`} accent="#0F0F0F" />
-        <StatCard label="Participants" value={participants.length} sub="inscrits" accent="#1565C0" />
-        {isBudget && <StatCard label="Collecté" value={fmt(cotisations.filter(c => c.statut === "paye").reduce((s, c) => s + c.montant, 0), sym)} sub="cotisations" accent="#2E7D32" />}
-        {isBudget && ev.nombre_invites > 0 && <StatCard label="Invités" value={ev.nombre_invites} sub="attendus" accent="#F57F17" />}
-        {!isBudget && <StatCard label="Devise" value={sym} sub={ev.currency} accent="#6A1B9A" />}
-        {!isBudget && <StatCard label="Statut" value={ev.status === "closed" ? "Bouclé" : "Ouvert"} sub={ev.date} accent={ev.status === "closed" ? "#999" : "#2E7D32"} />}
+        <StatCard label={t ? t("ev_stat_budget") : "Budget"} value={fmt(totalDepenses, sym)} sub={`${evExp.length} charge(s)`} accent="#0F0F0F" />
+        <StatCard label={t ? t("ev_stat_participants") : "Participants"} value={participants.length} sub={t ? t("ev_sub_registered") : "inscrits"} accent="#1565C0" />
+        {isBudget && <StatCard label={t ? t("ev_stat_collected") : "Collecté"} value={fmt(cotisations.filter(c => c.statut === "paye").reduce((s, c) => s + c.montant, 0), sym)} sub={t ? t("ev_sub_cotisations") : "cotisations"} accent="#2E7D32" />}
+        {isBudget && ev.nombre_invites > 0 && <StatCard label={t ? t("ev_stat_guests") : "Invités"} value={ev.nombre_invites} sub={t ? t("ev_sub_expected") : "attendus"} accent="#F57F17" />}
+        {!isBudget && <StatCard label={t ? t("ev_stat_currency") : "Devise"} value={sym} sub={ev.currency} accent="#6A1B9A" />}
+        {!isBudget && <StatCard label={t ? t("ev_stat_status") : "Statut"} value={t ? (ev.status === "closed" ? t("ev_closed") : t("ev_open")) : (ev.status === "closed" ? "Bouclé" : "Ouvert")} sub={ev.date} accent={ev.status === "closed" ? "#999" : "#2E7D32"} />}
       </div>
 
       {/* Onglets */}
@@ -266,15 +266,15 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
 
   // Sauvegarder les modifications d'un événement
   const handleSaveEdit = async () => {
-    if (!editForm.name?.trim()) { addToast("Le nom est obligatoire.", "warning"); return; }
-    if (editForm.name.trim().length > 30) { addToast("Nom trop long (max 30 car.).", "warning"); return; }
-    if (!editForm.date) { addToast("La date est obligatoire.", "warning"); return; }
+    if (!editForm.name?.trim()) { addToast(t ? t("toast_name_required") : "Le nom est obligatoire.", "warning"); return; }
+    if (editForm.name.trim().length > 30) { addToast(t ? t("ev_name_too_long") : "Nom trop long (max 30 car.).", "warning"); return; }
+    if (!editForm.date) { addToast(t ? t("ev_date_required") : "La date est obligatoire.", "warning"); return; }
 
     // Bloquer le changement de type si des données existent
     if (editForm.event_type !== editingEv.event_type) {
       const hasExpenses = expenses.some(e => e.event_id === editingEv.id);
       if (hasExpenses) {
-        addToast(`Impossible de changer le type : cet événement contient des charges. Supprimez-les d'abord.`, "warning");
+        addToast(t ? t("ev_type_change_error") : "Impossible de changer le type : cet événement contient des charges.", "warning");
         return;
       }
     }
@@ -289,11 +289,11 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
       nombre_invites: editForm.event_type === "budget" ? (parseInt(editForm.nombre_invites) || 0) : 0,
     };
     const { error } = await updateEvent(editingEv.id, fields, user.id);
-    if (error) { addToast("Erreur : " + error.message, "error"); }
+    if (error) { addToast((t ? t("ev_error") : "Erreur : ") + error.message, "error"); }
     else {
       await reload();
       setEditingEv(null);
-      addToast("Événement modifié.", "success");
+      addToast(t ? t("ev_updated") : "Événement modifié.", "success");
     }
     setEditLoading(false);
   };
@@ -314,7 +314,7 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
     const updated = [template, ...templates.filter(t => t.name !== ev.name)].slice(0, 10);
     saveTemplates(updated);
     setTemplates(updated);
-    addToast(`Modèle "${ev.name}" sauvegardé !`, "success");
+    addToast(`${t ? t("ev_template_saved") : "Modèle sauvegardé"} "${ev.name}" !`, "success");
   };
 
   // Créer un événement depuis un modèle
@@ -340,12 +340,12 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
   };
 
   const handleCreate = async () => {
-    if (!form.name.trim()) { addToast("Le nom de l'événement est obligatoire.", "warning"); return; }
-    if (form.name.trim().length > MAX_NAME_LENGTH) { addToast(`Le nom ne peut pas dépasser ${MAX_NAME_LENGTH} caractères.`, "warning"); return; }
-    if (!form.date) { addToast("La date est obligatoire.", "warning"); return; }
-    if (form.participants.length < 1) { addToast("Minimum 1 participant requis.", "warning"); return; }
+    if (!form.name.trim()) { addToast(t ? t("toast_name_required") : "Le nom de l'événement est obligatoire.", "warning"); return; }
+    if (form.name.trim().length > MAX_NAME_LENGTH) { addToast(t ? t("ev_name_too_long") : `Le nom ne peut pas dépasser ${MAX_NAME_LENGTH} caractères.`, "warning"); return; }
+    if (!form.date) { addToast(t ? t("ev_date_required") : "La date est obligatoire.", "warning"); return; }
+    if (form.participants.length < 1) { addToast(t ? t("ev_min_participant") : "Minimum 1 participant requis.", "warning"); return; }
     const maxP = form.event_type === "budget" ? MAX_PARTICIPANTS_BUDGET : MAX_PARTICIPANTS;
-    if (form.participants.length > maxP) { addToast(`Maximum ${maxP} participants pour un événement ${form.event_type === "budget" ? "Budget" : "Split"}.`, "warning"); return; }
+    if (form.participants.length > maxP) { addToast(`${t ? t("ev_max_participants_type") : "Maximum"} ${maxP} ${t ? t("ev_participants_for") : "participants pour un événement"} ${form.event_type === "budget" ? "Budget" : "Split"}.`, "warning"); return; }
     setLoading(true);
     const eventData = {
       ...form,
@@ -358,9 +358,9 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
       await reload();
       setForm({ name: "", date: "", currency: "EUR €", participants: [], event_type: "split", cotisation_cible: "", nombre_invites: "" });
       setShowNew(false);
-      addToast(`Événement ${form.event_type === "budget" ? "Budget" : "Split"} créé avec succès !`, "success");
+      addToast(`${t ? t("toast_event_created") : "Événement créé avec succès !"}`, "success");
     } else {
-      addToast("Erreur lors de la création : " + error.message, "error");
+      addToast((t ? t("ev_create_error") : "Erreur lors de la création : ") + error.message, "error");
     }
     setLoading(false);
   };
@@ -373,7 +373,7 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
         await deleteEvent(ev.id);
         await reload();
         setConfirm(null);
-        addToast(`"${ev.name}" supprimé.`, "info");
+        addToast(`"${ev.name}" ${t ? t("ev_deleted_msg") : "supprimé."}`, "info");
       },
       onCancel: () => setConfirm(null),
     });
@@ -392,13 +392,13 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
       const cotisants = new Set((cotisations || []).filter(c => c.statut === "paye").map(c => c.participant_name));
       const nonCotisants = participants.filter(p => !cotisants.has(p));
       if (nonCotisants.length > 0) {
-        addToast(`Bouclage impossible — ${nonCotisants.length} participant(s) n'ont pas encore cotisé : ${nonCotisants.join(", ")}`, "warning");
+        addToast(`${t ? t("ev_lock_cotisation_error") : "Bouclage impossible"} — ${nonCotisants.length} participant(s) : ${nonCotisants.join(", ")}`, "warning");
         return;
       }
     } else {
       // Option Split : tous les participants doivent être soldés
       const allSettled = participants.every(p => isSettled(computeNetBalance(evExp, evContribMap, p)));
-      if (!allSettled) { addToast("Tous les participants doivent solder avant de boucler.", "warning"); return; }
+      if (!allSettled) { addToast(t ? t("toast_settle_first") : "Tous les participants doivent solder avant de boucler.", "warning"); return; }
     }
     setConfirm({
       message: `Boucler "${ev.name}" ? L'historique sera effacé et aucune modification ne sera plus possible.`,
@@ -407,7 +407,7 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
         await updateEventStatus(ev.id, "closed");
         await reload();
         setConfirm(null);
-        addToast(`"${ev.name}" bouclé avec succès.`, "success");
+        addToast(`"${ev.name}" ${t ? t("ev_locked_msg") : "bouclé avec succès."}`, "success");
 
         // Envoyer le résumé PDF par email à l'admin
         try {
@@ -498,7 +498,7 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
               html,
             }),
           });
-          addToast("Résumé envoyé par email !", "info");
+          addToast(t ? t("ev_email_sent") : "Résumé envoyé par email !", "info");
         } catch (e) {
           console.error("Erreur envoi résumé clôture:", e);
         }
@@ -509,18 +509,18 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
 
   const handleAddParticipant = async (ev) => {
     const name = newParticipant.trim();
-    if (!name) { addToast("Le prénom ne peut pas être vide.", "warning"); return; }
-    if (name.length > MAX_PARTICIPANT_NAME) { addToast(`Le prénom ne peut pas dépasser ${MAX_PARTICIPANT_NAME} caractères.`, "warning"); return; }
+    if (!name) { addToast(t ? t("toast_participant_empty") : "Le prénom ne peut pas être vide.", "warning"); return; }
+    if (name.length > MAX_PARTICIPANT_NAME) { addToast(t ? t("toast_participant_too_long") : `Le prénom ne peut pas dépasser ${MAX_PARTICIPANT_NAME} caractères.`, "warning"); return; }
     const currentCount = (ev.event_participants || []).length;
     if (currentCount >= (ev?.event_type === "budget" ? MAX_PARTICIPANTS_BUDGET : MAX_PARTICIPANTS)) {
-      addToast(`Maximum ${ev?.event_type === "budget" ? MAX_PARTICIPANTS_BUDGET : MAX_PARTICIPANTS} participants atteint.`, "warning"); return;
+      addToast(t ? t("toast_max_participants") : `Maximum participants atteint.`, "warning"); return;
     }
     const existing = (ev.event_participants || []).map(p => p.name.toLowerCase());
-    if (existing.includes(name.toLowerCase())) { addToast("Ce participant existe déjà.", "warning"); return; }
+    if (existing.includes(name.toLowerCase())) { addToast(t ? t("toast_duplicate_participant") : "Ce participant existe déjà.", "warning"); return; }
     await addParticipant(ev.id, name);
     await reload();
     setNewParticipant("");
-    addToast(`${name} ajouté à l'événement.`, "success");
+    addToast(`${name} ${t ? t("ev_participant_added") : "ajouté à l'événement."}`, "success");
     setManagingEv(events.find(e => e.id === ev.id) || ev);
   };
 
@@ -552,7 +552,7 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
         await removeParticipant(ev.id, name);
         await reload();
         setConfirm(null);
-        addToast(`${name} retiré de l'événement.`, "info");
+        addToast(`${name} ${t ? t("ev_participant_removed") : "retiré de l'événement."}`, "info");
       },
       onCancel: () => setConfirm(null),
     });
@@ -836,9 +836,9 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
               <select style={{ ...S.input, width: "auto", fontSize: 12 }} value={sortEvents} onChange={e => setSortEvents(e.target.value)}>
                 <option value="date_desc">📅 Plus récent</option>
                 <option value="date_asc">📅 Plus ancien</option>
-                <option value="name_asc">🔤 Nom A→Z</option>
-                <option value="amount_desc">💰 Budget ↓</option>
-                <option value="status">🔒 Statut</option>
+                <option value="name_asc">{t ? t("ev_sort_name") : "🔤 Nom A→Z"}</option>
+                <option value="amount_desc">{t ? t("ev_sort_budget") : "💰 Budget ↓"}</option>
+                <option value="status">{t ? t("ev_sort_status") : "🔒 Statut"}</option>
               </select>
             </div>
           )}

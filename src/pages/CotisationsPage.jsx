@@ -74,7 +74,7 @@ export function CotisationsPage({ events, expenses, user, reload, isMobile, addT
     const montantEffectif = getMontantEffectif();
     if (!montantEffectif || montantEffectif <= 0) { addToast("Le montant doit être supérieur à 0.", "warning"); return; }
     if (montantMode === "libre" && cotisationCible > 0 && montantEffectif < cotisationCible) {
-      addToast(`Le montant doit être au moins égal à la cotisation cible (${fmt(cotisationCible, sym)}).`, "warning"); return;
+      addToast(t ? `${t("cot_amount_min")} (${fmt(cotisationCible, sym)}).` : `Le montant doit être au moins égal à la cotisation cible (${fmt(cotisationCible, sym)}).`, "warning"); return;
     }
     if (form.participant_name.length > 30) { addToast("Nom trop long (max 30 car.).", "warning"); return; }
     if (form.forme === "nature" && !natureForm.detail.trim()) { addToast("Précisez la nature de l'apport.", "warning"); return; }

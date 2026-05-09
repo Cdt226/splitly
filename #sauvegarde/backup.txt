@@ -12,3 +12,9 @@ Con Secret : 28edc08c47fb1aa407583875e78c20e3
 
 
 https://supabase.com/dashboard/project/okwucwvdmdsepqkkmnug/settings/api-keys/legacy
+
+VAPID PUBLIC KEY : BEoMwd7EkEvA6Z-B5JSwvYmofyrdMRe17_OiGUlyCUTPkhISkBvSYUYtti9gMQeHfsmyB5wHb25zZtOaJqrBJKI
+
+VAPID PRIVATE KEY : Tc1iBgnWAkzjrbbb9VcHIDNYuDQ4MLrA-zgaSpjLVx0
+
+VAPID SUBJECT : noreply@splitmeapp.com

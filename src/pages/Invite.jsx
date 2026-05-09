@@ -8,14 +8,14 @@ import { Avatar, AvatarStack, EmojiPicker, Truncate, Badge, EmptyState, Chip, Pa
 import { sendInvitation, removeInvitation, updateInvitationRole, updateInvitationPermissions, fetchInvitationPermissions, requestPermissions, fetchInvitations } from "../supabase.js";
 
 const ALL_PERMISSIONS = {
-  add_expense:         { label: "Ajouter charge",          icon: "➕",  desc: "Créer de nouvelles charges", color: "#1565C0", bg: "#E3F2FD", split: true, budget: true },
-  edit_expense:        { label: "Modifier charge",         icon: "✏️",  desc: "Modifier les charges existantes", color: "#F57F17", bg: "#FFF8E1", split: true, budget: true },
-  delete_expense:      { label: "Supprimer charge",        icon: "🗑",  desc: "Supprimer des charges", color: "#C62828", bg: "#FFEBEE", split: true, budget: true },
-  add_participant:     { label: "Ajouter participant",     icon: "👤+", desc: "Ajouter des participants", color: "#2E7D32", bg: "#E8F5E9", split: true, budget: true },
-  remove_participant:  { label: "Supprimer participant",   icon: "👤-", desc: "Retirer des participants", color: "#C62828", bg: "#FFEBEE", split: true, budget: true },
+  add_expense:         { label: t ? t("inv_perm_add") : "Ajouter charge",          icon: "➕",  desc: "Créer de nouvelles charges", color: "#1565C0", bg: "#E3F2FD", split: true, budget: true },
+  edit_expense:        { label: t ? t("inv_perm_edit") : "Modifier charge",         icon: "✏️",  desc: "Modifier les charges existantes", color: "#F57F17", bg: "#FFF8E1", split: true, budget: true },
+  delete_expense:      { label: t ? t("inv_perm_delete") : "Supprimer charge",        icon: "🗑",  desc: "Supprimer des charges", color: "#C62828", bg: "#FFEBEE", split: true, budget: true },
+  add_participant:     { label: t ? t("inv_perm_add_part") : "Ajouter participant",     icon: "👤+", desc: "Ajouter des participants", color: "#2E7D32", bg: "#E8F5E9", split: true, budget: true },
+  remove_participant:  { label: t ? t("inv_perm_delete_part") : "Supprimer participant",   icon: "👤-", desc: "Retirer des participants", color: "#C62828", bg: "#FFEBEE", split: true, budget: true },
   add_cotisation:      { label: "Ajouter cotisation",      icon: "💰+", desc: "Créer des cotisations", color: "#6A1B9A", bg: "#F3E5F5", split: false, budget: true },
   edit_cotisation:     { label: "Modifier cotisation",     icon: "💰✏", desc: "Modifier les cotisations", color: "#6A1B9A", bg: "#F3E5F5", split: false, budget: true },
-  export_pdf:          { label: "Exporter PDF",            icon: "📄",  desc: "Générer des PDF", color: "#0F0F0F", bg: "#f0f0f0", split: true, budget: true },
+  export_pdf:          { label: t ? t("inv_perm_pdf") : "Exporter PDF",            icon: "📄",  desc: "Générer des PDF", color: "#0F0F0F", bg: "#f0f0f0", split: true, budget: true },
 };
 
 // Retourne les permissions disponibles pour un type d'événement (jamais read_only)
@@ -97,13 +97,13 @@ export function Invite({ events, user, isMobile, addToast }) {
   }, {});
 
   const handleSend = async () => {
-    if (!email) { addToast("Entrez un email.", "warning"); return; }
+    if (!email) { addToast(t ? t("inv_email_required") : "Entrez un email.", "warning"); return; }
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) { addToast("Format d'email invalide.", "warning"); return; }
+    if (!emailRegex.test(email)) { addToast(t ? t("toast_invalid_email") : "Format d'email invalide.", "warning"); return; }
     if (email.trim().toLowerCase() === user?.email?.toLowerCase()) {
-      addToast("Vous ne pouvez pas vous inviter vous-même.", "warning"); return;
+      addToast(t ? t("inv_self_invite") : "Vous ne pouvez pas vous inviter vous-même.", "warning"); return;
     }
-    if (selectedEvents.length === 0) { addToast("Sélectionnez au moins un événement.", "warning"); return; }
+    if (selectedEvents.length === 0) { addToast(t ? t("toast_select_event") : "Sélectionnez au moins un événement.", "warning"); return; }
     setSaving(true);
     const finalPerms = normalizePerms(permissions);
 
@@ -152,13 +152,13 @@ export function Invite({ events, user, isMobile, addToast }) {
     setEmail(""); setSelectedEvents([]); setPermissions([]);
     await loadInvites();
     setSaving(false);
-    addToast(`✉️ Invitation envoyée à ${email}.`, "success");
+    addToast(`✉️ ${t ? t("inv_sent") : "Invitation envoyée à"} ${email}.`, "success");
   };
 
   const handleRemove = async (inv) => {
     await removeInvitation(inv.event_id, inv.email);
     await loadInvites();
-    addToast("Accès retiré.", "info");
+    addToast(t ? t("inv_removed") : "Accès retiré.", "info");
   };
 
   // Ouvrir le gestionnaire de droits pour un email
@@ -192,7 +192,7 @@ export function Invite({ events, user, isMobile, addToast }) {
           const perms = managerPerms[inv.event_id] || [];
           await updateInvitationPermissions(inv.event_id, managerEmail, perms, false);
         }
-        addToast(`Droits mis à jour pour ${managerEmail}.`, "success");
+        addToast(`${t ? t("inv_rights_updated") : "Droits mis à jour pour"} ${managerEmail}.`, "success");
       } else if (managerMode === "selection") {
         for (const evId of selectionEvents) {
           await updateInvitationPermissions(evId, managerEmail, selectionPerms, false);
@@ -206,7 +206,7 @@ export function Invite({ events, user, isMobile, addToast }) {
       }
       await loadInvites();
       closeManager();
-    } catch (e) { addToast("Erreur : " + e.message, "error"); }
+    } catch (e) { addToast((t ? t("ev_error") : "Erreur : ") + e.message, "error"); }
     setSavingPerms(false);
   };
 
@@ -357,7 +357,7 @@ export function Invite({ events, user, isMobile, addToast }) {
               style={{ ...S.btnDark, flex: 1, justifyContent: "center", display: "flex", background: managerMode === "all" ? "#C62828" : undefined, opacity: (managerMode === "all" && !confirmAll) || (managerMode === "selection" && selectionEvents.length === 0) ? 0.5 : 1 }}>
               {savingPerms ? "..." : "✓ Enregistrer"}
             </button>
-            <button onClick={closeManager} style={{ ...S.btnGhost, flex: 1, justifyContent: "center", display: "flex" }}>Annuler</button>
+            <button onClick={closeManager} style={{ ...S.btnGhost, flex: 1, justifyContent: "center", display: "flex" }}>{t ? t("cancel") : "Annuler"}</button>
           </div>
         </Modal>
       )}
@@ -381,7 +381,7 @@ export function Invite({ events, user, isMobile, addToast }) {
 
         {/* Permissions — filtrées selon le type des événements sélectionnés */}
         <div style={{ marginBottom: 16 }}>
-          <label style={S.label}>Droits accordés <span style={{ color: "var(--text-sub)", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(lecture seule par défaut)</span></label>
+          <label style={S.label}>{t ? t("inv_rights_granted") : "Droits accordés"} <span style={{ color: "var(--text-sub)", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>{t ? `(${t("inv_read_only_default")})` : "(lecture seule par défaut)"}</span></label>
           {(() => {
             const selectedEvObjects = events.filter(e => selectedEvents.includes(e.id));
             const hasSplit = selectedEvObjects.some(e => e.event_type !== "budget");
@@ -414,7 +414,7 @@ export function Invite({ events, user, isMobile, addToast }) {
                 </div>
                 {permissions.length === 0 && (
                   <div style={{ marginTop: 8, fontSize: 11, color: "#888", background: "#f5f5f5", borderRadius: 8, padding: "6px 12px", display: "inline-flex", alignItems: "center", gap: 6 }}>
-                    👁 Aucun droit sélectionné = <strong>Lecture seule</strong>
+                    👁 Aucun droit sélectionné = <strong>{t ? t("inv_read") : "Lecture seule"}</strong>
                   </div>
                 )}
                 {selectedEvents.length === 0 && (
@@ -471,7 +471,7 @@ export function Invite({ events, user, isMobile, addToast }) {
                 </span>
                 <button onClick={() => openManager(guestEmail)}
                   style={{ padding: "5px 12px", borderRadius: 8, border: "1.5px solid #BBDEFB", background: "#E3F2FD", color: "#1565C0", fontSize: 11, cursor: "pointer", fontWeight: 700, flexShrink: 0 }}>
-                  🔐 Gérer les droits
+                  {t ? "🔐 " + t("inv_manage_rights") : "🔐 Gérer les droits"}
                 </button>
                 <button onClick={() => { if (window.confirm(`Retirer ${guestEmail} de tous les événements ?`)) guestInvs.forEach(i => handleRemove(i)); }}
                   style={{ padding: "5px 10px", borderRadius: 8, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 11, cursor: "pointer", fontWeight: 700, flexShrink: 0 }}>

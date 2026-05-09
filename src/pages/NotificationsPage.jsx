@@ -29,9 +29,9 @@ export function NotificationsPage({ notifications, events, expenses, pendingActi
       guest_email: action.guest_email,
     });
     if (error) {
-      addToast("Erreur lors de l'approbation : " + error.message, "error");
+      addToast((t ? t("notif_approve_error") : "Erreur lors de l'approbation : ") + error.message, "error");
     } else {
-      addToast("Action approuvée et exécutée.", "success");
+      addToast(t ? t("notif_approved") : "Action approuvée et exécutée.", "success");
       // Notifier l'invité via push
       fetch("/api/send-push", {
         method: "POST",
@@ -76,7 +76,7 @@ export function NotificationsPage({ notifications, events, expenses, pendingActi
     await rejectPendingAction(action.id, user.id);
     await reload();
     setSaving(null);
-    addToast("Demande refusée.", "info");
+    addToast(t ? t("notif_rejected") : "Demande refusée.", "info");
   };
 
   const typeColor = (t) => ({ success: "#2E7D32", warning: "#F57F17", info: "#1565C0", request: "#6A1B9A" }[t] || "#888");
@@ -90,7 +90,7 @@ export function NotificationsPage({ notifications, events, expenses, pendingActi
           <div style={{ fontSize: 13, color: "var(--text-sub)", marginBottom: 4 }}>
             <strong>{partialPermsModal.action.guest_email}</strong> demande les droits suivants sur <strong>{partialPermsModal.action.action_data?.event_name || events.find(e => e.id === partialPermsModal.action.event_id)?.name}</strong>.
           </div>
-          <div style={{ fontSize: 12, color: "var(--text-sub)", marginBottom: 16 }}>Décochez les droits que vous ne souhaitez pas accorder.</div>
+          <div style={{ fontSize: 12, color: "var(--text-sub)", marginBottom: 16 }}>{t ? t("notif_uncheck_rights") : "Décochez les droits que vous ne souhaitez pas accorder."}</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
             {normalizePerms(partialPermsModal.action.action_data?.requested || []).map(p => {
               const info = ALL_PERMISSIONS[p];
@@ -133,16 +133,16 @@ export function NotificationsPage({ notifications, events, expenses, pendingActi
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <div>
-          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2 }}>Notifications</h2>
+          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2 }}>{t ? t("notif_title") : "Notifications"}</h2>
           <p style={{ color: "#888", fontSize: 12 }}>{notifications.filter(n => !n.is_read).length} non lue(s) · {pendingActions.length} demande(s)</p>
         </div>
-        <button onClick={onMarkAll} style={S.btnGhost}>Tout marquer lu</button>
+        <button onClick={onMarkAll} style={S.btnGhost}>{t ? t("notif_mark_all") : "Tout marquer lu"}</button>
       </div>
 
       {pendingActions.length > 0 && (
         <div style={{ marginBottom: 24 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: "#6A1B9A", textTransform: "uppercase", letterSpacing: 0.9, marginBottom: 12 }}>
-            ⏳ Demandes en attente d'approbation ({pendingActions.length})
+            {t ? `⏳ ${t("notif_pending")} (${pendingActions.length})` : `⏳ Demandes en attente (${pendingActions.length})`}
           </div>
           {pendingActions.map(action => {
             const ev = events.find(e => e.id === action.event_id);

@@ -15,7 +15,7 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
-const LOCALES_DIR = path.join(ROOT, "src", "locales");
+const LOCALES_DIR = path.join(ROOT, "locales");
 const PAGES_DIR = path.join(ROOT, "src");
 const LANGS = ["fr", "en", "es", "pt", "ar"];
 const REFERENCE_LANG = "fr";

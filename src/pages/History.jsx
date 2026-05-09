@@ -6,8 +6,9 @@ import { fmt, currencySymbol, computeOwed, computeNetBalance, isSettled, isExact
 import { S } from "../styles.js";
 import { Avatar, AvatarStack, EmojiPicker, Truncate, Badge, EmptyState, Chip, ParticipantInput, ParticipantToggle, Modal, ConfirmModal, Spinner, StatCard } from "../components/ui/index.jsx";
 import { invalidateHistory } from "../supabase.js";
+import { useTranslation } from "../i18n.jsx";
 
-export function History({ events, history, user, reload, isMobile, addToast }) {
+export function History({ events, history, user, reload, isMobile, addToast, t }) {
   const [filterEvent, setFilterEvent] = useState("all");
   const [confirm, setConfirm] = useState(null);
   const filtered = filterEvent === "all" ? history : history.filter(h => h.event_id === filterEvent);
@@ -88,7 +89,7 @@ export function History({ events, history, user, reload, isMobile, addToast }) {
             if (error) throw new Error("Impossible de restaurer le participant : " + error.message);
 
           } else {
-            addToast("Ce type de modification ne peut pas être annulé automatiquement.", "warning");
+            addToast(t("hist_no_rollback"), "warning");
             setConfirm(null);
             return;
           }
@@ -96,11 +97,11 @@ export function History({ events, history, user, reload, isMobile, addToast }) {
           await invalidateHistory(entry.id, entry.event_id);
           await reload();
           setConfirm(null);
-          addToast("✓ Annulation effectuée — données restaurées.", "success");
+          addToast(t("hist_rollback_done"), "success");
 
         } catch (err) {
           setConfirm(null);
-          addToast("Rollback impossible : " + err.message, "error");
+          addToast(t("hist_rollback_error") + " " + err.message, "error");
         }
       },
       onCancel: () => setConfirm(null),
@@ -112,17 +113,17 @@ export function History({ events, history, user, reload, isMobile, addToast }) {
       {confirm && <ConfirmModal {...confirm} />}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <div>
-          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2 }}>Historique</h2>
-          <p style={{ color: "#888", fontSize: 12 }}>Toutes les modifications · Rollback disponible</p>
+          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2 }}>{t ? t("hist_title") : "Historique"}</h2>
+          <p style={{ color: "#888", fontSize: 12 }}>{t ? t("hist_subtitle") : "Toutes les modifications"}</p>
         </div>
         <select style={{ ...S.input, width: "auto" }} value={filterEvent} onChange={e => setFilterEvent(e.target.value)}>
-          <option value="all">Tous les événements</option>
+          <option value="all">{t ? t("hist_all_events") : "Tous les événements"}</option>
           {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
         </select>
       </div>
 
       {filtered.length === 0 ? (
-        <EmptyState icon="📋" title="Aucune modification" subtitle="L'historique des modifications apparaîtra ici." />
+        <EmptyState icon="📋" title={t ? t("hist_no_history") : "Aucune modification"} subtitle={t ? t("hist_no_history_desc") : ""} />
       ) : (
         <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #eee", overflow: "hidden" }}>
           {[...filtered].reverse().map((h, i) => {
@@ -133,7 +134,7 @@ export function History({ events, history, user, reload, isMobile, addToast }) {
                 <div style={{ width: 10, height: 10, borderRadius: "50%", background: color, flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {h.action} {h.invalidated && <span style={{ fontSize: 10, color: "#aaa", fontWeight: 400 }}>(invalidé)</span>}
+                    {h.action} {h.invalidated && <span style={{ fontSize: 10, color: "#aaa", fontWeight: 400 }}>{t ? t("hist_invalidated_label") : "(invalidé)"}</span>}
                   </div>
                   <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>
                     {ev?.name || "–"} · {new Date(h.created_at).toLocaleString("fr-FR")}
@@ -141,7 +142,7 @@ export function History({ events, history, user, reload, isMobile, addToast }) {
                 </div>
                 {!h.invalidated && ev?.status === "open" && (
                   <button onClick={() => handleRollback(h)} style={{ padding: "5px 12px", borderRadius: 8, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 11, cursor: "pointer", fontWeight: 700, flexShrink: 0, whiteSpace: "nowrap" }}>
-                    ↩ Invalider
+                    {t ? t("hist_rollback_btn") : "↩ Invalider"}
                   </button>
                 )}
               </div>

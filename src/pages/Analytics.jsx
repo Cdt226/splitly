@@ -81,10 +81,10 @@ export function Analytics({ events, expenses, contributions, isMobile, t, defaul
   const mixedCurrencies = allCurrencies.length > 1;
 
   const TABS = [
-    { key: "all",      label: "🌐 Tous" },
-    { key: "event",    label: "📊 Par événement" },
-    { key: "charges",  label: "🏷️ Par charge" },
-    { key: "personal", label: "👤 Par participant" },
+    { key: "all",      label: t ? "🌐 " + t("ana_all_events") : "🌐 Tous" },
+    { key: "event",    label: t ? "📊 " + t("ana_by_event") : "📊 Par événement" },
+    { key: "charges",  label: t ? "🏷️ " + t("ana_by_charge") : "🏷️ Par charge" },
+    { key: "personal", label: t ? "👤 " + t("ana_by_participant_tab") : "👤 Par participant" },
   ];
 
   const TabBar = () => (
@@ -185,7 +185,7 @@ export function Analytics({ events, expenses, contributions, isMobile, t, defaul
 
           {/* Top catégories global */}
           <div style={{ background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border)", padding: 20 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 16 }}>Top catégories — tous événements</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 16 }}>{t ? t("ana_top_categories") : "Top catégories — tous événements"}</div>
             {allByCat.slice(0, 6).map(c => (
               <div key={c.cat} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
                 <span style={{ fontSize: 18, width: 26, flexShrink: 0 }}>{CATEGORIES[c.cat].icon}</span>
@@ -236,7 +236,7 @@ export function Analytics({ events, expenses, contributions, isMobile, t, defaul
               <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
                 {/* Répartition par catégorie */}
                 <div style={{ background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border)", padding: 20 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16, color: "var(--text)" }}>Répartition par catégorie</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16, color: "var(--text)" }}>{t ? t("ana_by_category") : "Répartition par catégorie"}</div>
                   {byCategory.length === 0 ? <EmptyState icon="🧾" title="Aucune charge" subtitle="" /> : byCategory.map(c => (
                     <div key={c.cat} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
                       <span style={{ fontSize: 18, flexShrink: 0, width: 26 }}>{CATEGORIES[c.cat].icon}</span>
@@ -255,7 +255,7 @@ export function Analytics({ events, expenses, contributions, isMobile, t, defaul
 
                 {/* Part due + progression par participant */}
                 <div style={{ background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border)", padding: 20 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16, color: "var(--text)" }}>Part due par participant</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16, color: "var(--text)" }}>{t ? t("ana_by_participant") : "Part due par participant"}</div>
                   {participants.length === 0 ? <EmptyState icon="👥" title="Aucun participant" subtitle="" /> : participants.map(p => {
                     const owed = computeOwed(evExp, p);
                     const paid = evContribMap[p] || 0;
@@ -302,7 +302,7 @@ export function Analytics({ events, expenses, contributions, isMobile, t, defaul
 
           {/* Barres horizontales par catégorie */}
           <div style={{ background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border)", padding: 20, marginBottom: 16 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 16 }}>Volume par catégorie</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 16 }}>{t ? t("ana_volume_by_category") : "Volume par catégorie"}</div>
             {allByCat.map(c => (
               <div key={c.cat} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
                 <span style={{ fontSize: 18, width: 26, flexShrink: 0 }}>{CATEGORIES[c.cat].icon}</span>

@@ -124,11 +124,11 @@ function AppInner() {
   const NAV_LABELS = {
     dashboard: t("nav_dashboard"), events: t("nav_events"),
     expenses: t("nav_expenses"), balance: t("nav_balance"),
-    contributions: "Contributions",
+    contributions: t("nav_contributions") || "Contributions",
     analytics: t("nav_analytics"), history: t("nav_history"),
     invite: t("nav_invite"), notifications: t("nav_notifications"),
     settings: t("nav_settings") || "Paramètres",
-    cotisations: "Cotisations",
+    cotisations: t("nav_cotisations") || "Cotisations",
     superadmin: "Super Admin",
   };
 
@@ -238,7 +238,7 @@ function AppInner() {
         const evId = payload.new?.event_id || payload.old?.event_id;
         if (evId && eventIds.includes(evId)) {
           loadAll();
-          addToast("💰 Cotisations mises à jour", "info");
+          addToast(t ? "💰 " + t("app_cotisations_updated") : "💰 Cotisations mises à jour", "info");
         }
       }).subscribe();
 
@@ -262,7 +262,7 @@ function AppInner() {
       .channel("pending-actions-realtime")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "pending_actions" }, () => {
         loadAll();
-        addToast("📬 Nouvelle demande d'un invité", "info");
+        addToast(t ? "📬 " + t("app_new_guest_request") : "📬 Nouvelle demande d'un invité", "info");
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "pending_actions" }, () => {
         loadAll();

@@ -21,7 +21,7 @@ export function Sidebar({ active, setActive, unreadCount, pendingCount, user, on
     { key: "dashboard",       icon: "🏠", label: t("nav_dashboard") },
     { key: "events",          icon: "🎊", label: t("nav_events") },
     { key: "expenses",        icon: "🧾", label: t("nav_expenses") },
-    { key: "contributions",   icon: "💰", label: "Contributions" },
+    { key: "contributions",   icon: "💰", label: t ? t("nav_contributions") : "Contributions" },
     { key: "analytics",       icon: "📊", label: t("nav_analytics") },
     { key: "history",         icon: "📋", label: t("nav_history") },
     { key: "invite",          icon: "👥", label: t("nav_invite") },
@@ -34,7 +34,7 @@ export function Sidebar({ active, setActive, unreadCount, pendingCount, user, on
     { key: "dashboard",      icon: "🏠", label: t("nav_dashboard") },
     { key: "events",         icon: "🎊", label: t("nav_events") },
     { key: "expenses",       icon: "🧾", label: t("nav_expenses") },
-    { key: "contributions",  icon: "💰", label: "Contributions" },
+    { key: "contributions",  icon: "💰", label: t ? t("nav_contributions") : "Contributions" },
     { key: "analytics",      icon: "📊", label: t("nav_analytics") },
   ];
 
@@ -70,7 +70,7 @@ export function Sidebar({ active, setActive, unreadCount, pendingCount, user, on
     const handlePushToggle = async () => {
       try {
         if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
-          addToast("Notifications non supportées sur ce navigateur.", "warning");
+          addToast(t ? t("settings_notif_unsupported") : "Notifications non supportées.", "warning");
           return;
         }
         if (pushEnabled) {
@@ -86,12 +86,12 @@ export function Sidebar({ active, setActive, unreadCount, pendingCount, user, on
             await sub.unsubscribe();
           }
           setPushEnabled(false);
-          addToast("🔕 Notifications désactivées.", "info");
+          addToast(t ? t("settings_notif_disabled") : "🔕 Notifications désactivées.", "info");
           return;
         }
         const permission = await Notification.requestPermission();
         if (permission !== "granted") {
-          addToast("Notifications refusées. Autorisez-les dans les paramètres du navigateur.", "warning");
+          addToast(t ? t("settings_notif_denied") : "Notifications refusées.", "warning");
           return;
         }
         // Créer l'abonnement push
@@ -107,9 +107,9 @@ export function Sidebar({ active, setActive, unreadCount, pendingCount, user, on
           body: JSON.stringify({ userId: user?.id, subscription: sub.toJSON() }),
         });
         setPushEnabled(true);
-        addToast("🔔 Notifications activées !", "success");
+        addToast(t ? t("settings_notif_enabled") : "🔔 Notifications activées !", "success");
       } catch (e) {
-        addToast("Impossible d'activer les notifications : " + e.message, "warning");
+        addToast((t ? t("settings_notif_error") : "Impossible d'activer les notifications : ") + e.message, "warning");
       }
     };
 
@@ -118,14 +118,14 @@ export function Sidebar({ active, setActive, unreadCount, pendingCount, user, on
       {/* Sélecteur de langue */}
       <div style={{ marginBottom: 10, position: "relative", zIndex: 500 }}>
         <div style={{ fontSize: 10, color: "#555", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
-          🌐 {lang === "fr" ? "Langue" : lang === "en" ? "Language" : "Idioma"}
+          🌐 {t ? t("settings_language") : "Langue"}
         </div>
         <LanguageMenu lang={lang} setLang={setLang} dark={true} dropUp={true} />
       </div>
       {/* Toggle mode sombre */}
       <button onClick={toggle}
         style={{ width: "100%", marginBottom: 8, padding: "8px 12px", borderRadius: 9, border: "1px solid #2a2a2a", background: "rgba(255,255,255,0.05)", color: "#aaa", fontSize: 12, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" }}>
-        <span>{dark ? "☀️ Mode clair" : "🌙 Mode sombre"}</span>
+        <span>{t ? (dark ? "☀️ " + t("settings_theme_light") : "🌙 " + t("settings_theme_dark")) : (dark ? "☀️ Mode clair" : "🌙 Mode sombre")}</span>
         <div style={{ width: 32, height: 18, borderRadius: 9, background: dark ? "#fff" : "#333", position: "relative", transition: "background 0.2s" }}>
           <div style={{ position: "absolute", top: 2, left: dark ? 14 : 2, width: 14, height: 14, borderRadius: "50%", background: dark ? "#333" : "#fff", transition: "left 0.2s" }} />
         </div>
@@ -133,7 +133,7 @@ export function Sidebar({ active, setActive, unreadCount, pendingCount, user, on
       {/* Toggle notifications push */}
       <button onClick={handlePushToggle}
         style={{ width: "100%", marginBottom: 10, padding: "8px 12px", borderRadius: 9, border: "1px solid #2a2a2a", background: pushEnabled ? "rgba(46,125,50,0.15)" : "rgba(255,255,255,0.05)", color: pushEnabled ? "#4CAF50" : "#aaa", fontSize: 12, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 8 }}>
-        <span>{pushEnabled ? "🔔 Notifications activées" : "🔕 Activer les notifications"}</span>
+        <span>{t ? (pushEnabled ? "🔔 " + t("settings_notif_enabled_short") : "🔕 " + t("settings_notif_activate")) : (pushEnabled ? "🔔 Notifications activées" : "🔕 Activer les notifications")}</span>
       </button>
       {/* Profil */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
@@ -194,14 +194,14 @@ export function Sidebar({ active, setActive, unreadCount, pendingCount, user, on
           <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, color: "#fff", cursor: "pointer", letterSpacing: -0.5 }} onClick={() => setActive("dashboard")}>SplitLy</div>
           <div title="Temps réel actif" style={{ width: 7, height: 7, borderRadius: "50%", background: "#2E7D32", boxShadow: "0 0 6px #2E7D32", flexShrink: 0 }} />
         </div>
-        <div style={{ fontSize: 11, color: "#555", marginTop: 2 }}>Gestion de dépenses</div>
+        <div style={{ fontSize: 11, color: "#555", marginTop: 2 }}>{t ? t("app_tagline") : "Gestion de dépenses"}</div>
       </div>
       {/* Recherche globale */}
       <div style={{ padding: "12px 12px 8px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(255,255,255,0.06)", borderRadius: 10, padding: "8px 12px", border: "1px solid rgba(255,255,255,0.08)" }}>
           <span style={{ fontSize: 13, opacity: 0.5 }}>🔍</span>
           <input
-            placeholder={lang === "fr" ? "Rechercher..." : lang === "en" ? "Search..." : "Buscar..."}
+            placeholder={t ? t("search") + "..." : "Rechercher..."}
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             style={{ background: "none", border: "none", outline: "none", color: "#fff", fontSize: 13, width: "100%", fontFamily: "inherit" }}

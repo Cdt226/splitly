@@ -85,16 +85,16 @@ export function Dashboard({ events, expenses, contributions, user, isMobile, nav
       </div>
 
       {events.length === 0 ? (
-        <EmptyState icon="🎊" title="Aucun événement" subtitle="Créez votre premier événement pour commencer à gérer vos dépenses partagées."
-          action={navigateTo && <button onClick={() => navigateTo("events")} style={S.btnDark}>Créer un événement →</button>} />
+        <EmptyState icon="🎊" title={t("dash_no_events")} subtitle={t("dash_no_events_desc")}
+          action={navigateTo && <button onClick={() => navigateTo("events")} style={S.btnDark}>{t("dash_create_event_btn")}</button>} />
       ) : (
         <>
           {/* ── KPIs ── */}
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 12, marginBottom: 24, minWidth: 0 }}>
-            <KpiCard icon="💰" label="Budget total" value={fmt(grandTotal)} sub={`${expenses.length} charge${expenses.length > 1 ? "s" : ""}`} accent="#0F0F0F" onClick={() => navigateTo && navigateTo("expenses")} />
-            <KpiCard icon="🎊" label="Événements" value={events.length} sub={`${openEvents.length} ouvert${openEvents.length > 1 ? "s" : ""} · ${closedEvents.length} bouclé${closedEvents.length > 1 ? "s" : ""}`} accent="#2E7D32" onClick={() => navigateTo && navigateTo("events")} />
-            <KpiCard icon="👥" label="Participants" value={uniqueParticipants.length} sub="profils uniques" accent="#1565C0" onClick={() => navigateTo && navigateTo("analytics")} />
-            <KpiCard icon="⏳" label="Remboursements" value={pendingReimb} sub="en attente" accent={pendingReimb > 0 ? "#F57F17" : "#2E7D32"} onClick={() => navigateTo && navigateTo("balance")} />
+            <KpiCard icon="💰" label={t("dash_budget_total")} value={fmt(grandTotal)} sub={`${expenses.length} charge${expenses.length > 1 ? "s" : ""}`} accent="#0F0F0F" onClick={() => navigateTo && navigateTo("expenses")} />
+            <KpiCard icon="🎊" label={t("dash_events")} value={events.length} sub={`${openEvents.length} ${t("dash_open_count")}${openEvents.length > 1 ? "s" : ""} · ${closedEvents.length} ${t("dash_closed_count")}${closedEvents.length > 1 ? "s" : ""}`} accent="#2E7D32" onClick={() => navigateTo && navigateTo("events")} />
+            <KpiCard icon="👥" label={t("dash_participants")} value={uniqueParticipants.length} sub={t("dash_unique_profiles")} accent="#1565C0" onClick={() => navigateTo && navigateTo("analytics")} />
+            <KpiCard icon="⏳" label={t("dash_reimbursements_label")} value={pendingReimb} sub={t("dash_pending")} accent={pendingReimb > 0 ? "#F57F17" : "#2E7D32"} onClick={() => navigateTo && navigateTo("balance")} />
           </div>
 
           {/* ── Progression bouclage ── */}
@@ -102,7 +102,7 @@ export function Dashboard({ events, expenses, contributions, user, isMobile, nav
             <div style={{ background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border)", padding: 20, marginBottom: 20 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
                 <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>📈 Progression vers bouclage</div>
-                <button onClick={() => navigateTo && navigateTo("balance")} style={{ fontSize: 11, color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>Voir soldes →</button>
+                <button onClick={() => navigateTo && navigateTo("balance")} style={{ fontSize: 11, color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>{t("dash_see_balances")}</button>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 {evProgression.map(({ ev, participants, settled, pct, total, sym }) => (
@@ -114,7 +114,7 @@ export function Dashboard({ events, expenses, contributions, user, isMobile, nav
                         <span style={{ fontSize: 10, color: "var(--text-sub)", flexShrink: 0 }}>{ev.date}</span>
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-                        <span style={{ fontSize: 11, color: "var(--text-sub)" }}>{settled}/{participants.length} soldés</span>
+                        <span style={{ fontSize: 11, color: "var(--text-sub)" }}>{settled}/{participants.length} " " + t("dash_settled_count")</span>
                         <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{fmt(total, sym)}</span>
                         <span style={{ fontSize: 11, fontWeight: 700, color: pct === 100 ? "#2E7D32" : "#F57F17" }}>{pct}%</span>
                       </div>
@@ -135,10 +135,10 @@ export function Dashboard({ events, expenses, contributions, user, isMobile, nav
             <div style={{ background: "var(--bg-secondary)", borderRadius: 16, padding: 20, border: "1px solid var(--border)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
                 <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>🏷️ Top catégories</div>
-                <button onClick={() => navigateTo && navigateTo("analytics")} style={{ fontSize: 11, color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>Analyses →</button>
+                <button onClick={() => navigateTo && navigateTo("analytics")} style={{ fontSize: 11, color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>{t("dash_analytics_link")}</button>
               </div>
               {byCategory.length === 0 ? (
-                <div style={{ color: "var(--text-sub)", fontSize: 13, textAlign: "center", padding: "20px 0" }}>Aucune charge enregistrée</div>
+                <div style={{ color: "var(--text-sub)", fontSize: 13, textAlign: "center", padding: "20px 0" }}>{t("dash_no_charges")}</div>
               ) : byCategory.map(c => (
                 <div key={c.cat} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
                   <span style={{ fontSize: 18, flexShrink: 0, width: 26 }}>{CATEGORIES[c.cat].icon}</span>
@@ -162,10 +162,10 @@ export function Dashboard({ events, expenses, contributions, user, isMobile, nav
             <div style={{ background: "var(--bg-secondary)", borderRadius: 16, padding: 20, border: "1px solid var(--border)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
                 <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>🕐 Activité récente</div>
-                <button onClick={() => navigateTo && navigateTo("expenses")} style={{ fontSize: 11, color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>Toutes →</button>
+                <button onClick={() => navigateTo && navigateTo("expenses")} style={{ fontSize: 11, color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>{t("dash_all_expenses")}</button>
               </div>
               {recentExpenses.length === 0 ? (
-                <div style={{ color: "var(--text-sub)", fontSize: 13, textAlign: "center", padding: "20px 0" }}>Aucune charge récente</div>
+                <div style={{ color: "var(--text-sub)", fontSize: 13, textAlign: "center", padding: "20px 0" }}>{t("dash_no_recent")}</div>
               ) : recentExpenses.map((ex, i) => {
                 const ev = events.find(e => e.id === ex.event_id);
                 const cat = CATEGORIES[ex.category];
@@ -176,7 +176,7 @@ export function Dashboard({ events, expenses, contributions, user, isMobile, nav
                     <div style={{ width: 32, height: 32, borderRadius: 10, background: cat?.color || "#f5f5f5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}>{cat?.icon || "🧾"}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ex.detail || "—"}</div>
-                      <div style={{ fontSize: 10, color: "var(--text-sub)", marginTop: 2 }}>{ev?.name} · {ex.is_unpaid ? "⏳ Non réglée" : `par ${ex.paid_by}`}</div>
+                      <div style={{ fontSize: 10, color: "var(--text-sub)", marginTop: 2 }}>{ev?.name} · {ex.is_unpaid ? t("dash_not_paid") : `${t("dash_paid_by")} ${ex.paid_by}`}</div>
                     </div>
                     <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", flexShrink: 0 }}>{fmt(total, sym)}</div>
                   </div>

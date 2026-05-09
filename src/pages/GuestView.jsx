@@ -167,10 +167,10 @@ export function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
           // Filtrer côté client sur l'email de l'invité
           if (payload.new?.guest_email !== guestEmail) return;
           if (payload.new?.status === "approved") {
-            addToast("✅ Votre demande a été approuvée par l'admin !", "success");
+            addToast(t ? t("guest_approved") : "✅ Votre demande a été approuvée par l'admin !", "success");
             silentReload();
           } else if (payload.new?.status === "rejected") {
-            addToast("❌ Votre demande a été refusée par l'admin.", "warning");
+            addToast(t ? t("guest_rejected") : "❌ Votre demande a été refusée par l'admin.", "warning");
           }
         })
       .subscribe();
@@ -184,7 +184,7 @@ export function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
           // Filtrer côté client sur l'email de l'invité
           if (payload.new?.email === guestEmail) {
             silentReload();
-            addToast("🔐 Vos droits ont été mis à jour.", "info");
+            addToast(t ? t("guest_rights_updated") : "🔐 Vos droits ont été mis à jour.", "info");
           }
         })
       .subscribe();
@@ -225,14 +225,14 @@ export function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
         });
         const result = await res.json();
         if (!res.ok) throw new Error(result.error || "Erreur serveur");
-        addToast("✅ Action enregistrée.", "success");
+        addToast(t ? t("guest_action_saved") : "✅ Action enregistrée.", "success");
       } catch (e) {
-        addToast("Erreur : " + (e.message || "action échouée"), "error");
+        addToast((t ? t("ev_error") : "Erreur : ") + (e.message || "action échouée"), "error");
       }
     } else {
       // Pas de droit → soumettre à l'admin pour approbation
       await submitPendingAction({ eventId, guestEmail, actionType, actionData });
-      addToast("📤 Demande envoyée à l'admin — vous serez notifié dès approbation.", "info");
+      addToast(t ? t("guest_request_sent") : "📤 Demande envoyée à l'admin.", "info");
     }
 
     setSaving(false);
@@ -248,7 +248,7 @@ export function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
     setRequestSaving(false);
     setShowRequestPerms(false);
     setRequestedPerms([]);
-    addToast("Demande de droits envoyée à l'admin.", "success");
+    addToast(t ? t("guest_rights_request_sent") : "Demande de droits envoyée à l'admin.", "success");
   };
 
   if (loading) return <Spinner />;
@@ -469,7 +469,7 @@ export function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
                     if (can(filterEventId, "add_expense")) {
                       setShowAddExpense(!showAddExpense);
                     } else {
-                      addToast("Vous n'avez pas le droit d'ajouter des charges. Votre demande sera envoyée à l'admin.", "info");
+                      addToast(t ? t("guest_no_add_right") : "Vous n'avez pas le droit d'ajouter des charges. Votre demande sera envoyée à l'admin.", "info");
                       setShowAddExpense(!showAddExpense);
                     }
                   }} style={S.btnDark}>
@@ -535,7 +535,7 @@ export function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
                               if (can(filterEventId, "edit_expense")) {
                                 setEditingExpense(ex);
                               } else {
-                                addToast("Modification soumise à l'approbation de l'admin.", "info");
+                                addToast(t ? t("guest_edit_submitted") : "Modification soumise à l'approbation de l'admin.", "info");
                                 setEditingExpense(ex);
                               }
                             }} style={{ marginTop: 6, padding: "3px 10px", borderRadius: 8, border: "1.5px solid #FFE082", background: "#FFF8E1", color: "#F57F17", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
@@ -776,11 +776,11 @@ function GuestCotisationsView({ ev, cotisations, sym, participants, can, filterE
 
   const handleAddCotisation = (participantName) => {
     const montant = getMontant();
-    if (montant <= 0) { addToast("Montant requis.", "warning"); return; }
+    if (montant <= 0) { addToast(t ? t("guest_amount_required") : "Montant requis.", "warning"); return; }
     // Bloquer si participant déjà coté
     const dejaCoté = cotisations.some(c => c.participant_name === (participantName || formParticipant));
     if (dejaCoté) {
-      addToast("Ce participant a déjà une cotisation. Utilisez le bouton ✏️ Modifier.", "warning");
+      addToast(t ? t("guest_cot_exists") : "Ce participant a déjà une cotisation.", "warning");
       return;
     }
     const data = { participant_name: participantName || formParticipant, montant, forme: formForme, statut: montant > 0 ? "paye" : "impaye", description: formDesc, event_id: filterEventId };
@@ -794,7 +794,7 @@ function GuestCotisationsView({ ev, cotisations, sym, participants, can, filterE
   };
 
   const handleDeleteCotisation = (cot) => {
-    addToast("La suppression de cotisations n'est pas autorisée en mode invité. Contactez l'admin.", "warning");
+    addToast(t ? t("guest_cot_delete_denied") : "La suppression de cotisations n'est pas autorisée en mode invité. Contactez l'admin.", "warning");
   };
 
   const handleAddParticipantAction = () => {
@@ -802,7 +802,7 @@ function GuestCotisationsView({ ev, cotisations, sym, participants, can, filterE
     if (can(filterEventId, "add_participant")) {
       submitAction("add_participant", { name: newParticipant.trim() }, filterEventId);
     } else {
-      addToast("Demande d'ajout de participant envoyée à l'admin.", "info");
+      addToast(t ? t("guest_add_participant_sent") : "Demande d'ajout de participant envoyée à l'admin.", "info");
       submitAction("add_participant", { name: newParticipant.trim(), needs_approval: true }, filterEventId);
     }
     setNewParticipant(""); setShowAddParticipant(false);

@@ -101,10 +101,10 @@ export function Expenses({ events, expenses, contributions, user, reload, isMobi
       addToast(t("toast_fill_all"), "warning"); return;
     }
     if (!isBudgetEvent && finalIncluded.length === 0) {
-      addToast("Sélectionnez au moins une personne.", "warning"); return;
+      addToast(t ? t("exp_select_person") : "Sélectionnez au moins une personne.", "warning"); return;
     }
     if (!unpaid && !form.paidBy) {
-      addToast("Sélectionnez un responsable ou cochez 'Charge non réglée'.", "warning"); return;
+      addToast(t ? t("exp_select_paid_by") : "Sélectionnez un responsable.", "warning"); return;
     }
     const amountError = validateAmount(form.qty, form.unit);
     if (amountError) { addToast(amountError, "warning"); return; }
@@ -257,14 +257,14 @@ export function Expenses({ events, expenses, contributions, user, reload, isMobi
           })}
         </select>
         <select style={{ ...S.input, width: "auto" }} value={filterCategory} onChange={e => setFilterCategory(e.target.value)}>
-          <option value="all">Toutes catégories</option>
+          <option value="all">{t ? t("exp_all_categories") : "Toutes catégories"}</option>
           {Object.keys(CATEGORIES).map(c => <option key={c} value={c}>{CATEGORIES[c].icon} {c}</option>)}
         </select>
         <select style={{ ...S.input, width: "auto" }} value={sortBy} onChange={e => setSortBy(e.target.value)}>
-          <option value="date_desc">📅 Plus récent</option>
-          <option value="date_asc">📅 Plus ancien</option>
-          <option value="amount_desc">💰 Montant ↓</option>
-          <option value="amount_asc">💰 Montant ↑</option>
+          <option value="date_desc">{t ? t("exp_sort_recent") : "📅 Plus récent"}</option>
+          <option value="date_asc">{t ? t("exp_sort_oldest") : "📅 Plus ancien"}</option>
+          <option value="amount_desc">{t ? t("exp_sort_amount_desc") : "💰 Montant ↓"}</option>
+          <option value="amount_asc">{t ? t("exp_sort_amount_asc") : "💰 Montant ↑"}</option>
         </select>
         {(filterEvent !== "all" || filterCategory !== "all" || searchText) && (
           <button onClick={() => { setFilterEvent("all"); setFilterCategory("all"); setSearchText(""); }} style={{ ...S.btnGhost, padding: "8px 12px", fontSize: 12 }}>
@@ -297,7 +297,7 @@ export function Expenses({ events, expenses, contributions, user, reload, isMobi
           {/* Bandeau Budget */}
           {currentEvent?.event_type === "budget" && (
             <div style={{ background: "#FFF8E1", border: "1px solid #FFE082", borderRadius: 10, padding: "10px 14px", marginBottom: 14, fontSize: 12, color: "#F57F17" }}>
-              🏦 <strong>Événement Budget</strong> — Enregistrez les dépenses effectuées. Le responsable est la personne qui a effectué la dépense.
+              {t ? t("exp_budget_info") : "🏦 Événement Budget — Enregistrez les dépenses effectuées."}
             </div>
           )}
 
@@ -305,15 +305,15 @@ export function Expenses({ events, expenses, contributions, user, reload, isMobi
             <div>
               <label style={S.label}>Événement <span style={{ color: "#C62828" }}>*</span></label>
               <select style={{ ...S.input, borderColor: !form.eventId ? "#FFB74D" : "#4CAF50" }} value={form.eventId} onChange={e => handleEventChange(e.target.value)} disabled={!!editingEx || !!defaultEventId}>
-                <option value="">Sélectionner...</option>
+                <option value="">{t ? t("exp_select_placeholder") : "Sélectionner..."}</option>
                 {events.filter(e => e.status === "open").map(ev => <option key={ev.id} value={ev.id}>{ev.event_type === "budget" ? "🏦 " : "💸 "}{ev.name}</option>)}
               </select>
             </div>
             <div>
-              <label style={S.label}>{currentEvent?.event_type === "budget" ? "Responsable de la dépense" : "Payé par"} {!unpaid && <span style={{ color: "#C62828" }}>*</span>}</label>
+              <label style={S.label}>{currentEvent?.event_type === "budget" ? t ? t("exp_responsible") : "Responsable de la dépense" : "Payé par"} {!unpaid && <span style={{ color: "#C62828" }}>*</span>}</label>
               <select style={{ ...S.input, opacity: unpaid ? 0.5 : 1, borderColor: !unpaid && form.eventId && !form.paidBy ? "#FFB74D" : !unpaid && form.paidBy ? "#4CAF50" : undefined }}
                 value={form.paidBy} onChange={e => setForm({ ...form, paidBy: e.target.value })} disabled={!currentEvent || unpaid}>
-                <option value="">Sélectionner...</option>
+                <option value="">{t ? t("exp_select_placeholder") : "Sélectionner..."}</option>
                 {participants.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
               {!unpaid && form.eventId && !form.paidBy && <div style={{ fontSize: 11, color: "#F57F17", marginTop: 4 }}>⚠️ Requis</div>}
@@ -340,14 +340,14 @@ export function Expenses({ events, expenses, contributions, user, reload, isMobi
             <div><label style={S.label}>Catégorie <span style={{ color: "#C62828" }}>*</span></label>
               <select style={{ ...S.input, borderColor: form.category ? "#4CAF50" : form.eventId ? "#FFB74D" : undefined }}
                 value={form.category} onChange={e => setForm({ ...form, category: e.target.value, sub: "" })}>
-                <option value="">Sélectionner...</option>
+                <option value="">{t ? t("exp_select_placeholder") : "Sélectionner..."}</option>
                 {Object.keys(CATEGORIES).map(c => <option key={c} value={c}>{CATEGORIES[c].icon} {c}</option>)}
               </select>
             </div>
             <div><label style={S.label}>Sous-catégorie <span style={{ color: "#C62828" }}>*</span></label>
               <select style={{ ...S.input, borderColor: form.sub ? "#4CAF50" : form.category ? "#FFB74D" : undefined }}
                 value={form.sub} onChange={e => setForm({ ...form, sub: e.target.value })} disabled={!form.category}>
-                <option value="">Sélectionner...</option>
+                <option value="">{t ? t("exp_select_placeholder") : "Sélectionner..."}</option>
                 {form.category && CATEGORIES[form.category].subs.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
@@ -469,7 +469,7 @@ export function Expenses({ events, expenses, contributions, user, reload, isMobi
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 600 }}>
             <thead>
               <tr style={{ background: "#f8f8f8", borderBottom: "1.5px solid #eee" }}>
-                {["Catégorie", "Détail", "Événement", "Qté", "Unitaire", "Total", "Part/p.", "Payé par", "Inclus", ""].map(h => (
+                {[t ? t("exp_col_category") : "Catégorie", t ? t("exp_col_detail") : "Détail", t ? t("exp_col_event") : "Événement", t ? t("exp_col_qty") : "Qté", t ? t("exp_col_unit") : "Unitaire", t ? t("exp_col_total") : "Total", t ? t("exp_col_share") : "Part/p.", t ? t("exp_col_paid_by") : "Payé par", t ? t("exp_col_included") : "Inclus", ""].map(h => (
                   <th key={h} style={{ padding: "12px 12px", fontSize: 10, fontWeight: 700, color: "#999", textAlign: "left", textTransform: "uppercase", letterSpacing: 0.7, whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
