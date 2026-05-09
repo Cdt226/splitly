@@ -1,5 +1,5 @@
-const CACHE_NAME = "splitly-v4";
-const STATIC_ASSETS = ["/", "/index.html"];
+const CACHE_NAME = "splitly-v5";
+const STATIC_ASSETS = ["/", "/index.html", "/icon-192.png", "/icon-512.png", "/manifest.json"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -18,28 +18,38 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
-  const url = event.request.url;
-  const method = event.request.method;
+  const { request } = event;
+  const url = request.url;
+
+  // Pass-through: non-GET, API calls, external services
   if (
-    method !== "GET" ||
+    request.method !== "GET" ||
     url.includes("/api/") ||
     url.includes("supabase.co") ||
     url.includes("resend.com") ||
-    url.includes("anthropic")
+    url.includes("anthropic") ||
+    url.includes("fonts.googleapis.com") ||
+    url.includes("fonts.gstatic.com")
   ) {
-    event.respondWith(fetch(event.request));
     return;
   }
+
   event.respondWith(
-    fetch(event.request)
+    fetch(request)
       .then((response) => {
         if (response && response.status === 200 && response.type === "basic") {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, response.clone()));
         }
         return response;
       })
-      .catch(() => caches.match(event.request))
+      .catch(() =>
+        caches.match(request).then((cached) => {
+          if (cached) return cached;
+          // For navigation requests, serve the app shell so React Router can handle it
+          if (request.mode === "navigate") return caches.match("/index.html");
+          return new Response("", { status: 503, statusText: "Offline" });
+        })
+      )
   );
 });
 
@@ -61,14 +71,14 @@ self.addEventListener("push", (event) => {
   } catch {}
 });
 
-// Clic sur la notification → ouvrir l'app
+// Clic sur notification → ouvrir / focus l'app
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const url = event.notification.data?.url || "/";
   event.waitUntil(
     clients.matchAll({ type: "window", includeUncontrolled: true }).then((windowClients) => {
       for (const client of windowClients) {
-        if (client.url.includes(self.location.origin) && "focus" in client) {
+        if (client.url.startsWith(self.location.origin) && "focus" in client) {
           client.navigate(url);
           return client.focus();
         }

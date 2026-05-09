@@ -12,10 +12,19 @@ const supabaseAdmin = createClient(
 
 export default async function handler(req, res) {
   // ── CORS ──────────────────────────────────────────────────
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const allowedOrigins = ['https://splitmeapp.com', 'https://www.splitmeapp.com'];
+  const origin = req.headers.origin;
+  const corsOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
+  res.setHeader('Access-Control-Allow-Origin', corsOrigin);
+  res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') return res.status(200).end();
+
+  // ── Vérifier les variables d'environnement ────────────────
+  if (!process.env.VITE_SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
+    return res.status(500).json({ error: 'Variables environnement manquantes (VITE_SUPABASE_URL ou SUPABASE_SERVICE_KEY)' });
+  }
 
   try {
     // ── Vérifier que l'appelant est admin ──────────────────

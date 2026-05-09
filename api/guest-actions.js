@@ -10,8 +10,22 @@ const supabaseAdmin = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 );
 
+function validateNum(val, min = 0, max = 999999) {
+  const n = Number(val);
+  if (isNaN(n) || n < min || n > max) throw new Error(`Valeur numérique invalide : ${val}`);
+  return n;
+}
+
+function sanitizeStr(val, maxLen = 200) {
+  if (typeof val !== 'string') return '';
+  return val.trim().slice(0, maxLen);
+}
+
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const allowedOrigins = ['https://splitmeapp.com', 'https://www.splitmeapp.com'];
+  const origin = req.headers.origin;
+  res.setHeader('Access-Control-Allow-Origin', allowedOrigins.includes(origin) ? origin : allowedOrigins[0]);
+  res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -55,17 +69,19 @@ export default async function handler(req, res) {
     // ── Exécuter l'action ──────────────────────────────────────
 
     if (action === 'add_expense') {
+      const qty = validateNum(data.qty, 1, 10000);
+      const unit_price = validateNum(data.unit, 0.01, 99999);
       const { error } = await supabaseAdmin.from('expenses').insert({
         event_id: eventId,
-        category: data.category,
-        sub_category: data.sub,
-        detail: data.detail,
-        qty: Number(data.qty),
-        unit_price: Number(data.unit),
-        paid_by: data.paidBy,
-        included: data.included,
-        comment: data.comment || null,
-        is_unpaid: data.is_unpaid || false,
+        category: sanitizeStr(data.category, 50),
+        sub_category: sanitizeStr(data.sub, 50),
+        detail: sanitizeStr(data.detail, 200),
+        qty,
+        unit_price,
+        paid_by: sanitizeStr(data.paidBy, 60),
+        included: Array.isArray(data.included) ? data.included.map(s => sanitizeStr(s, 60)) : [],
+        comment: data.comment ? sanitizeStr(data.comment, 500) : null,
+        is_unpaid: !!data.is_unpaid,
       });
       if (error) throw error;
       return res.status(200).json({ success: true });
@@ -73,29 +89,31 @@ export default async function handler(req, res) {
 
     if (action === 'modify_expense') {
       if (!data.expense_id) return res.status(400).json({ error: 'expense_id manquant' });
+      const qty = validateNum(data.qty, 1, 10000);
+      const unit_price = validateNum(data.unit, 0.01, 99999);
       const { error } = await supabaseAdmin.from('expenses').update({
-        category: data.category,
-        sub_category: data.sub,
-        detail: data.detail,
-        qty: Number(data.qty),
-        unit_price: Number(data.unit),
-        paid_by: data.paidBy,
-        included: data.included,
-        comment: data.comment || null,
+        category: sanitizeStr(data.category, 50),
+        sub_category: sanitizeStr(data.sub, 50),
+        detail: sanitizeStr(data.detail, 200),
+        qty,
+        unit_price,
+        paid_by: sanitizeStr(data.paidBy, 60),
+        included: Array.isArray(data.included) ? data.included.map(s => sanitizeStr(s, 60)) : [],
+        comment: data.comment ? sanitizeStr(data.comment, 500) : null,
       }).eq('id', data.expense_id);
       if (error) throw error;
       return res.status(200).json({ success: true });
     }
 
     if (action === 'add_cotisation') {
-      const montant = Number(data.montant);
+      const montant = validateNum(data.montant, 0.01, 999999);
       const { error } = await supabaseAdmin.from('cotisations').insert({
         event_id: eventId,
-        participant_name: data.participant_name,
+        participant_name: sanitizeStr(data.participant_name, 60),
         montant,
-        forme: data.forme || 'especes',
-        statut: montant > 0 ? 'paye' : 'impaye',
-        description: data.description || null,
+        forme: ['especes', 'nature'].includes(data.forme) ? data.forme : 'especes',
+        statut: 'paye',
+        description: data.description ? sanitizeStr(data.description, 500) : null,
       });
       if (error) throw error;
       return res.status(200).json({ success: true });
@@ -103,22 +121,23 @@ export default async function handler(req, res) {
 
     if (action === 'edit_cotisation') {
       if (!data.cotisation_id) return res.status(400).json({ error: 'cotisation_id manquant' });
-      const montant = Number(data.montant);
+      const montant = validateNum(data.montant, 0.01, 999999);
       const { error } = await supabaseAdmin.from('cotisations').update({
         montant,
-        forme: data.forme,
-        statut: montant > 0 ? 'paye' : 'impaye',
-        description: data.description || null,
+        forme: ['especes', 'nature'].includes(data.forme) ? data.forme : 'especes',
+        statut: 'paye',
+        description: data.description ? sanitizeStr(data.description, 500) : null,
       }).eq('id', data.cotisation_id);
       if (error) throw error;
       return res.status(200).json({ success: true });
     }
 
     if (action === 'add_participant') {
-      if (!data.name) return res.status(400).json({ error: 'Nom manquant' });
+      const name = sanitizeStr(data.name, 60);
+      if (!name) return res.status(400).json({ error: 'Nom manquant' });
       const { error } = await supabaseAdmin.from('event_participants').insert({
         event_id: eventId,
-        name: data.name,
+        name,
       });
       if (error) throw error;
       return res.status(200).json({ success: true });
