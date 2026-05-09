@@ -1,4 +1,4 @@
-const CACHE_NAME = "splitly-v5";
+const CACHE_NAME = "splitly-v6";
 const STATIC_ASSETS = ["/", "/index.html", "/icon-192.png", "/icon-512.png", "/manifest.json"];
 
 self.addEventListener("install", (event) => {
@@ -38,7 +38,8 @@ self.addEventListener("fetch", (event) => {
     fetch(request)
       .then((response) => {
         if (response && response.status === 200 && response.type === "basic") {
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, response.clone()));
+          const responseClone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, responseClone));
         }
         return response;
       })
