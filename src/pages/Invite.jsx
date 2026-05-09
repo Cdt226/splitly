@@ -61,7 +61,7 @@ export function PermissionSummaryBadge({ permissions }) {
 }
 
 // ─── INVITE ───────────────────────────────────────────────────
-export function Invite({ events, user, isMobile, addToast }) {
+export function Invite({ events, user, isMobile, addToast, t }) {
   const [email, setEmail] = useState("");
   const [selectedEvents, setSelectedEvents] = useState([]);
   const [permissions, setPermissions] = useState([]);

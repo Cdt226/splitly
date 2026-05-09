@@ -7,7 +7,7 @@ import { S } from "../styles.js";
 import { Avatar, AvatarStack, EmojiPicker, Truncate, Badge, EmptyState, Chip, ParticipantInput, ParticipantToggle, Modal, ConfirmModal, Spinner, StatCard } from "../components/ui/index.jsx";
 import { updateInvitationPermissions, fetchInvitationPermissions, approvePendingAction, rejectPendingAction } from "../supabase.js";
 
-export function NotificationsPage({ notifications, events, expenses, pendingActions, user, onMarkAll, onDismiss, reload, isMobile, addToast }) {
+export function NotificationsPage({ notifications, events, expenses, pendingActions, user, onMarkAll, onDismiss, reload, isMobile, addToast, t }) {
   const [saving, setSaving] = useState(null);
   const [partialPermsModal, setPartialPermsModal] = useState(null); // { action, selectedPerms }
 
