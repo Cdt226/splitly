@@ -8,7 +8,8 @@ import { Avatar, AvatarStack, EmojiPicker, Truncate, Badge, EmptyState, Chip, Pa
 import { invalidateHistory } from "../supabase.js";
 import { useTranslation } from "../i18n.jsx";
 
-export function History({ events, history, user, reload, isMobile, addToast, t }) {
+export function History({ events, history, user, reload, isMobile, addToast }) {
+  const { t } = useTranslation ? useTranslation() : { t: (k) => k };
   const [filterEvent, setFilterEvent] = useState("all");
   const [confirm, setConfirm] = useState(null);
   const filtered = filterEvent === "all" ? history : history.filter(h => h.event_id === filterEvent);

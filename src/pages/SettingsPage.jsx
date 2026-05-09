@@ -9,7 +9,8 @@ import { createReport } from "../supabase.js";
 import { useTheme } from "../hooks/useTheme.jsx";
 import { useTranslation, LanguageMenu } from "../i18n.jsx";
 
-export function SettingsPage({ user, onSignOut, isMobile, addToast, t, events }) {
+export function SettingsPage({ user, onSignOut, isMobile, addToast, events }) {
+  const { t } = useTranslation();
   const { dark, toggle } = useTheme();
   const { lang, setLang } = useTranslation();
   const [pushEnabled, setPushEnabled] = useState(

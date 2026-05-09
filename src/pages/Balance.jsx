@@ -8,7 +8,8 @@ import { Avatar, AvatarStack, EmojiPicker, Truncate, Badge, EmptyState, Chip, Pa
 import { upsertContribution, recordPayment, fetchPayments, exportPDF } from "../supabase.js";
 import { useTranslation } from "../i18n.jsx";
 
-export function Balance({ events, expenses, contributions, user, reload, isMobile, addToast, t, initialEvent, hideHeader }) {
+export function Balance({ events, expenses, contributions, user, reload, isMobile, addToast, initialEvent, hideHeader }) {
+  const { t } = useTranslation();
   const [filterEvent, setFilterEvent] = useState(initialEvent || events[0]?.id || "");
   const [settleModal, setSettleModal] = useState(null);
   const [versement, setVersement] = useState({});

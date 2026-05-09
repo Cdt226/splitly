@@ -8,7 +8,8 @@ import { Avatar, AvatarStack, EmojiPicker, Truncate, Badge, EmptyState, Chip, Pa
 import { addParticipant, fetchCotisations, createCotisation, updateCotisation, deleteCotisation, fetchAvances, createAvance, updateAvance, deleteAvance, upsertContribution } from "../supabase.js";
 import { useTranslation } from "../i18n.jsx";
 
-export function CotisationsPage({ events, expenses, user, reload, isMobile, addToast, t, hideHeader }) {
+export function CotisationsPage({ events, expenses, user, reload, isMobile, addToast, hideHeader }) {
+  const { t } = useTranslation();
   const budgetEvents = events.filter(e => e.event_type === "budget" && e.status === "open");
   const [filterEvent, setFilterEvent] = useState(budgetEvents[0]?.id || "");
   const ev = events.find(e => e.id === filterEvent);

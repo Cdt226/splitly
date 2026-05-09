@@ -4,6 +4,7 @@ import { supabase } from "../supabase.js";
 import { CATEGORIES, CURRENCIES, AVATAR_EMOJIS } from "../constants.js";
 import { fmt, currencySymbol, computeOwed, computeNetBalance, isSettled, isExactlySettled, settleStatus, validateAmount, computeTransactions, getAvatarMap, saveAvatarEmoji } from "../utils.js";
 import { S } from "../styles.js";
+import { useTranslation } from "../i18n.jsx";
 import { Avatar, AvatarStack, EmojiPicker, Truncate, Badge, EmptyState, Chip, ParticipantInput, ParticipantToggle, Modal, ConfirmModal, Spinner, StatCard } from "../components/ui/index.jsx";
 import { sendInvitation, removeInvitation, updateInvitationRole, updateInvitationPermissions, fetchInvitationPermissions, requestPermissions, fetchInvitations } from "../supabase.js";
 
@@ -61,7 +62,8 @@ export function PermissionSummaryBadge({ permissions }) {
 }
 
 // ─── INVITE ───────────────────────────────────────────────────
-export function Invite({ events, user, isMobile, addToast, t }) {
+export function Invite({ events, user, isMobile, addToast}) {
+  const { t } = useTranslation();
   const [email, setEmail] = useState("");
   const [selectedEvents, setSelectedEvents] = useState([]);
   const [permissions, setPermissions] = useState([]);

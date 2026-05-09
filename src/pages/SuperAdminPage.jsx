@@ -4,10 +4,12 @@ import { supabase } from "../supabase.js";
 import { CATEGORIES, CURRENCIES, AVATAR_EMOJIS } from "../constants.js";
 import { fmt, currencySymbol, computeOwed, computeNetBalance, isSettled, isExactlySettled, settleStatus, validateAmount, computeTransactions, getAvatarMap, saveAvatarEmoji } from "../utils.js";
 import { S } from "../styles.js";
+import { useTranslation } from "../i18n.jsx";
 import { Avatar, AvatarStack, EmojiPicker, Truncate, Badge, EmptyState, Chip, ParticipantInput, ParticipantToggle, Modal, ConfirmModal, Spinner, StatCard } from "../components/ui/index.jsx";
 import { fetchAdminUsers, adminUserAction, fetchReports, createReport, fetchCotisations } from "../supabase.js";
 
 export function SuperAdminPage({ user, isMobile, addToast }) {
+  const { t } = useTranslation();
   const [users, setUsers] = useState([]);
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);

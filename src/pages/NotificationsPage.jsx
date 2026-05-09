@@ -4,10 +4,12 @@ import { supabase } from "../supabase.js";
 import { CATEGORIES, CURRENCIES, AVATAR_EMOJIS } from "../constants.js";
 import { fmt, currencySymbol, computeOwed, computeNetBalance, isSettled, isExactlySettled, settleStatus, validateAmount, computeTransactions, getAvatarMap, saveAvatarEmoji } from "../utils.js";
 import { S } from "../styles.js";
+import { useTranslation } from "../i18n.jsx";
 import { Avatar, AvatarStack, EmojiPicker, Truncate, Badge, EmptyState, Chip, ParticipantInput, ParticipantToggle, Modal, ConfirmModal, Spinner, StatCard } from "../components/ui/index.jsx";
 import { updateInvitationPermissions, fetchInvitationPermissions, approvePendingAction, rejectPendingAction } from "../supabase.js";
 
-export function NotificationsPage({ notifications, events, expenses, pendingActions, user, onMarkAll, onDismiss, reload, isMobile, addToast, t }) {
+export function NotificationsPage({ notifications, events, expenses, pendingActions, user, onMarkAll, onDismiss, reload, isMobile, addToast}) {
+  const { t } = useTranslation();
   const [saving, setSaving] = useState(null);
   const [partialPermsModal, setPartialPermsModal] = useState(null); // { action, selectedPerms }
 

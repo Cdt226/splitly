@@ -8,7 +8,8 @@ import { Avatar, AvatarStack, EmojiPicker, Truncate, Badge, EmptyState, Chip, Pa
 import { fetchCotisations, exportPDF } from "../supabase.js";
 import { useTranslation } from "../i18n.jsx";
 
-export function Dashboard({ events, expenses, contributions, user, isMobile, navigateTo, t, lang }) {
+export function Dashboard({ events, expenses, contributions, user, isMobile, navigateTo, lang }) {
+  const { t } = useTranslation ? useTranslation() : { t: (k) => k };
   const firstName = user?.user_metadata?.full_name?.split(" ")[0] || "vous";
   const now = new Date();
   // Lire la langue sauvegardée depuis localStorage plutôt que le navigateur

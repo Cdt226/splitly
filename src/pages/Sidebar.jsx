@@ -8,7 +8,8 @@ import { Avatar, AvatarStack, EmojiPicker, Truncate, Badge, EmptyState, Chip, Pa
 import { useTranslation, LanguageSwitcher, LanguageMenu } from "../i18n.jsx";
 import { useTheme } from "../hooks/useTheme.jsx";
 
-export function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut, isMobile, menuOpen, setMenuOpen, t, lang, setLang, searchQuery, setSearchQuery, isAdmin, hasBudgetEvents }) {
+export function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut, isMobile, menuOpen, setMenuOpen, lang, setLang, searchQuery, setSearchQuery, isAdmin, hasBudgetEvents }) {
+  const { t } = useTranslation();
   const totalBadge = unreadCount + pendingCount;
 
   // Super admin : nav réduite

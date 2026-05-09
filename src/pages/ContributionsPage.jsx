@@ -9,7 +9,7 @@ import { useTranslation } from "../i18n.jsx";
 import { Balance } from "./Balance.jsx";
 import { CotisationsPage } from "./CotisationsPage.jsx";
 
-export function ContributionsPage({ events, expenses, contributions, user, reload, isMobile, addToast, t }) {
+export function ContributionsPage({ events, expenses, contributions, user, reload, isMobile, addToast }) {
   const [filterEvent, setFilterEvent] = useState(events[0]?.id || "");
   const [cotisations, setCotisations] = useState([]);
   const ev = events.find(e => e.id === filterEvent);
@@ -59,7 +59,6 @@ export function ContributionsPage({ events, expenses, contributions, user, reloa
           }}
           isMobile={isMobile}
           addToast={addToast}
-          t={t}
           hideHeader={true}
         />
       ) : (
@@ -71,7 +70,6 @@ export function ContributionsPage({ events, expenses, contributions, user, reloa
           reload={reload}
           isMobile={isMobile}
           addToast={addToast}
-          t={t}
           initialEvent={filterEvent}
           hideHeader={true}
         />

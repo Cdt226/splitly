@@ -232,7 +232,8 @@ export function EventDetail({ ev, events, expenses, contributions, user, reload,
 }
 
 // ─── ÉVÉNEMENTS ───────────────────────────────────────────────
-export function Events({ events, expenses, contributions, user, reload, isMobile, addToast, t }) {
+export function Events({ events, expenses, contributions, user, reload, isMobile, addToast}) {
+  const { t } = useTranslation();
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState({ name: "", date: "", currency: "EUR €", participants: [], event_type: "split", cotisation_cible: "", nombre_invites: "" });
   const [loading, setLoading] = useState(false);

@@ -68,7 +68,8 @@ export function exportChargesPDF(ev, evExpenses) {
 }
 
 // ─── CHARGES ──────────────────────────────────────────────────
-export function Expenses({ events, expenses, contributions, user, reload, isMobile, addToast, t, hideHeader, defaultEventId }) {
+export function Expenses({ events, expenses, contributions, user, reload, isMobile, addToast, hideHeader, defaultEventId }) {
+  const { t } = useTranslation();
   const [showForm, setShowForm] = useState(false);
   const [filterEvent, setFilterEvent] = useState(defaultEventId || "all");
   const [filterCategory, setFilterCategory] = useState("all");

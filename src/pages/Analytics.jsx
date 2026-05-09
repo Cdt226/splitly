@@ -7,7 +7,8 @@ import { S } from "../styles.js";
 import { Avatar, AvatarStack, EmojiPicker, Truncate, Badge, EmptyState, Chip, ParticipantInput, ParticipantToggle, Modal, ConfirmModal, Spinner, StatCard } from "../components/ui/index.jsx";
 import { useTranslation } from "../i18n.jsx";
 
-export function Analytics({ events, expenses, contributions, isMobile, t, defaultTab }) {
+export function Analytics({ events, expenses, contributions, isMobile, defaultTab }) {
+  const { t } = useTranslation();
   const [tab, setTab] = useState(defaultTab || "all"); // "all" | "event" | "charges" | "personal"
   const [sel, setSel] = useState(events[0]?.id || "");
 
