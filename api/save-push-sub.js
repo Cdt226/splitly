@@ -18,11 +18,10 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const { userId, guestEmail, subscription } = req.body;
-
-  if (!subscription) return res.status(400).json({ error: 'subscription manquante' });
-
   if (req.method === 'POST') {
+    const { userId, guestEmail, subscription } = req.body;
+    if (!subscription) return res.status(400).json({ error: 'subscription manquante' });
+
     // Upsert — remplace si déjà existant pour cet endpoint
     const { error } = await supabaseAdmin
       .from('push_subscriptions')
@@ -35,14 +34,21 @@ export default async function handler(req, res) {
         updated_at: new Date().toISOString(),
       }, { onConflict: 'endpoint' });
 
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) {
+      console.error('[save-push-sub] POST upsert error:', error);
+      return res.status(500).json({ error: error.message });
+    }
     return res.status(200).json({ success: true });
   }
 
   if (req.method === 'DELETE') {
     const { endpoint } = req.body;
     if (!endpoint) return res.status(400).json({ error: 'endpoint manquant' });
-    await supabaseAdmin.from('push_subscriptions').delete().eq('endpoint', endpoint);
+    const { error } = await supabaseAdmin.from('push_subscriptions').delete().eq('endpoint', endpoint);
+    if (error) {
+      console.error('[save-push-sub] DELETE error:', error);
+      return res.status(500).json({ error: error.message });
+    }
     return res.status(200).json({ success: true });
   }
 

@@ -405,7 +405,7 @@ function AppInner() {
       )}
       {showOnboarding && <OnboardingWizard onComplete={() => setShowOnboarding(false)} />}
       <Sidebar active={active} setActive={setActive} unreadCount={unreadCount} pendingCount={pendingCount}
-        user={user} onSignOut={handleSignOut} isMobile={isMobile} menuOpen={menuOpen} setMenuOpen={setMenuOpen}
+        user={user} onSignOut={handleSignOut} addToast={addToast} isMobile={isMobile} menuOpen={menuOpen} setMenuOpen={setMenuOpen}
         t={t} lang={lang} setLang={setLang} searchQuery={searchQuery} setSearchQuery={setSearchQuery}
         isAdmin={isAdmin} hasBudgetEvents={hasBudgetEvents} />
 

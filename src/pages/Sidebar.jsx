@@ -8,7 +8,7 @@ import { Avatar, AvatarStack, EmojiPicker, Truncate, Badge, EmptyState, Chip, Pa
 import { useTranslation, LanguageSwitcher, LanguageMenu } from "../i18n.jsx";
 import { useTheme } from "../hooks/useTheme.jsx";
 
-export function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut, isMobile, menuOpen, setMenuOpen, lang, setLang, searchQuery, setSearchQuery, isAdmin, hasBudgetEvents }) {
+export function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut, addToast, isMobile, menuOpen, setMenuOpen, lang, setLang, searchQuery, setSearchQuery, isAdmin, hasBudgetEvents }) {
   const { t } = useTranslation();
   const totalBadge = unreadCount + pendingCount;
 
@@ -66,7 +66,7 @@ export function Sidebar({ active, setActive, unreadCount, pendingCount, user, on
     </button>
   );
 
-  const UserFooter = () => {
+  const UserFooter = ({ addToast }) => {
     const { dark, toggle } = useTheme();
     const [pushEnabled, setPushEnabled] = useState(typeof Notification !== "undefined" && Notification.permission === "granted");
 
@@ -175,7 +175,7 @@ export function Sidebar({ active, setActive, unreadCount, pendingCount, user, on
             <div style={{ flex: 1, overflow: "auto", padding: "12px 8px" }}>
               {nav.map(n => <NavButton key={n.key} n={n} />)}
             </div>
-            <UserFooter />
+            <UserFooter addToast={addToast} />
           </div>
         </div>
       )}
