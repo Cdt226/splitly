@@ -388,7 +388,7 @@ function AppInner() {
       <ToastContainer toasts={toasts} removeToast={removeToast} />
       {!isOnline && (
         <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 9999, background: "#F57F17", color: "#fff", textAlign: "center", padding: "8px 16px", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-          ⚠️ Connexion perdue — vos modifications ne seront pas enregistrées
+          ⚠️ {t("app_offline_banner")}
         </div>
       )}
       {showOnboarding && <OnboardingWizard onComplete={() => setShowOnboarding(false)} />}
@@ -423,15 +423,15 @@ function AppInner() {
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
                 <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700, color: "var(--text)" }}>
-                  Résultats pour "{searchQuery}"
+                  {t("search_results_for", { query: searchQuery })}
                 </h2>
-                <button onClick={() => setSearchQuery("")} style={{ ...S.btnGhost, fontSize: 12 }}>× Effacer</button>
+                <button onClick={() => setSearchQuery("")} style={{ ...S.btnGhost, fontSize: 12 }}>{t("search_clear")}</button>
               </div>
 
               {/* Événements trouvés */}
               {searchResults.events.length > 0 && (
                 <div style={{ marginBottom: 20 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#aaa", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Événements ({searchResults.events.length})</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#aaa", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>{t("nav_events")} ({searchResults.events.length})</div>
                   {searchResults.events.map(ev => (
                     <div key={ev.id} onClick={() => { setActive("events"); setSearchQuery(""); }} style={{ background: "#fff", borderRadius: 12, padding: "14px 16px", border: "1px solid #eee", marginBottom: 8, cursor: "pointer", display: "flex", alignItems: "center", gap: 12 }}>
                       <span style={{ fontSize: 20 }}>{ev.status === "closed" ? "🔒" : "🎊"}</span>
@@ -447,7 +447,7 @@ function AppInner() {
               {/* Charges trouvées */}
               {searchResults.expenses.length > 0 && (
                 <div style={{ marginBottom: 20 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#aaa", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Charges ({searchResults.expenses.length})</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#aaa", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>{t("nav_expenses")} ({searchResults.expenses.length})</div>
                   {searchResults.expenses.slice(0, 8).map(ex => {
                     const ev = events.find(e => e.id === ex.event_id);
                     const cat = CATEGORIES[ex.category];
@@ -457,7 +457,7 @@ function AppInner() {
                         <span style={{ fontSize: 20 }}>{cat?.icon || "🧾"}</span>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ex.detail}</div>
-                          <div style={{ fontSize: 12, color: "#aaa" }}>{ev?.name} · par {ex.paid_by}</div>
+                          <div style={{ fontSize: 12, color: "#aaa" }}>{ev?.name} · {t("dash_paid_by")} {ex.paid_by}</div>
                         </div>
                         <div style={{ fontSize: 14, fontWeight: 700 }}>{fmt(total, currencySymbol(ev?.currency))}</div>
                       </div>
@@ -469,7 +469,7 @@ function AppInner() {
               {/* Participants trouvés */}
               {searchResults.participants.length > 0 && (
                 <div style={{ marginBottom: 20 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#aaa", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Participants ({searchResults.participants.length})</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#aaa", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>{t("ana_participants")} ({searchResults.participants.length})</div>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
                     {searchResults.participants.map(p => (
                       <div key={p} style={{ display: "flex", alignItems: "center", gap: 8, background: "#fff", borderRadius: 20, padding: "8px 16px", border: "1px solid #eee" }}>
@@ -483,7 +483,7 @@ function AppInner() {
 
               {/* Aucun résultat */}
               {searchResults.events.length === 0 && searchResults.expenses.length === 0 && searchResults.participants.length === 0 && (
-                <EmptyState icon="🔍" title="Aucun résultat" subtitle={`Aucun élément ne correspond à "${searchQuery}".`} />
+                <EmptyState icon="🔍" title={t("search_no_results")} subtitle={t("search_no_match", { query: searchQuery })} />
               )}
             </div>
           ) : (
