@@ -9,7 +9,7 @@ import { fetchCotisations, exportPDF } from "../supabase.js";
 import { useTranslation } from "../i18n.jsx";
 
 export function Dashboard({ events, expenses, contributions, user, isMobile, navigateTo, lang }) {
-  const { t } = useTranslation ? useTranslation() : { t: (k) => k };
+  const { t } = useTranslation();
   const firstName = user?.user_metadata?.full_name?.split(" ")[0] || "vous";
   const now = new Date();
   // Lire la langue sauvegardée depuis localStorage plutôt que le navigateur
@@ -74,7 +74,7 @@ export function Dashboard({ events, expenses, contributions, user, isMobile, nav
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24, flexWrap: "wrap", gap: 8 }}>
         <div>
           <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 24 : 28, fontWeight: 700, marginBottom: 4, color: "var(--text)" }}>
-            {t ? t("dash_hello") : "Bonjour"}, {firstName} 👋
+            {t("dash_hello")}, {firstName} 👋
           </h2>
           <p style={{ color: "var(--text-sub)", fontSize: 12 }}>{dateLabel}</p>
         </div>

@@ -290,6 +290,20 @@ function AppInner() {
     setContributions({}); setHistory([]); setNotifications([]); setPendingActions([]);
   };
 
+  // Normaliser contributions — useMemo ici (avant les early returns) pour respecter les Rules of Hooks
+  const contribNorm = useMemo(() => {
+    const result = {};
+    Object.entries(contributions).forEach(([evId, arr]) => {
+      result[evId] = Array.isArray(arr) ? arr : [];
+    });
+    return result;
+  }, [contributions]);
+
+  const sharedProps = useMemo(
+    () => ({ events, expenses, contributions: contribNorm, user, reload: loadAll, isMobile, addToast, t }),
+    [events, expenses, contribNorm, user, isMobile, addToast, loadAll, t]
+  );
+
   if (loading) return <Spinner />;
 
   // Afficher la landing page si pas connecté et pas invité
@@ -328,18 +342,6 @@ function AppInner() {
 
   const unreadCount = notifications.filter(n => !n.is_read).length;
   const pendingCount = pendingActions.length;
-
-  // Normaliser contributions
-  const contribNorm = {};
-  Object.entries(contributions).forEach(([evId, arr]) => {
-    contribNorm[evId] = Array.isArray(arr) ? arr : [];
-  });
-
-  const sharedProps = useMemo(
-    () => ({ events, expenses, contributions: contribNorm, user, reload: loadAll, isMobile, addToast, t }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [events, expenses, contribNorm, user, isMobile, t]
-  );
 
   // Résultats de recherche globale
   const showSearch = searchQuery.trim().length > 1;
