@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.1",
+    "browser-image-compression": "^2.0.2",
     "exceljs": "^3.4.0",
     "i18next": "^26.0.8",
     "i18next-browser-languagedetector": "^8.2.1",

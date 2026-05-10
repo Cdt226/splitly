@@ -506,5 +506,20 @@
   "use_5_title": "Despesas profissionais",
   "use_6_desc": "Casa partilhada, saídas, refeições — gira o seu orçamento coletivo sem complicações.",
   "use_6_title": "Vida universitária",
-  "yes": "Sim"
+  "yes": "Sim",
+  "ocr_scan": "Digitalizar recibo",
+  "ocr_camera": "Tirar foto",
+  "ocr_gallery": "Da galeria",
+  "ocr_compressing": "Comprimindo...",
+  "ocr_uploading": "Enviando...",
+  "ocr_processing": "Analisando documento...",
+  "ocr_validating": "Verificando...",
+  "ocr_invalid_doc": "Este documento não parece ser um recibo",
+  "ocr_manual_entry": "Inserir manualmente",
+  "ocr_success": "Recibo analisado com sucesso",
+  "ocr_format_error": "Apenas imagens são aceitas (JPEG, PNG, WEBP, HEIC)",
+  "ocr_size_error": "A imagem não deve ultrapassar 4 MB",
+  "ocr_confirm": "Usar estes dados",
+  "ocr_review": "Rever dados extraídos",
+  "ocr_needs_review": "Baixa confiança — reveja os dados"
 }

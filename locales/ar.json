@@ -506,5 +506,20 @@
   "use_5_title": "المصاريف المهنية",
   "use_6_desc": "سكن مشترك، خروجات، وجبات — أدر ميزانيتك الجماعية بسهولة.",
   "use_6_title": "الحياة الجامعية",
-  "yes": "نعم"
+  "yes": "نعم",
+  "ocr_scan": "مسح إيصال",
+  "ocr_camera": "التقاط صورة",
+  "ocr_gallery": "من المعرض",
+  "ocr_compressing": "ضغط...",
+  "ocr_uploading": "إرسال...",
+  "ocr_processing": "تحليل المستند...",
+  "ocr_validating": "تحقق...",
+  "ocr_invalid_doc": "لا يبدو أن هذا المستند إيصالاً",
+  "ocr_manual_entry": "إدخال يدوي",
+  "ocr_success": "تم تحليل الإيصال بنجاح",
+  "ocr_format_error": "يُقبل فقط الصور (JPEG, PNG, WEBP, HEIC)",
+  "ocr_size_error": "يجب ألا تتجاوز الصورة 4 ميغابايت",
+  "ocr_confirm": "استخدام هذه البيانات",
+  "ocr_review": "مراجعة البيانات المستخرجة",
+  "ocr_needs_review": "ثقة منخفضة — يرجى مراجعة البيانات"
 }

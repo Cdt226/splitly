@@ -506,5 +506,20 @@
   "use_5_title": "Dépenses pro & équipes",
   "use_6_desc": "Coloc, sorties, repas entre étudiants — gérez votre budget collectif sans prise de tête.",
   "use_6_title": "Vie étudiante",
-  "yes": "Oui"
+  "yes": "Oui",
+  "ocr_scan": "Scanner un reçu",
+  "ocr_camera": "Prendre une photo",
+  "ocr_gallery": "Depuis la galerie",
+  "ocr_compressing": "Compression...",
+  "ocr_uploading": "Envoi...",
+  "ocr_processing": "Analyse du document...",
+  "ocr_validating": "Vérification...",
+  "ocr_invalid_doc": "Ce document ne semble pas être un reçu",
+  "ocr_manual_entry": "Saisir manuellement",
+  "ocr_success": "Reçu analysé avec succès",
+  "ocr_format_error": "Seules les images sont acceptées (JPEG, PNG, WEBP, HEIC)",
+  "ocr_size_error": "L'image ne doit pas dépasser 4 Mo",
+  "ocr_confirm": "Utiliser ces données",
+  "ocr_review": "Vérifiez les données extraites",
+  "ocr_needs_review": "Confiance faible — vérifiez les données"
 }

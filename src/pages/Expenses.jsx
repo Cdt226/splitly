@@ -1,6 +1,7 @@
 // src/pages/Expenses.jsx
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "../supabase.js";
+import { OCRCapture } from "../components/OCRCapture.jsx";
 import { CATEGORIES, CURRENCIES, AVATAR_EMOJIS } from "../constants.js";
 import { fmt, currencySymbol, computeOwed, computeNetBalance, isSettled, isExactlySettled, settleStatus, validateAmount, computeTransactions, getAvatarMap, saveAvatarEmoji } from "../utils.js";
 import { S } from "../styles.js";
@@ -79,6 +80,7 @@ export function Expenses({ events, expenses, contributions, user, reload, isMobi
   const [confirm, setConfirm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [unpaid, setUnpaid] = useState(false);
+  const [showOCR, setShowOCR] = useState(false);
   const empty = { eventId: defaultEventId || "", category: "", sub: "", detail: "", qty: 1, unit: "", paidBy: "", included: [], comment: "" };
   const [form, setForm] = useState(empty);
 
@@ -229,12 +231,22 @@ export function Expenses({ events, expenses, contributions, user, reload, isMobi
               exportChargesPDF(ev, evExp);
             }} style={{ ...S.btnGhost, fontSize: 12, padding: "8px 14px" }}>📄 PDF Charges</button>
           )}
-          <button onClick={() => { setForm(empty); setEditingEx(null); setShowForm(!showForm); }}
+          <button
+            onClick={() => { setShowOCR(v => !v); setShowForm(false); setEditingEx(null); }}
+            style={{ ...S.btnGhost, fontSize: 12, padding: "8px 14px" }}
+            title="Scanner un reçu avec l'OCR"
+          >📷 Scanner</button>
+          <button onClick={() => { setForm(empty); setEditingEx(null); setShowForm(!showForm); setShowOCR(false); }}
             style={S.btnDark}>{showForm && !editingEx ? "× Fermer" : "+ Ajouter"}</button>
         </div>
       </div>}
-      {hideHeader && <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
-        <button onClick={() => { setForm({ ...empty, eventId: defaultEventId || "" }); setEditingEx(null); setShowForm(!showForm); }}
+      {hideHeader && <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 12 }}>
+        <button
+          onClick={() => { setShowOCR(v => !v); setShowForm(false); setEditingEx(null); }}
+          style={{ ...S.btnGhost, fontSize: 12, padding: "8px 14px" }}
+          title="Scanner un reçu avec l'OCR"
+        >📷 Scanner</button>
+        <button onClick={() => { setForm({ ...empty, eventId: defaultEventId || "" }); setEditingEx(null); setShowForm(!showForm); setShowOCR(false); }}
           style={S.btnDark}>{showForm && !editingEx ? "× Fermer" : "+ Ajouter une charge"}</button>
       </div>}
 
@@ -286,6 +298,25 @@ export function Expenses({ events, expenses, contributions, user, reload, isMobi
             <span style={{ color: "#E65100", marginLeft: 8 }}>— Les charges ici représentent les dépenses effectuées par les responsables. Gérez les cotisations dans l'onglet <strong>Cotisations</strong>.</span>
           </div>
         </div>
+      )}
+
+      {showOCR && (
+        <OCRCapture
+          isMobile={isMobile}
+          onClose={() => setShowOCR(false)}
+          onFill={(extracted) => {
+            setForm(f => ({
+              ...f,
+              detail:  extracted.detail  || f.detail,
+              unit:    extracted.unit    || f.unit,
+              qty:     extracted.qty     || f.qty,
+              comment: extracted.comment || f.comment,
+            }));
+            setShowOCR(false);
+            setShowForm(true);
+            setEditingEx(null);
+          }}
+        />
       )}
 
       {showForm && (

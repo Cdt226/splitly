@@ -506,5 +506,20 @@
   "use_5_title": "Professional expenses",
   "use_6_desc": "Flatsharing, outings, meals — manage your collective budget without the hassle.",
   "use_6_title": "Student life",
-  "yes": "Yes"
+  "yes": "Yes",
+  "ocr_scan": "Scan a receipt",
+  "ocr_camera": "Take a photo",
+  "ocr_gallery": "From gallery",
+  "ocr_compressing": "Compressing...",
+  "ocr_uploading": "Uploading...",
+  "ocr_processing": "Analysing document...",
+  "ocr_validating": "Verifying...",
+  "ocr_invalid_doc": "This document does not appear to be a receipt",
+  "ocr_manual_entry": "Enter manually",
+  "ocr_success": "Receipt analysed successfully",
+  "ocr_format_error": "Only images are accepted (JPEG, PNG, WEBP, HEIC)",
+  "ocr_size_error": "Image must not exceed 4 MB",
+  "ocr_confirm": "Use this data",
+  "ocr_review": "Review extracted data",
+  "ocr_needs_review": "Low confidence — please review the data"
 }

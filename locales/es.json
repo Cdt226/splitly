@@ -506,5 +506,20 @@
   "use_5_title": "Gastos profesionales",
   "use_6_desc": "Piso compartido, salidas, comidas — gestiona tu presupuesto colectivo sin complicaciones.",
   "use_6_title": "Vida universitaria",
-  "yes": "Sí"
+  "yes": "Sí",
+  "ocr_scan": "Escanear recibo",
+  "ocr_camera": "Tomar foto",
+  "ocr_gallery": "Desde galería",
+  "ocr_compressing": "Comprimiendo...",
+  "ocr_uploading": "Enviando...",
+  "ocr_processing": "Analizando documento...",
+  "ocr_validating": "Verificando...",
+  "ocr_invalid_doc": "Este documento no parece ser un recibo",
+  "ocr_manual_entry": "Ingresar manualmente",
+  "ocr_success": "Recibo analizado con éxito",
+  "ocr_format_error": "Solo se aceptan imágenes (JPEG, PNG, WEBP, HEIC)",
+  "ocr_size_error": "La imagen no debe superar 4 MB",
+  "ocr_confirm": "Usar estos datos",
+  "ocr_review": "Revisar datos extraídos",
+  "ocr_needs_review": "Confianza baja — revise los datos"
 }
