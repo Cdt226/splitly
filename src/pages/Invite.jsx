@@ -383,34 +383,55 @@ export function Invite({ events, user, isMobile, addToast}) {
 
         {/* Permissions — filtrées selon le type des événements sélectionnés */}
         <div style={{ marginBottom: 16 }}>
-          <label style={S.label}>{t ? t("inv_rights_granted") : "Droits accordés"} <span style={{ color: "var(--text-sub)", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>{t ? `(${t("inv_read_only_default")})` : "(lecture seule par défaut)"}</span></label>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+            <label style={S.label}>{t ? t("inv_rights_granted") : "Droits accordés"} <span style={{ color: "var(--text-sub)", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>{t ? `(${t("inv_read_only_default")})` : "(lecture seule par défaut)"}</span></label>
+          </div>
           {(() => {
             const selectedEvObjects = events.filter(e => selectedEvents.includes(e.id));
             const hasSplit = selectedEvObjects.some(e => e.event_type !== "budget");
             const hasBudget = selectedEvObjects.some(e => e.event_type === "budget");
             const hasMixed = hasSplit && hasBudget;
-            // Filtrer : si mix → droits communs aux deux types. Si split seul → split. Si budget seul → budget
             const availablePerms = Object.entries(ALL_PERMISSIONS).filter(([, p]) => {
               if (hasMixed) return p.split && p.budget;
               if (hasBudget) return p.budget;
-              return p.split; // split seul ou aucun sélectionné
+              return p.split;
             });
+            const DEFAULT_PERMS = availablePerms.map(([key]) => key).filter(k => ["add_expense", "add_participant"].includes(k));
             return (
               <>
                 {hasMixed && (
-                  <div style={{ background: "#E3F2FD", border: "1px solid #BBDEFB", borderRadius: 8, padding: "8px 12px", fontSize: 11, color: "#1565C0", marginBottom: 10, marginTop: 6 }}>
+                  <div style={{ background: "#E3F2FD", border: "1px solid #BBDEFB", borderRadius: 8, padding: "8px 12px", fontSize: 11, color: "#1565C0", marginBottom: 10 }}>
                     ℹ️ Événements Split et Budget mélangés — seuls les droits communs sont disponibles. Les droits spécifiques Budget (cotisations) doivent être accordés séparément.
                   </div>
                 )}
-                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 8, marginTop: 8 }}>
+                {/* Raccourcis par défaut */}
+                {selectedEvents.length > 0 && (
+                  <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 11, color: "var(--text-sub)", alignSelf: "center" }}>{t ? t("invite_default_permissions") : "Permissions par défaut"} :</span>
+                    <button type="button" onClick={() => setPermissions([])}
+                      style={{ padding: "4px 10px", borderRadius: 20, border: `1.5px solid ${permissions.length === 0 ? "#0F0F0F" : "var(--border)"}`, background: permissions.length === 0 ? "#0F0F0F" : "var(--bg-secondary)", color: permissions.length === 0 ? "#fff" : "var(--text)", fontSize: 11, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>
+                      👁 Lecture seule
+                    </button>
+                    {DEFAULT_PERMS.length > 0 && (
+                      <button type="button" onClick={() => setPermissions(DEFAULT_PERMS)}
+                        style={{ padding: "4px 10px", borderRadius: 20, border: `1.5px solid ${JSON.stringify(permissions.slice().sort()) === JSON.stringify(DEFAULT_PERMS.slice().sort()) ? "#2E7D32" : "var(--border)"}`, background: JSON.stringify(permissions.slice().sort()) === JSON.stringify(DEFAULT_PERMS.slice().sort()) ? "#E8F5E9" : "var(--bg-secondary)", color: JSON.stringify(permissions.slice().sort()) === JSON.stringify(DEFAULT_PERMS.slice().sort()) ? "#2E7D32" : "var(--text)", fontSize: 11, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>
+                        ✏️ Standards
+                      </button>
+                    )}
+                  </div>
+                )}
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 8 }}>
                   {availablePerms.map(([key, p]) => (
-                    <label key={key} onClick={() => togglePerm(permissions, setPermissions, key)}
+                    <label key={key} title={`${p.label} — ${p.desc}`} onClick={() => togglePerm(permissions, setPermissions, key)}
                       style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 10, border: `1.5px solid ${permissions.includes(key) ? p.color : "var(--border)"}`, background: permissions.includes(key) ? p.bg : "var(--bg-secondary)", cursor: "pointer", transition: "all 0.15s" }}>
                       <div style={{ width: 16, height: 16, borderRadius: 4, border: `2px solid ${permissions.includes(key) ? p.color : "#ccc"}`, background: permissions.includes(key) ? p.color : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                         {permissions.includes(key) && <span style={{ color: "#fff", fontSize: 10 }}>✓</span>}
                       </div>
                       <span style={{ fontSize: 11 }}>{p.icon}</span>
-                      <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text)", flex: 1 }}>{p.label}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text)" }}>{p.label}</div>
+                        <div style={{ fontSize: 9, color: "var(--text-sub)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.desc}</div>
+                      </div>
                     </label>
                   ))}
                 </div>
@@ -421,7 +442,7 @@ export function Invite({ events, user, isMobile, addToast}) {
                 )}
                 {selectedEvents.length === 0 && (
                   <div style={{ marginTop: 8, fontSize: 11, color: "#aaa", background: "#f9f9f9", borderRadius: 8, padding: "6px 12px" }}>
-                    Sélectionnez d'abord un événement pour voir les droits disponibles.
+                    {t ? t("invite_permission_hint") : "Sélectionnez d'abord un événement pour voir les droits disponibles."}
                   </div>
                 )}
               </>

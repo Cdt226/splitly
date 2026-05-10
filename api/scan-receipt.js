@@ -198,20 +198,39 @@ export default async function handler(req, res) {
     });
   }
 
-  // Vérification JWT
-  const authHeader = req.headers.authorization || '';
-  if (!authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Non autorisé', level_rejected: 1 });
-  }
-  const token = authHeader.slice(7);
+  // Auth : JWT admin ou email invité (header X-Guest-Email)
+  const authHeader  = req.headers.authorization || '';
+  const guestEmail  = (req.headers['x-guest-email'] || '').trim().toLowerCase();
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  let userId;
 
-  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-  });
-
-  const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
-  if (authErr || !user) {
-    return res.status(401).json({ error: 'Token invalide', level_rejected: 1 });
+  if (guestEmail) {
+    // Valider que cet email est bien un invité actif dans la table invitations
+    const { data: inv, error: invErr } = await supabase
+      .from('invitations')
+      .select('email')
+      .eq('email', guestEmail)
+      .eq('status', 'accepted')
+      .limit(1)
+      .single();
+    if (invErr || !inv) {
+      return res.status(401).json({ error: 'Invité non reconnu', level_rejected: 1 });
+    }
+    // Rate limit par email (userId fictif = hash stable de l'email)
+    userId = `guest:${guestEmail}`;
+  } else {
+    if (!authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Non autorisé', level_rejected: 1 });
+    }
+    const token = authHeader.slice(7);
+    const authedSupabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+    const { data: { user }, error: authErr } = await authedSupabase.auth.getUser(token);
+    if (authErr || !user) {
+      return res.status(401).json({ error: 'Token invalide', level_rejected: 1 });
+    }
+    userId = user.id;
   }
 
   // Rate limit : 20 scans/heure
@@ -219,11 +238,11 @@ export default async function handler(req, res) {
   const { count } = await supabase
     .from('ocr_logs')
     .select('*', { count: 'exact', head: true })
-    .eq('user_id', user.id)
+    .eq('user_id', userId)
     .gte('timestamp', oneHourAgo);
 
   if ((count ?? 0) >= RATE_LIMIT) {
-    await logOCR(supabase, user.id, false, 'Quota horaire dépassé', 1);
+    await logOCR(supabase, userId, false, 'Quota horaire dépassé', 1);
     return res.status(429).json({
       error: 'Quota atteint — 20 scans par heure maximum',
       level_rejected: 1,
@@ -238,7 +257,7 @@ export default async function handler(req, res) {
     const reason = classifyReason
       ? `Ce document ne semble pas être un reçu : ${classifyReason}`
       : 'Ce document ne semble pas être un reçu ou une facture.';
-    await logOCR(supabase, user.id, false, reason, 2, classificationMethod);
+    await logOCR(supabase, userId, false, reason, 2, classificationMethod);
     return res.status(422).json({ error: reason, isReceipt: false, level_rejected: 2 });
   }
 
@@ -290,7 +309,7 @@ export default async function handler(req, res) {
 
     analyzeResult = pollData.analyzeResult;
   } catch (err) {
-    await logOCR(supabase, user.id, false, err.message, 3, classificationMethod);
+    await logOCR(supabase, userId, false, err.message, 3, classificationMethod);
     return res.status(503).json({
       error: `Erreur OCR : ${err.message}`,
       level_rejected: 3,
@@ -336,7 +355,7 @@ export default async function handler(req, res) {
     classificationMethod,
   };
 
-  await logOCR(supabase, user.id, true, null, null, classificationMethod);
+  await logOCR(supabase, userId, true, null, null, classificationMethod);
 
   return res.status(200).json(result);
 }

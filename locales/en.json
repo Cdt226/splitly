@@ -552,5 +552,20 @@
   "validation_required": "This field is required.",
   "validation_invalid_amount": "Invalid amount (must be between 0.01 and 999,999).",
   "validation_duplicate_name": "This name already exists.",
-  "validation_future_date": "The date cannot be in the future."
+  "validation_future_date": "The date cannot be in the future.",
+  "guest_scan_receipt": "Scan a receipt",
+  "guest_no_permission_scan": "You don't have permission to add expenses.",
+  "guest_request_sent_detail": "Request sent to the administrator.",
+  "guest_request_approved_detail": "Permission granted! You can now perform this action.",
+  "guest_request_rejected": "Permission denied by the administrator.",
+  "guest_perm_pending": "Request pending",
+  "guest_no_perm_action": "Request permission",
+  "notification_new_request": "New permission request",
+  "notification_request_approved": "Permission granted",
+  "notification_request_rejected": "Permission denied",
+  "notification_approve_all": "Approve all",
+  "notification_approve_partial": "Partially approve",
+  "notification_reject": "Reject",
+  "invite_default_permissions": "Default permissions",
+  "invite_permission_hint": "Check the permissions to grant to the guest"
 }

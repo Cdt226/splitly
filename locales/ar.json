@@ -552,5 +552,20 @@
   "validation_required": "هذا الحقل مطلوب.",
   "validation_invalid_amount": "مبلغ غير صالح (يجب أن يكون بين 0.01 و 999,999).",
   "validation_duplicate_name": "هذا الاسم موجود بالفعل.",
-  "validation_future_date": "لا يمكن أن يكون التاريخ في المستقبل."
+  "validation_future_date": "لا يمكن أن يكون التاريخ في المستقبل.",
+  "guest_scan_receipt": "مسح إيصال",
+  "guest_no_permission_scan": "ليس لديك إذن لإضافة المصاريف.",
+  "guest_request_sent_detail": "تم إرسال الطلب إلى المسؤول.",
+  "guest_request_approved_detail": "تم منح الإذن! يمكنك الآن تنفيذ هذا الإجراء.",
+  "guest_request_rejected": "تم رفض الإذن من قبل المسؤول.",
+  "guest_perm_pending": "طلب قيد الانتظار",
+  "guest_no_perm_action": "طلب إذن",
+  "notification_new_request": "طلب إذن جديد",
+  "notification_request_approved": "تم منح الإذن",
+  "notification_request_rejected": "تم رفض الإذن",
+  "notification_approve_all": "الموافقة على الكل",
+  "notification_approve_partial": "موافقة جزئية",
+  "notification_reject": "رفض",
+  "invite_default_permissions": "الأذونات الافتراضية",
+  "invite_permission_hint": "حدد الحقوق الممنوحة للضيف"
 }

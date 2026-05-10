@@ -8,9 +8,10 @@ import { Avatar, AvatarStack, EmojiPicker, Truncate, Badge, EmptyState, Chip, Pa
 import { useTranslation, LanguageSwitcher, LanguageMenu } from "../i18n.jsx";
 import { useTheme } from "../hooks/useTheme.jsx";
 
-export function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut, addToast, isMobile, menuOpen, setMenuOpen, lang, setLang, searchQuery, setSearchQuery, isAdmin, hasBudgetEvents }) {
+export function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut, addToast, isMobile, menuOpen, setMenuOpen, lang, setLang, searchQuery, setSearchQuery, isAdmin, hasBudgetEvents, hasNewNotif }) {
   const { t } = useTranslation();
   const totalBadge = unreadCount + pendingCount;
+  const badgeDisplay = totalBadge > 9 ? "9+" : totalBadge;
 
   // Super admin : nav réduite
   const adminNav = [
@@ -26,7 +27,7 @@ export function Sidebar({ active, setActive, unreadCount, pendingCount, user, on
     { key: "analytics",       icon: "📊", label: t("nav_analytics") },
     { key: "history",         icon: "📋", label: t("nav_history") },
     { key: "invite",          icon: "👥", label: t("nav_invite") },
-    { key: "notifications",   icon: "🔔", label: t("nav_notifications"), badge: totalBadge },
+    { key: "notifications",   icon: "🔔", label: t("nav_notifications"), badge: badgeDisplay, pulse: hasNewNotif },
     { key: "settings",        icon: "⚙️", label: t("nav_settings") || "Paramètres" },
   ];
 
@@ -62,7 +63,12 @@ export function Sidebar({ active, setActive, unreadCount, pendingCount, user, on
       {!isMobile && active !== n.key && (
         <span style={{ fontSize: 9, color: "#333", background: "#1a1a1a", borderRadius: 4, padding: "1px 5px", opacity: 0.6, flexShrink: 0, letterSpacing: 0.5 }}>G+{SHORTCUTS[n.key]}</span>
       )}
-      {n.badge > 0 && <span style={{ background: "#C62828", color: "#fff", borderRadius: 10, fontSize: 10, fontWeight: 700, padding: "2px 6px", flexShrink: 0, minWidth: 18, textAlign: "center" }}>{n.badge}</span>}
+      {(n.badge && (typeof n.badge === "string" || n.badge > 0)) && (
+        <span className={n.pulse ? "notif-pulse" : undefined}
+          style={{ background: "#C62828", color: "#fff", borderRadius: 10, fontSize: 10, fontWeight: 700, padding: "2px 6px", flexShrink: 0, minWidth: 18, textAlign: "center" }}>
+          {n.badge}
+        </span>
+      )}
     </button>
   );
 
@@ -160,7 +166,7 @@ export function Sidebar({ active, setActive, unreadCount, pendingCount, user, on
       <div style={{ position: "fixed", top: 0, left: 0, right: 0, height: 56, background: "#0F0F0F", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", zIndex: 200, boxShadow: "0 2px 10px rgba(0,0,0,0.3)" }}>
         <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, color: "#fff", cursor: "pointer" }} onClick={() => setActive("dashboard")}>SplitLy</div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          {totalBadge > 0 && <span style={{ background: "#C62828", color: "#fff", borderRadius: 10, fontSize: 10, fontWeight: 700, padding: "2px 7px" }}>{totalBadge}</span>}
+          {totalBadge > 0 && <span className={hasNewNotif ? "notif-pulse" : undefined} style={{ background: "#C62828", color: "#fff", borderRadius: 10, fontSize: 10, fontWeight: 700, padding: "2px 7px" }}>{badgeDisplay}</span>}
           <button onClick={() => setMenuOpen(!menuOpen)} aria-label={menuOpen ? "Fermer le menu" : "Ouvrir le menu"} aria-expanded={menuOpen} style={{ background: "none", border: "none", color: "#fff", fontSize: 22, cursor: "pointer", padding: 4 }}>☰</button>
         </div>
       </div>

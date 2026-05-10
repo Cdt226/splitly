@@ -83,10 +83,13 @@ function AppInner() {
   const { t, lang, setLang } = useTranslation();
   const [searchQuery, setSearchQuery] = useState("");
 
+  const [hasNewNotif, setHasNewNotif] = useState(false);
+
   // Refs for stable Realtime callbacks (avoid channel teardown on events/loadAll changes)
   const eventIdsRef = useRef([]);
   const loadAllRef = useRef(null);
   const addToastRef = useRef(addToast);
+  const pendingChRef = useRef(null);
   const tRef = useRef(t);
 
   // Navigation avec historique et animation
@@ -273,16 +276,31 @@ function AppInner() {
         if (eventIdsRef.current.includes(payload.new?.id)) loadAllRef.current?.();
       }).subscribe();
 
-    const pendingCh = supabase
-      .channel("pending-actions-realtime")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "pending_actions" }, () => {
-        loadAllRef.current?.();
-        const t = tRef.current;
-        addToastRef.current?.("📬 " + (t ? t("app_new_guest_request") : "Nouvelle demande d'un invité"), "info");
-      })
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "pending_actions" }, () => {
-        loadAllRef.current?.();
-      }).subscribe();
+    const createPendingChannel = () => {
+      const ch = supabase
+        .channel("pending-actions-realtime")
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "pending_actions" }, () => {
+          loadAllRef.current?.();
+          setHasNewNotif(true);
+          const t = tRef.current;
+          addToastRef.current?.("📬 " + (t ? t("app_new_guest_request") : "Nouvelle demande d'un invité"), "info");
+        })
+        .on("postgres_changes", { event: "UPDATE", schema: "public", table: "pending_actions" }, () => {
+          loadAllRef.current?.();
+        })
+        .subscribe((status) => {
+          console.log('[Realtime] Status:', status);
+          if (status === 'CLOSED') {
+            supabase.removeChannel(pendingChRef.current);
+            setTimeout(createPendingChannel, 2000);
+          }
+        });
+      pendingChRef.current = ch;
+      return ch;
+    };
+    createPendingChannel();
+
+    const fallbackPoll = setInterval(() => { loadAllRef.current?.(); }, 30000);
 
     return () => {
       supabase.removeChannel(expCh);
@@ -290,7 +308,8 @@ function AppInner() {
       supabase.removeChannel(cotCh);
       supabase.removeChannel(partCh);
       supabase.removeChannel(evCh);
-      supabase.removeChannel(pendingCh);
+      if (pendingChRef.current) supabase.removeChannel(pendingChRef.current);
+      clearInterval(fallbackPoll);
     };
   }, [user?.id]);
 
@@ -355,6 +374,9 @@ function AppInner() {
   const unreadCount = notifications.filter(n => !n.is_read).length;
   const pendingCount = pendingActions.length;
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (active === "notifications") setHasNewNotif(false); }, [active]);
+
   // Résultats de recherche globale
   const showSearch = searchQuery.trim().length > 1;
   const q = searchQuery.toLowerCase();
@@ -395,6 +417,8 @@ function AppInner() {
         table { table-layout: fixed; }
         @keyframes pageFadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         .page-transition { animation: pageFadeIn 0.15s ease; pointer-events: auto; }
+        @keyframes notifPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.35); } }
+        .notif-pulse { animation: notifPulse 0.4s ease 2; }
         .kbd-hint { display:inline-flex;align-items:center;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:4px;padding:1px 6px;font-size:10px;font-family:monospace;color:#666; }
         [dir="rtl"] input, [dir="rtl"] textarea, [dir="rtl"] select { text-align: start; }
         [dir="rtl"] .page-transition { direction: rtl; }
@@ -421,7 +445,7 @@ function AppInner() {
       <Sidebar active={active} setActive={setActive} unreadCount={unreadCount} pendingCount={pendingCount}
         user={user} onSignOut={handleSignOut} addToast={addToast} isMobile={isMobile} menuOpen={menuOpen} setMenuOpen={setMenuOpen}
         t={t} lang={lang} setLang={setLang} searchQuery={searchQuery} setSearchQuery={setSearchQuery}
-        isAdmin={isAdmin} hasBudgetEvents={hasBudgetEvents} />
+        isAdmin={isAdmin} hasBudgetEvents={hasBudgetEvents} hasNewNotif={hasNewNotif} />
 
       <main role="main" style={{ flex: 1, overflow: "hidden", minWidth: 0, background: "var(--bg)", display: "flex", flexDirection: "column" }}>
         {/* Topbar desktop — breadcrumb léger */}

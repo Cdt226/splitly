@@ -43,7 +43,7 @@ export const receiptAdapter = (raw) => {
 const BUILT_IN_ADAPTERS = { receipt: receiptAdapter };
 
 // ─── Hook ─────────────────────────────────────────────────────
-export function useOCRModule({ adapter = 'receipt', onSuccess, onInvalid, onError } = {}) {
+export function useOCRModule({ adapter = 'receipt', onSuccess, onInvalid, onError, guestEmail } = {}) {
   const [status, setStatus]   = useState('idle');   // idle|compressing|uploading|processing|validating|success|error
   const [result, setResult]   = useState(null);
   const [error,  setError]    = useState(null);
@@ -85,18 +85,24 @@ export function useOCRModule({ adapter = 'receipt', onSuccess, onInvalid, onErro
         reader.readAsDataURL(compressed);
       });
 
-      // JWT utilisateur
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      if (!token) throw new Error('Non authentifié — veuillez vous reconnecter');
+      // Auth : JWT admin ou email invité
+      let authHeaders;
+      if (guestEmail) {
+        authHeaders = { 'X-Guest-Email': guestEmail };
+      } else {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        if (!token) throw new Error('Non authentifié — veuillez vous reconnecter');
+        authHeaders = { 'Authorization': `Bearer ${token}` };
+      }
 
       // Appel API
       setStatus('processing');
       const res = await fetch('/api/scan-receipt', {
         method:  'POST',
         headers: {
-          'Content-Type':  'application/json',
-          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          ...authHeaders,
         },
         body: JSON.stringify({ image: base64, contentType: file.type }),
       });
@@ -132,7 +138,7 @@ export function useOCRModule({ adapter = 'receipt', onSuccess, onInvalid, onErro
       setStatus('error');
       onError?.(err);
     }
-  }, [adapter, onSuccess, onInvalid, onError]);
+  }, [adapter, onSuccess, onInvalid, onError, guestEmail]);
 
   return { scan, status, result, error, reset };
 }

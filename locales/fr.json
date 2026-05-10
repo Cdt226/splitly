@@ -552,5 +552,20 @@
   "validation_required": "Ce champ est obligatoire.",
   "validation_invalid_amount": "Montant invalide (doit être entre 0,01 et 999 999).",
   "validation_duplicate_name": "Ce nom existe déjà.",
-  "validation_future_date": "La date ne peut pas être dans le futur."
+  "validation_future_date": "La date ne peut pas être dans le futur.",
+  "guest_scan_receipt": "Scanner un reçu",
+  "guest_no_permission_scan": "Vous n'avez pas la permission d'ajouter des charges.",
+  "guest_request_sent_detail": "Demande envoyée à l'administrateur.",
+  "guest_request_approved_detail": "Permission accordée ! Vous pouvez maintenant effectuer cette action.",
+  "guest_request_rejected": "Permission refusée par l'administrateur.",
+  "guest_perm_pending": "Demande en attente",
+  "guest_no_perm_action": "Demander la permission",
+  "notification_new_request": "Nouvelle demande de permission",
+  "notification_request_approved": "Permission accordée",
+  "notification_request_rejected": "Permission refusée",
+  "notification_approve_all": "Tout accepter",
+  "notification_approve_partial": "Accepter en partie",
+  "notification_reject": "Refuser",
+  "invite_default_permissions": "Permissions par défaut",
+  "invite_permission_hint": "Cochez les droits à accorder à l'invité"
 }

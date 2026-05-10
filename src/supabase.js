@@ -620,6 +620,17 @@ export async function requestPermissions(eventId, guestEmail, requestedPermissio
       message: `${guestEmail} demande des droits supplémentaires sur "${ev.name}"`,
       data: { event_id: eventId, guest_email: guestEmail, requested: requestedPermissions },
     });
+    // Email fire-and-forget — ne bloque jamais le flux
+    fetch('/api/send-notification-admin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        adminId: ev.admin_id,
+        guestEmail,
+        eventName: ev.name,
+        requestedPermissions,
+      }),
+    }).catch(() => {});
   }
   return { error };
 }

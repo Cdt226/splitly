@@ -8,6 +8,7 @@ import { Avatar, AvatarStack, EmojiPicker, Truncate, Badge, EmptyState, Chip, Pa
 import { fetchEvents, fetchExpenses, fetchContributions, fetchCotisations, createExpense, createCotisation, updateCotisation, deleteCotisation, submitPendingAction, fetchAllPendingActions } from "../supabase.js";
 import { useTranslation } from "../i18n.jsx";
 import { ALL_PERMISSIONS, normalizePerms, getAvailablePermissions } from "./Invite.jsx";
+import { OCRCapture } from "../components/OCRCapture.jsx";
 
 export function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
   const { t } = useTranslation();
@@ -25,6 +26,9 @@ export function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
   const [requestSaving, setRequestSaving] = useState(false);
   const [filterEventId, setFilterEventId] = useState("");
   const [showAddExpense, setShowAddExpense] = useState(false);
+  const [showOCRChoice, setShowOCRChoice] = useState(false);
+  const [showOCR, setShowOCR] = useState(false);
+  const [ocrPreFill, setOcrPreFill] = useState(null);
   const [editingExpense, setEditingExpense] = useState(null);
   const [myPendingActions, setMyPendingActions] = useState([]);
   const [showMyPending, setShowMyPending] = useState(false);
@@ -243,6 +247,9 @@ export function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
 
     setSaving(false);
     setShowAddExpense(false);
+    setShowOCRChoice(false);
+    setShowOCR(false);
+    setOcrPreFill(null);
     setEditingExpense(null);
     await silentReload();
   };
@@ -254,7 +261,7 @@ export function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
     setRequestSaving(false);
     setShowRequestPerms(false);
     setRequestedPerms([]);
-    addToast(t ? t("guest_rights_request_sent") : "Demande de droits envoyée à l'admin.", "success");
+    addToast(t ? t("guest_request_sent_detail") : "Demande envoyée à l'administrateur.", "success");
   };
 
   if (loading) return <Spinner />;
@@ -339,22 +346,35 @@ export function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
             {requestEventId && (() => {
               const ev = events.find(e => e.id === requestEventId);
               const myPerms = normalizePerms(permissionsMap[requestEventId] || []);
+              // Permissions déjà demandées et en attente pour cet événement
+              const pendingPerms = new Set(
+                myPendingActions
+                  .filter(a => a.event_id === requestEventId && a.action_type === "request_permissions" && a.status === "pending")
+                  .flatMap(a => a.action_data?.requested || [])
+              );
               const available = getAvailablePermissions(ev?.event_type || "split").filter(p => !myPerms.includes(p.key));
               return (
                 <div style={{ marginBottom: 16 }}>
                   <label style={S.label}>Droits demandés</label>
                   {available.length === 0
                     ? <div style={{ fontSize: 13, color: "#2E7D32", background: "#E8F5E9", borderRadius: 8, padding: "10px 14px" }}>✓ Vous avez déjà tous les droits disponibles.</div>
-                    : available.map(p => (
-                      <label key={p.key} onClick={() => setRequestedPerms(prev => prev.includes(p.key) ? prev.filter(x => x !== p.key) : [...prev, p.key])}
-                        style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 9, border: `1.5px solid ${requestedPerms.includes(p.key) ? p.color : "#e0e0e0"}`, background: requestedPerms.includes(p.key) ? p.bg : "#fafafa", cursor: "pointer", marginBottom: 6, transition: "all 0.15s" }}>
-                        <div style={{ width: 16, height: 16, borderRadius: 4, border: `2px solid ${requestedPerms.includes(p.key) ? p.color : "#ccc"}`, background: requestedPerms.includes(p.key) ? p.color : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                          {requestedPerms.includes(p.key) && <span style={{ color: "#fff", fontSize: 10 }}>✓</span>}
-                        </div>
-                        <span>{p.icon}</span>
-                        <div><div style={{ fontSize: 13, fontWeight: 600 }}>{p.label}</div><div style={{ fontSize: 11, color: "#888" }}>{p.desc}</div></div>
-                      </label>
-                    ))
+                    : available.map(p => {
+                        const isPending = pendingPerms.has(p.key);
+                        return (
+                          <label key={p.key} onClick={() => !isPending && setRequestedPerms(prev => prev.includes(p.key) ? prev.filter(x => x !== p.key) : [...prev, p.key])}
+                            style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 9, border: `1.5px solid ${isPending ? "#E3F2FD" : requestedPerms.includes(p.key) ? p.color : "#e0e0e0"}`, background: isPending ? "#f0f7ff" : requestedPerms.includes(p.key) ? p.bg : "#fafafa", cursor: isPending ? "default" : "pointer", marginBottom: 6, transition: "all 0.15s", opacity: isPending ? 0.8 : 1 }}>
+                            <div style={{ width: 16, height: 16, borderRadius: 4, border: `2px solid ${isPending ? "#90CAF9" : requestedPerms.includes(p.key) ? p.color : "#ccc"}`, background: isPending ? "#90CAF9" : requestedPerms.includes(p.key) ? p.color : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                              {isPending ? <span style={{ color: "#fff", fontSize: 9 }}>⏳</span> : requestedPerms.includes(p.key) ? <span style={{ color: "#fff", fontSize: 10 }}>✓</span> : null}
+                            </div>
+                            <span>{p.icon}</span>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: 13, fontWeight: 600 }}>{p.label}</div>
+                              <div style={{ fontSize: 11, color: "#888" }}>{p.desc}</div>
+                            </div>
+                            {isPending && <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "#E3F2FD", color: "#1565C0", fontWeight: 700 }}>{t ? t("guest_perm_pending") : "En attente"}</span>}
+                          </label>
+                        );
+                      })
                   }
                 </div>
               );
@@ -472,22 +492,68 @@ export function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
                 <EventSelector />
                 {selectedEv?.status === "open" && (
                   <button onClick={() => {
-                    if (can(filterEventId, "add_expense")) {
-                      setShowAddExpense(!showAddExpense);
-                    } else {
-                      addToast(t ? t("guest_no_add_right") : "Vous n'avez pas le droit d'ajouter des charges. Votre demande sera envoyée à l'admin.", "info");
-                      setShowAddExpense(!showAddExpense);
-                    }
+                    const anyOpen = showOCRChoice || showAddExpense || showOCR;
+                    setShowOCRChoice(!anyOpen);
+                    setShowAddExpense(false);
+                    setShowOCR(false);
+                    setOcrPreFill(null);
                   }} style={S.btnDark}>
-                    {showAddExpense ? "× Fermer" : "➕ Ajouter"}
+                    {(showOCRChoice || showAddExpense || showOCR) ? "× Fermer" : "➕ Ajouter"}
                   </button>
                 )}
               </div>
             </div>
 
+            {/* Message pas de permission + badge pending */}
+            {showOCRChoice && !can(filterEventId, "add_expense") && (
+              <div style={{ padding: "14px 16px", borderRadius: 12, background: "#FFF8E1", border: "1px solid #FFE082", marginBottom: 12 }}>
+                <div style={{ fontSize: 13, color: "#E65100", fontWeight: 600, marginBottom: 8 }}>
+                  ⚠️ {t ? t("guest_no_permission_scan") : "Vous n'avez pas la permission d'ajouter des charges."}
+                </div>
+                {myPendingActions.some(a => a.action_type === "request_permissions" && a.event_id === filterEventId && a.status === "pending") ? (
+                  <span style={{ fontSize: 12, padding: "3px 10px", borderRadius: 20, background: "#E3F2FD", color: "#1565C0", fontWeight: 700 }}>
+                    ⏳ {t ? t("guest_perm_pending") : "Demande en attente"}
+                  </span>
+                ) : (
+                  <button onClick={() => { setRequestEventId(filterEventId); setRequestedPerms(["add_expense"]); setShowRequestPerms(true); setShowOCRChoice(false); }}
+                    style={{ ...S.btnGhost, fontSize: 12, padding: "6px 12px" }}>
+                    🔐 {t ? t("guest_no_perm_action") : "Demander la permission"}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Écran de choix Scanner / Manuel */}
+            {showOCRChoice && can(filterEventId, "add_expense") && (
+              <div style={{ display: "flex", gap: 12, marginBottom: 12, flexDirection: isMobile ? "column" : "row" }}>
+                <button onClick={() => { setShowOCR(true); setShowOCRChoice(false); }}
+                  style={{ flex: 1, padding: "18px 16px", borderRadius: 14, border: "1.5px solid #1565C0", background: "#E3F2FD", color: "#1565C0", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, fontFamily: "inherit" }}>
+                  <span style={{ fontSize: 28 }}>📷</span>
+                  {t ? t("guest_scan_receipt") : "Scanner un reçu"}
+                </button>
+                <button onClick={() => { setShowAddExpense(true); setShowOCRChoice(false); setOcrPreFill(null); }}
+                  style={{ flex: 1, padding: "18px 16px", borderRadius: 14, border: "1.5px solid var(--border)", background: "var(--bg-secondary)", color: "var(--text)", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, fontFamily: "inherit" }}>
+                  <span style={{ fontSize: 28 }}>✏️</span>
+                  Saisie manuelle
+                </button>
+              </div>
+            )}
+
+            {/* OCR Capture */}
+            {showOCR && (
+              <OCRCapture
+                guestEmail={guestEmail}
+                isMobile={isMobile}
+                onFill={(filled) => { setOcrPreFill(filled); setShowOCR(false); setShowAddExpense(true); }}
+                onClose={() => { setShowOCR(false); setShowOCRChoice(true); }}
+                onManualEntry={() => { setShowOCR(false); setShowAddExpense(true); setOcrPreFill(null); }}
+              />
+            )}
+
             {showAddExpense && (
               <GuestExpenseForm
                 events={events.filter(e => e.id === filterEventId)}
+                initialValues={ocrPreFill}
                 onSubmit={(actionType, data, evId) => {
                   if (can(evId, "add_expense")) {
                     submitAction(actionType, data, evId);
@@ -495,7 +561,7 @@ export function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
                     submitAction(actionType, { ...data, needs_approval: true }, evId);
                   }
                 }}
-                onCancel={() => setShowAddExpense(false)}
+                onCancel={() => { setShowAddExpense(false); setOcrPreFill(null); }}
                 saving={saving}
                 isBudget={isBudget}
                 canDirect={can(filterEventId, "add_expense")}
@@ -642,8 +708,9 @@ export function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
   );
 }
 
-function GuestExpenseForm({ events, onSubmit, onCancel, saving, isBudget }) {
-  const empty = { eventId: events[0]?.id || "", category: "", sub: "", detail: "", qty: 1, unit: "", paidBy: "", included: [] };
+function GuestExpenseForm({ events, onSubmit, onCancel, saving, isBudget, initialValues }) {
+  const base = { eventId: events[0]?.id || "", category: "", sub: "", detail: "", qty: 1, unit: "", paidBy: "", included: [] };
+  const empty = initialValues ? { ...base, detail: initialValues.detail || "", unit: initialValues.unit || "", qty: initialValues.qty || 1 } : base;
   const [form, setForm] = useState(empty);
   const handleEventChange = (evId) => {
     const ev = events.find(e => e.id === evId);

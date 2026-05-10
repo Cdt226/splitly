@@ -89,7 +89,7 @@ function ReviewField({ id, label, value, onChange, type = 'text', required = fal
 }
 
 // ─── Composant principal ──────────────────────────────────────
-export function OCRCapture({ onFill, onClose, onManualEntry, isMobile }) {
+export function OCRCapture({ onFill, onClose, onManualEntry, isMobile, guestEmail }) {
   const cameraRef  = useRef(null);
   const galleryRef = useRef(null);
 
@@ -113,8 +113,9 @@ export function OCRCapture({ onFill, onClose, onManualEntry, isMobile }) {
   };
 
   const { scan, status, result, error, reset } = useOCRModule({
-    adapter:   'receipt',
-    onSuccess: handleSuccess,
+    adapter:    'receipt',
+    onSuccess:  handleSuccess,
+    guestEmail,
   });
 
   const isActive  = !['idle', 'success', 'error'].includes(status);

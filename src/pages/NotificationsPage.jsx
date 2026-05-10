@@ -9,6 +9,16 @@ import { Avatar, AvatarStack, EmojiPicker, Truncate, Badge, EmptyState, Chip, Pa
 import { updateInvitationPermissions, fetchInvitationPermissions, approvePendingAction, rejectPendingAction } from "../supabase.js";
 import { ALL_PERMISSIONS, normalizePerms } from "./Invite.jsx";
 
+function timeAgo(dateStr) {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "à l'instant";
+  if (mins < 60) return `il y a ${mins} min`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `il y a ${hrs}h`;
+  return `il y a ${Math.floor(hrs / 24)}j`;
+}
+
 export function NotificationsPage({ notifications, events, expenses, pendingActions, user, onMarkAll, onDismiss, reload, isMobile, addToast}) {
   const { t } = useTranslation();
   const [saving, setSaving] = useState(null);
@@ -158,7 +168,7 @@ export function NotificationsPage({ notifications, events, expenses, pendingActi
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 12 }}>
                     <div style={{ fontSize: 24, flexShrink: 0 }}>🔐</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: "#F57F17", marginBottom: 6 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "#F57F17", marginBottom: 4 }}>
                         {action.guest_email} demande des droits sur "{data?.event_name || ev?.name}"
                       </div>
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
@@ -171,17 +181,21 @@ export function NotificationsPage({ notifications, events, expenses, pendingActi
                           ) : null;
                         })}
                       </div>
-                      <div style={{ fontSize: 10, color: "#aaa" }}>{new Date(action.created_at).toLocaleString("fr-FR")}</div>
+                      <div style={{ fontSize: 11, color: "#aaa" }}>{timeAgo(action.created_at)}</div>
                     </div>
                   </div>
-                  <div style={{ display: "flex", gap: 8 }}>
+                  <div style={{ display: "flex", gap: 6, flexWrap: isMobile ? "wrap" : "nowrap" }}>
                     <button onClick={() => handleApprove(action)} disabled={saving === action.id}
-                      style={{ ...S.btnDark, background: "#2E7D32", padding: "7px 16px", fontSize: 12, flex: 1, justifyContent: "center", display: "flex" }}>
-                      {saving === action.id ? "..." : "🔐 Gérer les droits →"}
+                      style={{ ...S.btnDark, background: "#2E7D32", padding: "7px 12px", fontSize: 12, flex: 1, justifyContent: "center", display: "flex" }}>
+                      {saving === action.id ? "..." : `✓ ${t ? t("notification_approve_all") : "Tout accepter"}`}
+                    </button>
+                    <button onClick={() => setPartialPermsModal({ action, selectedPerms: normalizePerms(data?.requested || []) })} disabled={saving === action.id}
+                      style={{ ...S.btnGhost, padding: "7px 12px", fontSize: 12, flex: 1, justifyContent: "center", display: "flex" }}>
+                      {`⊘ ${t ? t("notification_approve_partial") : "Accepter en partie"}`}
                     </button>
                     <button onClick={() => handleReject(action)} disabled={saving === action.id}
-                      style={{ padding: "7px 16px", borderRadius: 9, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 12, cursor: "pointer", fontWeight: 700, flex: 1, fontFamily: "inherit" }}>
-                      ✗ Refuser
+                      style={{ padding: "7px 12px", borderRadius: 9, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 12, cursor: "pointer", fontWeight: 700, fontFamily: "inherit" }}>
+                      {`✗ ${t ? t("notification_reject") : "Refuser"}`}
                     </button>
                   </div>
                 </div>
@@ -213,8 +227,8 @@ export function NotificationsPage({ notifications, events, expenses, pendingActi
                     {data?.comment && (
                       <div style={{ fontSize: 11, color: "#666", fontStyle: "italic", marginTop: 4 }}>💬 {data.comment}</div>
                     )}
-                    <div style={{ fontSize: 10, color: "#aaa", marginTop: 4 }}>
-                      {new Date(action.created_at).toLocaleString("fr-FR")}
+                    <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>
+                      {timeAgo(action.created_at)}
                     </div>
                   </div>
                 </div>
@@ -241,11 +255,16 @@ export function NotificationsPage({ notifications, events, expenses, pendingActi
           {notifications.map(n => {
             const ev = events.find(e => e.id === n.event_id);
             return (
-              <div key={n.id} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "13px 16px", borderRadius: 14, background: n.is_read ? "#fafafa" : typeBg(n.type), border: `1px solid ${n.is_read ? "#eee" : typeColor(n.type) + "44"}`, transition: "all 0.15s" }}>
+              <div key={n.id} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "13px 16px", borderRadius: 14, background: n.is_read ? "#fafafa" : typeBg(n.type), border: `1px solid ${n.is_read ? "#eee" : typeColor(n.type) + "44"}`, opacity: n.is_read ? 0.7 : 1, transition: "all 0.15s" }}>
                 <div style={{ width: 10, height: 10, borderRadius: "50%", background: n.is_read ? "#e0e0e0" : typeColor(n.type), marginTop: 4, flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, color: n.is_read ? "#999" : "#333", lineHeight: 1.4 }}>{n.message}</div>
-                  {ev && <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>{ev.name} · {new Date(n.created_at).toLocaleString("fr-FR")}</div>}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                    <div style={{ fontSize: 13, color: n.is_read ? "#999" : "#333", lineHeight: 1.4 }}>{n.message}</div>
+                    {n.is_read && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 10, background: "#e0e0e0", color: "#888", fontWeight: 700, flexShrink: 0 }}>Lu</span>}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#bbb", marginTop: 2 }}>
+                    {ev ? `${ev.name} · ` : ""}{timeAgo(n.created_at)}
+                  </div>
                 </div>
                 <button onClick={() => onDismiss(n.id)} style={{ background: "none", border: "none", color: "#ccc", cursor: "pointer", fontSize: 18, padding: 0, flexShrink: 0, lineHeight: 1 }}>×</button>
               </div>

@@ -552,5 +552,20 @@
   "validation_required": "Este campo es obligatorio.",
   "validation_invalid_amount": "Monto inválido (debe estar entre 0.01 y 999.999).",
   "validation_duplicate_name": "Este nombre ya existe.",
-  "validation_future_date": "La fecha no puede ser en el futuro."
+  "validation_future_date": "La fecha no puede ser en el futuro.",
+  "guest_scan_receipt": "Escanear un recibo",
+  "guest_no_permission_scan": "No tienes permiso para agregar gastos.",
+  "guest_request_sent_detail": "Solicitud enviada al administrador.",
+  "guest_request_approved_detail": "¡Permiso concedido! Ahora puedes realizar esta acción.",
+  "guest_request_rejected": "Permiso denegado por el administrador.",
+  "guest_perm_pending": "Solicitud pendiente",
+  "guest_no_perm_action": "Solicitar permiso",
+  "notification_new_request": "Nueva solicitud de permiso",
+  "notification_request_approved": "Permiso concedido",
+  "notification_request_rejected": "Permiso denegado",
+  "notification_approve_all": "Aprobar todo",
+  "notification_approve_partial": "Aprobar parcialmente",
+  "notification_reject": "Rechazar",
+  "invite_default_permissions": "Permisos predeterminados",
+  "invite_permission_hint": "Marca los derechos a conceder al invitado"
 }
