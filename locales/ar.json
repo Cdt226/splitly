@@ -521,5 +521,11 @@
   "ocr_size_error": "يجب ألا تتجاوز الصورة 4 ميغابايت",
   "ocr_confirm": "استخدام هذه البيانات",
   "ocr_review": "مراجعة البيانات المستخرجة",
-  "ocr_needs_review": "ثقة منخفضة — يرجى مراجعة البيانات"
+  "ocr_needs_review": "ثقة منخفضة — يرجى مراجعة البيانات",
+  "ocr_choose_method": "كيف تريد إضافة هذه المصروف؟",
+  "ocr_scan_receipt": "مسح إيصال",
+  "ocr_manual_entry_label": "إدخال يدوي",
+  "ocr_currency_warning": "العملة المكتشفة: {{currency}} — تحقق من المبلغ",
+  "ocr_field_required": "حقل إلزامي",
+  "ocr_confirm_disabled": "أكمل الحقول الإلزامية (*) للتأكيد"
 }

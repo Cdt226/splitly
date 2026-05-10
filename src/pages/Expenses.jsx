@@ -81,6 +81,9 @@ export function Expenses({ events, expenses, contributions, user, reload, isMobi
   const [saving, setSaving] = useState(false);
   const [unpaid, setUnpaid] = useState(false);
   const [showOCR, setShowOCR] = useState(false);
+  const [showChoice, setShowChoice] = useState(false);
+
+  const closeAll = () => { setShowForm(false); setShowOCR(false); setShowChoice(false); };
   const empty = { eventId: defaultEventId || "", category: "", sub: "", detail: "", qty: 1, unit: "", paidBy: "", included: [], comment: "" };
   const [form, setForm] = useState(empty);
 
@@ -231,23 +234,19 @@ export function Expenses({ events, expenses, contributions, user, reload, isMobi
               exportChargesPDF(ev, evExp);
             }} style={{ ...S.btnGhost, fontSize: 12, padding: "8px 14px" }}>📄 PDF Charges</button>
           )}
-          <button
-            onClick={() => { setShowOCR(v => !v); setShowForm(false); setEditingEx(null); }}
-            style={{ ...S.btnGhost, fontSize: 12, padding: "8px 14px" }}
-            title="Scanner un reçu avec l'OCR"
-          >📷 Scanner</button>
-          <button onClick={() => { setForm(empty); setEditingEx(null); setShowForm(!showForm); setShowOCR(false); }}
-            style={S.btnDark}>{showForm && !editingEx ? "× Fermer" : "+ Ajouter"}</button>
+          <button onClick={() => {
+            if (showForm || showOCR || showChoice) { closeAll(); setEditingEx(null); }
+            else { setShowChoice(true); }
+          }}
+            style={S.btnDark}>{(showForm && !editingEx) || showOCR || showChoice ? "× Fermer" : "+ Ajouter"}</button>
         </div>
       </div>}
       {hideHeader && <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 12 }}>
-        <button
-          onClick={() => { setShowOCR(v => !v); setShowForm(false); setEditingEx(null); }}
-          style={{ ...S.btnGhost, fontSize: 12, padding: "8px 14px" }}
-          title="Scanner un reçu avec l'OCR"
-        >📷 Scanner</button>
-        <button onClick={() => { setForm({ ...empty, eventId: defaultEventId || "" }); setEditingEx(null); setShowForm(!showForm); setShowOCR(false); }}
-          style={S.btnDark}>{showForm && !editingEx ? "× Fermer" : "+ Ajouter une charge"}</button>
+        <button onClick={() => {
+          if (showForm || showOCR || showChoice) { closeAll(); setEditingEx(null); }
+          else { setShowChoice(true); }
+        }}
+          style={S.btnDark}>{(showForm && !editingEx) || showOCR || showChoice ? "× Fermer" : "+ Ajouter une charge"}</button>
       </div>}
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
@@ -300,10 +299,66 @@ export function Expenses({ events, expenses, contributions, user, reload, isMobi
         </div>
       )}
 
+      {/* Écran de choix : Scanner ou Saisie manuelle */}
+      {showChoice && !showOCR && !showForm && (
+        <div style={{ ...S.card, marginBottom: 16, border: "1px solid var(--border)" }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 16, textAlign: "center" }}>
+            Comment souhaitez-vous ajouter cette charge ?
+          </div>
+          <div style={{ display: "flex", gap: 12, flexDirection: isMobile ? "column" : "row" }}>
+            <button
+              onClick={() => { setShowOCR(true); setShowChoice(false); }}
+              style={{
+                flex: 1, padding: "20px 16px", borderRadius: 12,
+                border: "1.5px solid var(--border)", background: "var(--bg-secondary)",
+                cursor: "pointer", fontFamily: "inherit", transition: "border-color 0.15s",
+                display: "flex", flexDirection: "column", alignItems: "center", gap: 10,
+              }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = "#1565C0"}
+              onMouseLeave={e => e.currentTarget.style.borderColor = "var(--border)"}
+            >
+              <span style={{ fontSize: 32 }}>📷</span>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>Scanner un reçu</div>
+                <div style={{ fontSize: 11, color: "var(--text-sub)", lineHeight: 1.5 }}>
+                  Prenez une photo ou importez une image — les données sont extraites automatiquement.
+                </div>
+              </div>
+            </button>
+            <button
+              onClick={() => { setForm(empty); setEditingEx(null); setShowForm(true); setShowChoice(false); }}
+              style={{
+                flex: 1, padding: "20px 16px", borderRadius: 12,
+                border: "1.5px solid var(--border)", background: "var(--bg-secondary)",
+                cursor: "pointer", fontFamily: "inherit", transition: "border-color 0.15s",
+                display: "flex", flexDirection: "column", alignItems: "center", gap: 10,
+              }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = "#0F0F0F"}
+              onMouseLeave={e => e.currentTarget.style.borderColor = "var(--border)"}
+            >
+              <span style={{ fontSize: 32 }}>✏️</span>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>Saisie manuelle</div>
+                <div style={{ fontSize: 11, color: "var(--text-sub)", lineHeight: 1.5 }}>
+                  Remplissez le formulaire directement avec le montant, la catégorie et les participants.
+                </div>
+              </div>
+            </button>
+          </div>
+        </div>
+      )}
+
       {showOCR && (
         <OCRCapture
           isMobile={isMobile}
-          onClose={() => setShowOCR(false)}
+          onClose={() => { setShowOCR(false); setShowChoice(true); }}
+          onManualEntry={() => {
+            setShowOCR(false);
+            setShowChoice(false);
+            setForm(empty);
+            setEditingEx(null);
+            setShowForm(true);
+          }}
           onFill={(extracted) => {
             setForm(f => ({
               ...f,

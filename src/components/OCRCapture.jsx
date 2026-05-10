@@ -59,24 +59,37 @@ function ProgressBar({ status }) {
 }
 
 // ─── Champ éditable pour review ──────────────────────────────
-function ReviewField({ id, label, value, onChange, type = 'text' }) {
+function ReviewField({ id, label, value, onChange, type = 'text', required = false }) {
+  const isEmpty = required && !String(value || '').trim();
   return (
     <div style={{ marginBottom: 10 }}>
-      <label htmlFor={id} style={S.label}>{label}</label>
+      <label htmlFor={id} style={{ ...S.label, display: 'flex', alignItems: 'center', gap: 4 }}>
+        {label}
+        {required && <span style={{ color: '#C62828' }}>*</span>}
+      </label>
       <input
         id={id}
         type={type}
         value={value}
         onChange={e => onChange(e.target.value)}
+        placeholder={isEmpty ? 'À compléter' : undefined}
         aria-describedby={`${id}-hint`}
-        style={S.input}
+        style={{
+          ...S.input,
+          borderColor: isEmpty ? '#FFB74D' : undefined,
+        }}
       />
+      {isEmpty && (
+        <div id={`${id}-hint`} style={{ fontSize: 11, color: '#E65100', marginTop: 3 }}>
+          ⚠️ Champ obligatoire
+        </div>
+      )}
     </div>
   );
 }
 
 // ─── Composant principal ──────────────────────────────────────
-export function OCRCapture({ onFill, onClose, isMobile }) {
+export function OCRCapture({ onFill, onClose, onManualEntry, isMobile }) {
   const cameraRef  = useRef(null);
   const galleryRef = useRef(null);
 
@@ -84,25 +97,24 @@ export function OCRCapture({ onFill, onClose, isMobile }) {
   const [editFields, setEditFields] = useState(null);
 
   const handleSuccess = (transformed, raw) => {
-    // Pré-remplir les champs pour preview modifiable
     setEditFields({
       merchant: raw.merchant || '',
       total:    raw.total != null ? String(raw.total) : '',
       date:     raw.date  || '',
+      comment:  transformed.comment,
+      // Champs internes pour l'adapter
       detail:   transformed.detail,
       unit:     transformed.unit,
-      comment:  transformed.comment,
+      // Métadonnées informatives
+      currency: raw.currency  || null,
+      tax:      raw.tax       != null ? String(raw.tax)      : '',
+      subtotal: raw.subtotal  != null ? String(raw.subtotal) : '',
     });
-  };
-
-  const handleInvalid = () => {
-    // status='error' + error message already set in hook — nothing extra needed
   };
 
   const { scan, status, result, error, reset } = useOCRModule({
     adapter:   'receipt',
     onSuccess: handleSuccess,
-    onInvalid: handleInvalid,
   });
 
   const isActive  = !['idle', 'success', 'error'].includes(status);
@@ -116,15 +128,20 @@ export function OCRCapture({ onFill, onClose, isMobile }) {
       setEditFields(null);
       scan(file);
     }
-    // Reset input pour permettre de re-sélectionner le même fichier
     e.target.value = '';
   };
 
+  // Champs obligatoires : merchant, total, date
+  const requiredOk = editFields &&
+    String(editFields.merchant || '').trim() &&
+    String(editFields.total    || '').trim() &&
+    String(editFields.date     || '').trim();
+
   const handleConfirm = () => {
-    if (!editFields) return;
+    if (!editFields || !requiredOk) return;
     onFill({
-      detail:  editFields.detail,
-      unit:    editFields.unit,
+      detail:  editFields.merchant || editFields.detail,
+      unit:    editFields.total || editFields.unit,
       qty:     1,
       comment: editFields.comment,
     });
@@ -134,6 +151,9 @@ export function OCRCapture({ onFill, onClose, isMobile }) {
     reset();
     setEditFields(null);
   };
+
+  // "Saisir manuellement" utilise onManualEntry si dispo, sinon onClose
+  const handleManualEntry = onManualEntry || onClose;
 
   return (
     <div
@@ -263,7 +283,7 @@ export function OCRCapture({ onFill, onClose, isMobile }) {
               Réessayer
             </button>
             <button
-              onClick={onClose}
+              onClick={handleManualEntry}
               style={{ ...S.btnDark, fontSize: 12, padding: '6px 12px' }}
             >
               Saisir manuellement
@@ -275,12 +295,32 @@ export function OCRCapture({ onFill, onClose, isMobile }) {
       {/* Résultat — aperçu modifiable */}
       {isSuccess && editFields && (
         <div>
-          {result?.raw?.needsManualReview && (
+          {/* Avertissement confiance faible */}
+          {(result?.raw?.needsManualReview || result?.transformed?._needsManualReview) && (
             <div
               aria-live="polite"
-              style={{ padding: '8px 12px', borderRadius: 8, background: '#FFF8E1', border: '1px solid #FFE082', marginBottom: 14, fontSize: 12, color: '#E65100' }}
+              style={{ padding: '8px 12px', borderRadius: 8, background: '#FFF8E1', border: '1px solid #FFE082', marginBottom: 12, fontSize: 12, color: '#E65100' }}
             >
               ⚠️ Confiance faible ({Math.round((result.raw.confidence || 0) * 100)}%) — vérifiez les données ci-dessous.
+            </div>
+          )}
+
+          {/* Badge devise — warning si différente de MAD */}
+          {editFields.currency && (
+            <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{
+                fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20,
+                background: editFields.currency !== 'MAD' ? '#FFF8E1' : '#E8F5E9',
+                color:      editFields.currency !== 'MAD' ? '#E65100' : '#2E7D32',
+                border:     `1px solid ${editFields.currency !== 'MAD' ? '#FFE082' : '#C8E6C9'}`,
+              }}>
+                {editFields.currency !== 'MAD' ? '⚠️' : '✓'} Devise : {editFields.currency}
+              </span>
+              {editFields.currency !== 'MAD' && (
+                <span style={{ fontSize: 11, color: '#E65100' }}>
+                  — vérifiez le montant
+                </span>
+              )}
             </div>
           )}
 
@@ -288,10 +328,12 @@ export function OCRCapture({ onFill, onClose, isMobile }) {
             ✓ Reçu analysé — vérifiez et confirmez
           </div>
 
+          {/* Champs obligatoires */}
           <ReviewField
             id="ocr-merchant"
             label="Commerçant"
             value={editFields.merchant}
+            required
             onChange={v => setEditFields(f => ({ ...f, merchant: v, detail: v }))}
           />
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
@@ -300,15 +342,37 @@ export function OCRCapture({ onFill, onClose, isMobile }) {
               label="Montant total"
               value={editFields.total}
               type="number"
+              required
               onChange={v => setEditFields(f => ({ ...f, total: v, unit: v }))}
             />
             <ReviewField
               id="ocr-date"
               label="Date"
               value={editFields.date}
+              required
               onChange={v => setEditFields(f => ({ ...f, date: v, comment: v ? `Reçu du ${v}` : '' }))}
             />
           </div>
+
+          {/* TVA — informatif si disponible */}
+          {editFields.tax && (
+            <div style={{
+              fontSize: 12, color: 'var(--text-sub)', padding: '6px 10px',
+              background: 'var(--hover-bg)', borderRadius: 8, marginBottom: 10,
+              display: 'flex', gap: 8,
+            }}>
+              <span>TVA :</span>
+              <strong style={{ color: 'var(--text)' }}>{editFields.tax}</strong>
+              {editFields.subtotal && (
+                <>
+                  <span style={{ color: 'var(--border)' }}>·</span>
+                  <span>HT :</span>
+                  <strong style={{ color: 'var(--text)' }}>{editFields.subtotal}</strong>
+                </>
+              )}
+            </div>
+          )}
+
           <ReviewField
             id="ocr-comment"
             label="Commentaire (optionnel)"
@@ -316,10 +380,18 @@ export function OCRCapture({ onFill, onClose, isMobile }) {
             onChange={v => setEditFields(f => ({ ...f, comment: v }))}
           />
 
+          {/* Message si champs obligatoires manquants */}
+          {!requiredOk && (
+            <div style={{ fontSize: 11, color: '#E65100', marginBottom: 8 }}>
+              Complétez les champs obligatoires (*) pour confirmer.
+            </div>
+          )}
+
           <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
             <button
               onClick={handleConfirm}
-              style={{ ...S.btnDark, flex: 2 }}
+              disabled={!requiredOk}
+              style={{ ...S.btnDark, flex: 2, opacity: requiredOk ? 1 : 0.45, cursor: requiredOk ? 'pointer' : 'not-allowed' }}
             >
               ✓ Utiliser ces données
             </button>

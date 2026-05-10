@@ -521,5 +521,11 @@
   "ocr_size_error": "La imagen no debe superar 4 MB",
   "ocr_confirm": "Usar estos datos",
   "ocr_review": "Revisar datos extraídos",
-  "ocr_needs_review": "Confianza baja — revise los datos"
+  "ocr_needs_review": "Confianza baja — revise los datos",
+  "ocr_choose_method": "¿Cómo desea agregar este gasto?",
+  "ocr_scan_receipt": "Escanear recibo",
+  "ocr_manual_entry_label": "Entrada manual",
+  "ocr_currency_warning": "Divisa detectada: {{currency}} — verifique el importe",
+  "ocr_field_required": "Campo obligatorio",
+  "ocr_confirm_disabled": "Complete los campos obligatorios (*) para confirmar"
 }

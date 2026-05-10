@@ -7,19 +7,38 @@ import { supabase } from '../supabase.js';
 
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
 
+// ─── Nettoyage valeur numérique ───────────────────────────────
+// Supprime symboles devises, espaces, convertit virgules en points
+function cleanNumeric(val) {
+  if (val == null) return null;
+  const n = typeof val === 'number' ? val : parseFloat(
+    String(val).replace(/[^\d.,-]/g, '').replace(',', '.')
+  );
+  return isNaN(n) ? null : n;
+}
+
 // ─── Adapter "receipt" → champs formulaire SplitLy ───────────
-export const receiptAdapter = (raw) => ({
-  detail:   raw.merchant || '',
-  unit:     raw.total != null ? String(raw.total) : '',
-  qty:      1,
-  comment:  raw.date ? `Reçu du ${raw.date}` : '',
-  // Champs que l'utilisateur remplit lui-même
-  category: '',
-  sub:      '',
-  paidBy:   '',
-  included: [],
-  eventId:  '',
-});
+export const receiptAdapter = (raw) => {
+  const total = cleanNumeric(raw.total);
+  const needsManualReview = raw.needsManualReview || total == null;
+  return {
+    detail:   raw.merchant || '',
+    unit:     total != null ? String(total) : '',
+    qty:      1,
+    comment:  raw.date ? `Reçu du ${raw.date}` : '',
+    // Champs que l'utilisateur remplit lui-même
+    category: '',
+    sub:      '',
+    paidBy:   '',
+    included: [],
+    eventId:  '',
+    // Métadonnées (préfixe _ = non envoyées au formulaire principal)
+    _needsManualReview: needsManualReview,
+    _currency:          raw.currency  || null,
+    _tax:               cleanNumeric(raw.tax),
+    _subtotal:          cleanNumeric(raw.subtotal),
+  };
+};
 
 const BUILT_IN_ADAPTERS = { receipt: receiptAdapter };
 

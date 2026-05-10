@@ -521,5 +521,11 @@
   "ocr_size_error": "L'image ne doit pas dépasser 4 Mo",
   "ocr_confirm": "Utiliser ces données",
   "ocr_review": "Vérifiez les données extraites",
-  "ocr_needs_review": "Confiance faible — vérifiez les données"
+  "ocr_needs_review": "Confiance faible — vérifiez les données",
+  "ocr_choose_method": "Comment souhaitez-vous ajouter cette charge ?",
+  "ocr_scan_receipt": "Scanner un reçu",
+  "ocr_manual_entry_label": "Saisie manuelle",
+  "ocr_currency_warning": "Devise détectée : {{currency}} — vérifiez le montant",
+  "ocr_field_required": "Champ obligatoire",
+  "ocr_confirm_disabled": "Complétez les champs obligatoires (*) pour confirmer"
 }

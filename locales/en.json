@@ -521,5 +521,11 @@
   "ocr_size_error": "Image must not exceed 4 MB",
   "ocr_confirm": "Use this data",
   "ocr_review": "Review extracted data",
-  "ocr_needs_review": "Low confidence — please review the data"
+  "ocr_needs_review": "Low confidence — please review the data",
+  "ocr_choose_method": "How would you like to add this expense?",
+  "ocr_scan_receipt": "Scan a receipt",
+  "ocr_manual_entry_label": "Manual entry",
+  "ocr_currency_warning": "Detected currency: {{currency}} — please check the amount",
+  "ocr_field_required": "Required field",
+  "ocr_confirm_disabled": "Fill in the required fields (*) to confirm"
 }
