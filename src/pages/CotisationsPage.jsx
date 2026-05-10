@@ -80,11 +80,11 @@ export function CotisationsPage({ events, expenses, user, reload, isMobile, addT
     if (form.participant_name.length > 30) { addToast("Nom trop long (max 30 car.).", "warning"); return; }
     if (form.forme === "nature" && !natureForm.detail.trim()) { addToast("Précisez la nature de l'apport.", "warning"); return; }
 
-    // Bloquer la double cotisation — modifier la cotisation existante si déjà présente
-    if (!editingCot) {
+    // Bloquer la double cotisation si les cotisations multiples ne sont pas autorisées
+    if (!editingCot && !ev?.allow_multiple_contributions) {
       const dejaExiste = cotisations.some(c => c.participant_name === form.participant_name);
       if (dejaExiste) {
-        addToast(`${form.participant_name} a déjà une cotisation. Utilisez ✏️ Modifier pour la mettre à jour.`, "warning");
+        addToast(`${form.participant_name} a déjà une cotisation. Modifiez votre contribution existante ou activez les cotisations multiples dans les paramètres de l'événement.`, "warning");
         return;
       }
     }
@@ -284,7 +284,9 @@ export function CotisationsPage({ events, expenses, user, reload, isMobile, addT
           {/* Participants sans cotisation uniquement */}
           {(() => {
             const dejaCotisants = new Set(cotisations.map(c => c.participant_name));
-            const disponibles = participants.filter(p => !dejaCotisants.has(p));
+            const disponibles = ev?.allow_multiple_contributions
+              ? participants
+              : participants.filter(p => !dejaCotisants.has(p));
             if (disponibles.length === 0) return (
               <div style={{ fontSize: 13, color: "#2E7D32", background: "#E8F5E9", borderRadius: 8, padding: "10px 14px", marginBottom: 12 }}>
                 ✓ Tous les participants ont déjà une cotisation enregistrée.

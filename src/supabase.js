@@ -258,6 +258,7 @@ export async function createEvent(event, participants, userId) {
       event_type: event.event_type || 'split',
       cotisation_cible: event.cotisation_cible || 0,
       nombre_invites: event.nombre_invites || 0,
+      allow_multiple_contributions: event.allow_multiple_contributions || false,
     })
     .select().single();
   if (evErr) return { error: evErr };

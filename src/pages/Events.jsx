@@ -235,7 +235,7 @@ export function EventDetail({ ev, events, expenses, contributions, user, reload,
 export function Events({ events, expenses, contributions, user, reload, isMobile, addToast}) {
   const { t } = useTranslation();
   const [showNew, setShowNew] = useState(false);
-  const [form, setForm] = useState({ name: "", date: "", currency: "EUR €", participants: [], event_type: "split", cotisation_cible: "", nombre_invites: "" });
+  const [form, setForm] = useState({ name: "", date: "", currency: "EUR €", participants: [], event_type: "split", cotisation_cible: "", nombre_invites: "", allow_multiple_contributions: false });
   const [loading, setLoading] = useState(false);
   const [confirm, setConfirm] = useState(null);
   const [managingEv, setManagingEv] = useState(null);
@@ -262,6 +262,7 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
       event_type: ev.event_type || "split",
       cotisation_cible: ev.cotisation_cible || "",
       nombre_invites: ev.nombre_invites || "",
+      allow_multiple_contributions: ev.allow_multiple_contributions || false,
     });
   };
 
@@ -288,6 +289,7 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
       event_type: editForm.event_type,
       cotisation_cible: editForm.event_type === "budget" ? (parseFloat(editForm.cotisation_cible) || 0) : 0,
       nombre_invites: editForm.event_type === "budget" ? (parseInt(editForm.nombre_invites) || 0) : 0,
+      allow_multiple_contributions: editForm.event_type === "budget" ? (editForm.allow_multiple_contributions ?? false) : false,
     };
     const { error } = await updateEvent(editingEv.id, fields, user.id);
     if (error) { addToast((t ? t("ev_error") : "Erreur : ") + error.message, "error"); }
@@ -357,7 +359,7 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
     const { error } = await createEvent(eventData, form.participants, user.id);
     if (!error) {
       await reload();
-      setForm({ name: "", date: "", currency: "EUR €", participants: [], event_type: "split", cotisation_cible: "", nombre_invites: "" });
+      setForm({ name: "", date: "", currency: "EUR €", participants: [], event_type: "split", cotisation_cible: "", nombre_invites: "", allow_multiple_contributions: false });
       setShowNew(false);
       addToast(`${t ? t("toast_event_created") : "Événement créé avec succès !"}`, "success");
     } else {
@@ -529,6 +531,24 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
 
   const handleRemoveParticipant = (ev, name) => {
     const evExpenses = expenses.filter(e => e.event_id === ev.id);
+
+    // Bloquer si solde non réglé (Split uniquement — les budgets n'ont pas de répartition)
+    if (ev.event_type !== "budget") {
+      const evContribMap = {};
+      (contributions[ev.id] || []).forEach(c => { evContribMap[c.participant] = c.amount; });
+      const netBalance = computeNetBalance(evExpenses, evContribMap, name);
+      if (Math.abs(netBalance) > 1) {
+        setConfirm({
+          message: `Impossible de supprimer "${name}"`,
+          warnings: [`Ce participant a un solde non réglé de ${fmt(Math.abs(netBalance), currencySymbol(ev.currency))}. Soldez d'abord ce participant.`],
+          onConfirm: null,
+          onCancel: () => setConfirm(null),
+          confirmOnly: true,
+        });
+        return;
+      }
+    }
+
     const isPaidBy = evExpenses.some(e => e.paid_by === name && !e.is_unpaid);
     if (isPaidBy) {
       const count = evExpenses.filter(e => e.paid_by === name && !e.is_unpaid).length;
@@ -610,6 +630,10 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
                     <input type="number" min="0" step="1" style={S.input} placeholder="Ex: 100" value={editForm.nombre_invites || ""} onChange={e => setEditForm({ ...editForm, nombre_invites: e.target.value })} />
                   </div>
                 </div>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, cursor: "pointer", fontSize: 12, color: "#E65100", fontWeight: 600 }}>
+                  <input type="checkbox" checked={editForm.allow_multiple_contributions || false} onChange={e => setEditForm({ ...editForm, allow_multiple_contributions: e.target.checked })} />
+                  Autoriser les cotisations multiples par participant
+                </label>
               </div>
             )}
             <div style={{ display: "flex", gap: 8 }}>
@@ -799,6 +823,10 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
                   <input type="number" min="0" step="1" style={S.input} placeholder="Ex: 100" value={form.nombre_invites} onChange={e => setForm({ ...form, nombre_invites: e.target.value })} />
                 </div>
               </div>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, cursor: "pointer", fontSize: 12, color: "#E65100", fontWeight: 600 }}>
+                <input type="checkbox" checked={form.allow_multiple_contributions} onChange={e => setForm({ ...form, allow_multiple_contributions: e.target.checked })} />
+                Autoriser les cotisations multiples par participant
+              </label>
             </div>
           )}
 
