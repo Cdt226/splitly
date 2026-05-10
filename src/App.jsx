@@ -321,6 +321,9 @@ function AppInner() {
     setContributions({}); setHistory([]); setNotifications([]); setPendingActions([]);
   };
 
+  // Reset pulse notif quand la page notifications est ouverte — doit être avant tout early return
+  useEffect(() => { if (active === "notifications") setHasNewNotif(false); }, [active]);
+
   // Normaliser contributions — useMemo ici (avant les early returns) pour respecter les Rules of Hooks
   const contribNorm = useMemo(() => {
     const result = {};
@@ -373,9 +376,6 @@ function AppInner() {
 
   const unreadCount = notifications.filter(n => !n.is_read).length;
   const pendingCount = pendingActions.length;
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { if (active === "notifications") setHasNewNotif(false); }, [active]);
 
   // Résultats de recherche globale
   const showSearch = searchQuery.trim().length > 1;
