@@ -6,7 +6,7 @@ import { CATEGORIES, CURRENCIES, AVATAR_EMOJIS } from "../constants.js";
 import { fmt, currencySymbol, computeOwed, computeNetBalance, isSettled, isExactlySettled, settleStatus, validateAmount, computeTransactions, getAvatarMap, saveAvatarEmoji } from "../utils.js";
 import { S } from "../styles.js";
 import { Avatar, AvatarStack, EmojiPicker, Truncate, Badge, EmptyState, Chip, ParticipantInput, ParticipantToggle, Modal, ConfirmModal, Spinner, StatCard } from "../components/ui/index.jsx";
-import { createExpense, updateExpense, deleteExpense, upsertContribution } from "../supabase.js";
+import { createExpense, updateExpense, deleteExpense, upsertContribution, fetchAuditLogs } from "../supabase.js";
 import { useTranslation } from "../i18n.jsx";
 
 export function exportChargesPDF(ev, evExpenses) {
@@ -82,6 +82,9 @@ export function Expenses({ events, expenses, contributions, user, reload, isMobi
   const [unpaid, setUnpaid] = useState(false);
   const [showOCR, setShowOCR] = useState(false);
   const [showChoice, setShowChoice] = useState(false);
+  const [auditModal, setAuditModal] = useState(null);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [auditLoading, setAuditLoading] = useState(false);
 
   const closeAll = () => { setShowForm(false); setShowOCR(false); setShowChoice(false); };
   const empty = { eventId: defaultEventId || "", category: "", sub: "", detail: "", qty: 1, unit: "", paidBy: "", included: [], comment: "" };
@@ -105,6 +108,9 @@ export function Expenses({ events, expenses, contributions, user, reload, isMobi
     const finalIncluded = isBudgetEvent ? participants : form.included;
     if (!form.eventId || !form.category || !form.sub || !form.detail) {
       addToast(t("toast_fill_all"), "warning"); return;
+    }
+    if (form.detail.trim().length < 2) {
+      addToast(t ? t("validation_required") : "La description doit contenir au moins 2 caractères.", "warning"); return;
     }
     if (!isBudgetEvent && finalIncluded.length === 0) {
       addToast(t ? t("exp_select_person") : "Sélectionnez au moins une personne.", "warning"); return;
@@ -197,6 +203,15 @@ export function Expenses({ events, expenses, contributions, user, reload, isMobi
     });
   };
 
+  const handleShowHistory = async (ex) => {
+    setAuditModal(ex);
+    setAuditLogs([]);
+    setAuditLoading(true);
+    const { data } = await fetchAuditLogs('expenses', ex.id);
+    setAuditLogs(data || []);
+    setAuditLoading(false);
+  };
+
   // Filtrage et tri
   let filtered = filterEvent === "all" ? expenses : expenses.filter(e => e.event_id === filterEvent);
   if (filterCategory !== "all") filtered = filtered.filter(e => e.category === filterCategory);
@@ -221,6 +236,52 @@ export function Expenses({ events, expenses, contributions, user, reload, isMobi
   return (
     <div>
       {confirm && <ConfirmModal {...confirm} />}
+
+      {auditModal && (
+        <Modal title={`🕐 Historique — ${auditModal.detail}`} onClose={() => { setAuditModal(null); setAuditLogs([]); }}>
+          {auditLoading ? (
+            <div style={{ textAlign: "center", padding: 40 }}><Spinner fullscreen={false} /></div>
+          ) : auditLogs.length === 0 ? (
+            <EmptyState icon="📋" title="Aucun historique" subtitle="Aucune modification enregistrée pour cette charge." />
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: 400, overflowY: "auto" }}>
+              {auditLogs.map(log => (
+                <div key={log.id} style={{ background: "var(--bg-secondary)", borderRadius: 10, padding: "12px 14px", border: "1px solid var(--border)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20,
+                      background: log.action === 'INSERT' ? "#E8F5E9" : log.action === 'UPDATE' ? "#E3F2FD" : "#FFEBEE",
+                      color: log.action === 'INSERT' ? "#2E7D32" : log.action === 'UPDATE' ? "#1565C0" : "#C62828" }}>
+                      {log.action === 'INSERT' ? '✚ Ajout' : log.action === 'UPDATE' ? '✏️ Modification' : '🗑 Suppression'}
+                    </span>
+                    <span style={{ fontSize: 11, color: "var(--text-sub)" }}>
+                      {new Date(log.performed_at).toLocaleString('fr-FR')}
+                    </span>
+                  </div>
+                  {log.action === 'UPDATE' && log.old_values && log.new_values && (
+                    <div style={{ fontSize: 12, color: "var(--text-sub)", display: "flex", flexDirection: "column", gap: 3 }}>
+                      {log.old_values.detail !== log.new_values.detail && (
+                        <div>Détail : <span style={{ color: "#C62828", textDecoration: "line-through" }}>{log.old_values.detail}</span> → <span style={{ color: "#2E7D32" }}>{log.new_values.detail}</span></div>
+                      )}
+                      {String(log.old_values.unit_price) !== String(log.new_values.unit_price) && (
+                        <div>Montant : <span style={{ color: "#C62828" }}>{log.old_values.unit_price}</span> → <span style={{ color: "#2E7D32" }}>{log.new_values.unit_price}</span></div>
+                      )}
+                      {log.old_values.paid_by !== log.new_values.paid_by && (
+                        <div>Payé par : <span style={{ color: "#C62828" }}>{log.old_values.paid_by || "—"}</span> → <span style={{ color: "#2E7D32" }}>{log.new_values.paid_by || "—"}</span></div>
+                      )}
+                    </div>
+                  )}
+                  {log.action === 'INSERT' && log.new_values && (
+                    <div style={{ fontSize: 12, color: "var(--text-sub)" }}>
+                      {log.new_values.detail} · {log.new_values.unit_price} {log.new_values.qty > 1 ? `× ${log.new_values.qty}` : ""}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </Modal>
+      )}
+
       {!hideHeader && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
         <div>
           <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2 }}>Charges</h2>
@@ -539,12 +600,15 @@ export function Expenses({ events, expenses, contributions, user, reload, isMobi
                     {ex.is_unpaid && <Badge label="⏳ Non réglée" color="#FFF8E1" accent="#F57F17" />}
                     <AvatarStack names={inc} size={18} />
                   </div>
-                  {ev?.status === "open" && (
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <button onClick={() => startEdit(ex)} style={{ padding: "4px 10px", borderRadius: 8, border: "1.5px solid #e0e0e0", background: "#fff", fontSize: 12, cursor: "pointer" }}>✏️</button>
-                      <button onClick={() => handleDelete(ex)} style={{ padding: "4px 10px", borderRadius: 8, border: "1.5px solid #ffcdd2", background: "#fff5f5", fontSize: 12, cursor: "pointer" }}>🗑️</button>
-                    </div>
-                  )}
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button onClick={() => handleShowHistory(ex)} title="Historique" style={{ padding: "4px 10px", borderRadius: 8, border: "1.5px solid #e0e0e0", background: "#fff", fontSize: 12, cursor: "pointer" }}>🕐</button>
+                    {ev?.status === "open" && (
+                      <>
+                        <button onClick={() => startEdit(ex)} style={{ padding: "4px 10px", borderRadius: 8, border: "1.5px solid #e0e0e0", background: "#fff", fontSize: 12, cursor: "pointer" }}>✏️</button>
+                        <button onClick={() => handleDelete(ex)} style={{ padding: "4px 10px", borderRadius: 8, border: "1.5px solid #ffcdd2", background: "#fff5f5", fontSize: 12, cursor: "pointer" }}>🗑️</button>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -600,12 +664,15 @@ export function Expenses({ events, expenses, contributions, user, reload, isMobi
                     </td>
                     <td style={{ padding: "11px 12px" }}><AvatarStack names={inc} size={20} /></td>
                     <td style={{ padding: "11px 12px" }}>
-                      {ev?.status === "open" && (
-                        <div style={{ display: "flex", gap: 4 }}>
-                          <button onClick={() => startEdit(ex)} style={{ padding: "4px 8px", borderRadius: 7, border: "1.5px solid #e0e0e0", background: "#fff", fontSize: 12, cursor: "pointer" }}>✏️</button>
-                          <button onClick={() => handleDelete(ex)} style={{ padding: "4px 8px", borderRadius: 7, border: "1.5px solid #ffcdd2", background: "#fff5f5", fontSize: 12, cursor: "pointer" }}>🗑️</button>
-                        </div>
-                      )}
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <button onClick={() => handleShowHistory(ex)} title="Historique" style={{ padding: "4px 8px", borderRadius: 7, border: "1.5px solid #e0e0e0", background: "#fff", fontSize: 12, cursor: "pointer" }}>🕐</button>
+                        {ev?.status === "open" && (
+                          <>
+                            <button onClick={() => startEdit(ex)} style={{ padding: "4px 8px", borderRadius: 7, border: "1.5px solid #e0e0e0", background: "#fff", fontSize: 12, cursor: "pointer" }}>✏️</button>
+                            <button onClick={() => handleDelete(ex)} style={{ padding: "4px 8px", borderRadius: 7, border: "1.5px solid #ffcdd2", background: "#fff5f5", fontSize: 12, cursor: "pointer" }}>🗑️</button>
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );

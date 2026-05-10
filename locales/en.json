@@ -538,5 +538,19 @@
   "admin_broadcast_confirm": "Send to all users",
   "admin_broadcast_limit": "Limit: 1 send per 7 days",
   "admin_last_broadcast": "Last broadcast",
-  "admin_next_broadcast": "Next broadcast allowed"
+  "admin_next_broadcast": "Next broadcast allowed",
+  "ev_archive_confirm": "Archive this event",
+  "ev_archive_success": "archived.",
+  "ev_archived_events": "Archived events",
+  "ev_restore": "Restore",
+  "audit_history": "Change history",
+  "audit_no_history": "No history available",
+  "error_no_internet": "Connection lost — your changes won't be saved",
+  "error_server_down": "The service is temporarily unavailable.",
+  "error_session_expired": "Your session has expired. Please sign in again.",
+  "error_retry": "Retry",
+  "validation_required": "This field is required.",
+  "validation_invalid_amount": "Invalid amount (must be between 0.01 and 999,999).",
+  "validation_duplicate_name": "This name already exists.",
+  "validation_future_date": "The date cannot be in the future."
 }

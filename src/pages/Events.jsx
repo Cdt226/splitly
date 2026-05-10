@@ -5,7 +5,7 @@ import { CATEGORIES, CURRENCIES, AVATAR_EMOJIS } from "../constants.js";
 import { fmt, currencySymbol, computeOwed, computeNetBalance, isSettled, isExactlySettled, settleStatus, validateAmount, computeTransactions, getAvatarMap, saveAvatarEmoji } from "../utils.js";
 import { S } from "../styles.js";
 import { Avatar, AvatarStack, EmojiPicker, Truncate, Badge, EmptyState, Chip, ParticipantInput, ParticipantToggle, Modal, ConfirmModal, Spinner, StatCard } from "../components/ui/index.jsx";
-import { createEvent, updateEvent, deleteEvent, updateEventStatus, addParticipant, removeParticipant, fetchCotisations, exportPDF } from "../supabase.js";
+import { createEvent, updateEvent, deleteEvent, updateEventStatus, addParticipant, removeParticipant, fetchCotisations, exportPDF, archiveEvent, restoreEvent, fetchArchivedEvents } from "../supabase.js";
 import { getTemplates, saveTemplates } from "../hooks/storage.js";
 import { useTranslation } from "../i18n.jsx";
 import { Analytics } from "./Analytics.jsx";
@@ -246,6 +246,9 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
   const [templates, setTemplates] = useState(getTemplates());
   const [showTemplates, setShowTemplates] = useState(false);
   const [sortEvents, setSortEvents] = useState("date_desc");
+  const [archivedEvents, setArchivedEvents] = useState([]);
+  const [showArchived, setShowArchived] = useState(false);
+  const [loadingArchived, setLoadingArchived] = useState(false);
 
   const MAX_PARTICIPANTS = 30;
   const MAX_PARTICIPANTS_BUDGET = 150;
@@ -271,6 +274,9 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
     if (!editForm.name?.trim()) { addToast(t ? t("toast_name_required") : "Le nom est obligatoire.", "warning"); return; }
     if (editForm.name.trim().length > 30) { addToast(t ? t("ev_name_too_long") : "Nom trop long (max 30 car.).", "warning"); return; }
     if (!editForm.date) { addToast(t ? t("ev_date_required") : "La date est obligatoire.", "warning"); return; }
+    const editInputDate = new Date(editForm.date);
+    const editTomorrow = new Date(); editTomorrow.setDate(editTomorrow.getDate() + 1); editTomorrow.setHours(23, 59, 59, 999);
+    if (editInputDate > editTomorrow) { addToast(t ? t("validation_future_date") : "La date ne peut pas être dans le futur de plus d'1 jour.", "warning"); return; }
 
     // Bloquer le changement de type si des données existent
     if (editForm.event_type !== editingEv.event_type) {
@@ -347,6 +353,9 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
     if (form.name.trim().length > MAX_NAME_LENGTH) { addToast(t ? t("ev_name_too_long") : `Le nom ne peut pas dépasser ${MAX_NAME_LENGTH} caractères.`, "warning"); return; }
     if (!form.date) { addToast(t ? t("ev_date_required") : "La date est obligatoire.", "warning"); return; }
     if (form.participants.length < 1) { addToast(t ? t("ev_min_participant") : "Minimum 1 participant requis.", "warning"); return; }
+    const inputDate = new Date(form.date);
+    const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1); tomorrow.setHours(23, 59, 59, 999);
+    if (inputDate > tomorrow) { addToast(t ? t("validation_future_date") : "La date ne peut pas être dans le futur de plus d'1 jour.", "warning"); return; }
     const maxP = form.event_type === "budget" ? MAX_PARTICIPANTS_BUDGET : MAX_PARTICIPANTS;
     if (form.participants.length > maxP) { addToast(`${t ? t("ev_max_participants_type") : "Maximum"} ${maxP} ${t ? t("ev_participants_for") : "participants pour un événement"} ${form.event_type === "budget" ? "Budget" : "Split"}.`, "warning"); return; }
     setLoading(true);
@@ -368,18 +377,43 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
     setLoading(false);
   };
 
-  const handleDelete = (ev) => {
+  const handleArchive = (ev) => {
+    const evExpenses = expenses.filter(e => e.event_id === ev.id);
+    const evTotal = evExpenses.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
+    const participantsList = (ev.event_participants || []).map(p => p.name);
     setConfirm({
-      message: `Supprimer définitivement "${ev.name}" et toutes ses charges ?`,
-      warnings: ["Cette action est irréversible."],
+      message: `Archiver "${ev.name}" ?`,
+      warnings: [
+        `${evExpenses.length} charge(s) · ${fmt(evTotal, currencySymbol(ev.currency))} · ${participantsList.length} participant(s)`,
+        "Cet événement sera archivé et ne sera plus visible. Les données sont conservées.",
+      ],
       onConfirm: async () => {
-        await deleteEvent(ev.id);
+        await archiveEvent(ev.id, user.id);
         await reload();
         setConfirm(null);
-        addToast(`"${ev.name}" ${t ? t("ev_deleted_msg") : "supprimé."}`, "info");
+        addToast(`"${ev.name}" ${t ? t("ev_archive_success") : "archivé."}`, "info");
       },
       onCancel: () => setConfirm(null),
     });
+  };
+
+  const loadArchivedEvents = useCallback(async () => {
+    setLoadingArchived(true);
+    const { data } = await fetchArchivedEvents(user.id);
+    setArchivedEvents(data || []);
+    setLoadingArchived(false);
+  }, [user?.id]);
+
+  const handleRestore = async (ev) => {
+    await restoreEvent(ev.id);
+    await Promise.all([reload(), loadArchivedEvents()]);
+    addToast(`"${ev.name}" ${t ? t("ev_restore") : "restauré."}`, "success");
+  };
+
+  const handleToggleArchived = () => {
+    const next = !showArchived;
+    setShowArchived(next);
+    if (next) loadArchivedEvents();
   };
 
   const handleClose = async (ev) => {
@@ -513,6 +547,7 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
   const handleAddParticipant = async (ev) => {
     const name = newParticipant.trim();
     if (!name) { addToast(t ? t("toast_participant_empty") : "Le prénom ne peut pas être vide.", "warning"); return; }
+    if (name.length < 2) { addToast(t ? t("validation_required") : "Minimum 2 caractères requis.", "warning"); return; }
     if (name.length > MAX_PARTICIPANT_NAME) { addToast(t ? t("toast_participant_too_long") : `Le prénom ne peut pas dépasser ${MAX_PARTICIPANT_NAME} caractères.`, "warning"); return; }
     const currentCount = (ev.event_participants || []).length;
     if (currentCount >= (ev?.event_type === "budget" ? MAX_PARTICIPANTS_BUDGET : MAX_PARTICIPANTS)) {
@@ -721,6 +756,10 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
               📋 Modèles ({templates.length})
             </button>
           )}
+          <button onClick={handleToggleArchived}
+            style={{ ...S.btnGhost, fontSize: 12, padding: "8px 14px" }}>
+            📦 {t ? t("ev_archived_events") : "Archivés"}{archivedEvents.length > 0 && showArchived ? ` (${archivedEvents.length})` : ""}
+          </button>
           <button onClick={() => { setShowNew(!showNew); setShowTemplates(false); }} style={S.btnDark}>
             {showNew ? "× Fermer" : "+ Nouveau"}
           </button>
@@ -971,7 +1010,7 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
                             🔒
                           </button>
                         )}
-                        <button onClick={e => { e.stopPropagation(); handleDelete(ev); }} style={{ padding: isMobile ? "4px 8px" : "5px 12px", borderRadius: 8, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 11, cursor: "pointer", fontWeight: 600, whiteSpace: "nowrap" }}>
+                        <button onClick={e => { e.stopPropagation(); handleArchive(ev); }} title={t ? t("ev_archive_confirm") : "Archiver"} style={{ padding: isMobile ? "4px 8px" : "5px 12px", borderRadius: 8, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 11, cursor: "pointer", fontWeight: 600, whiteSpace: "nowrap" }}>
                           🗑
                         </button>
                       </div>
@@ -983,6 +1022,47 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
           })}
           </div>
         </>
+      )}
+
+      {/* ── ÉVÉNEMENTS ARCHIVÉS ── */}
+      {showArchived && (
+        <div style={{ marginTop: 28 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-sub)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+            📦 {t ? t("ev_archived_events") : "Événements archivés"}
+            {loadingArchived && <span style={{ fontSize: 11, color: "var(--text-sub)", fontWeight: 400 }}>Chargement...</span>}
+          </div>
+          {!loadingArchived && archivedEvents.length === 0 && (
+            <EmptyState icon="📦" title="Aucun événement archivé" subtitle="Les événements archivés apparaîtront ici." />
+          )}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {archivedEvents.map(ev => {
+              const evExp = expenses.filter(e => e.event_id === ev.id);
+              const evTotal = evExp.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
+              const participantsList = (ev.event_participants || []).map(p => p.name);
+              return (
+                <div key={ev.id} style={{ background: "var(--bg-secondary)", borderRadius: 14, padding: "14px 18px", border: "1px solid var(--border)", opacity: 0.8 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between", flexWrap: "wrap" }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
+                        <span>📦</span>
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.name}</span>
+                        <span style={{ fontSize: 10, padding: "1px 7px", borderRadius: 20, background: "var(--hover-bg)", color: "var(--text-sub)", fontWeight: 700, flexShrink: 0 }}>Archivé</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: "var(--text-sub)" }}>
+                        {ev.date} · {participantsList.length} participant(s) · {evExp.length} charge(s) · {fmt(evTotal, currencySymbol(ev.currency))}
+                        {ev.archived_at && ` · ${new Date(ev.archived_at).toLocaleDateString('fr-FR')}`}
+                      </div>
+                    </div>
+                    <button onClick={() => handleRestore(ev)}
+                      style={{ padding: "6px 16px", borderRadius: 9, border: "1.5px solid #c8e6c9", background: "#E8F5E9", color: "#2E7D32", fontSize: 12, cursor: "pointer", fontWeight: 700, flexShrink: 0, fontFamily: "inherit" }}>
+                      ↩ {t ? t("ev_restore") : "Restaurer"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       )}
       </div>
       )}

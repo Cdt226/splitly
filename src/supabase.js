@@ -243,6 +243,7 @@ export async function fetchEvents(userId) {
     .from('events')
     .select('*, event_participants(name), invitations(email, role, status)')
     .eq('admin_id', userId)
+    .neq('archived', true)
     .order('created_at', { ascending: false });
   return { data, error };
 }
@@ -333,6 +334,34 @@ export async function deleteEvent(eventId) {
   return await supabase.from('events').delete().eq('id', eventId);
 }
 
+export async function archiveEvent(eventId, userId) {
+  const { data, error } = await supabase
+    .from('events')
+    .update({ archived: true, archived_at: new Date().toISOString(), archived_by: userId })
+    .eq('id', eventId)
+    .select().single();
+  return { data, error };
+}
+
+export async function restoreEvent(eventId) {
+  const { data, error } = await supabase
+    .from('events')
+    .update({ archived: false, archived_at: null, archived_by: null })
+    .eq('id', eventId)
+    .select().single();
+  return { data, error };
+}
+
+export async function fetchArchivedEvents(userId) {
+  const { data, error } = await supabase
+    .from('events')
+    .select('*, event_participants(name)')
+    .eq('admin_id', userId)
+    .eq('archived', true)
+    .order('archived_at', { ascending: false });
+  return { data, error };
+}
+
 // ─── PARTICIPANTS ─────────────────────────────────────────────
 export async function addParticipant(eventId, name, actorId = null) {
   const { data, error } = await supabase
@@ -397,7 +426,10 @@ export async function createExpense(expense, userId) {
     is_unpaid: expense.is_unpaid || false,
     comment: expense.comment || null,
   }).select().single();
-  if (!error) await addHistory({ eventId: expense.eventId, action: 'Charge ajoutée', actorId: userId, before: null, after: data });
+  if (!error) {
+    await addHistory({ eventId: expense.eventId, action: 'Charge ajoutée', actorId: userId, before: null, after: data });
+    await logAudit('expenses', data.id, 'INSERT', null, data, userId);
+  }
   return { data, error };
 }
 
@@ -410,13 +442,19 @@ export async function updateExpense(expenseId, updates, userId, before) {
     is_unpaid: updates.is_unpaid || false,
     comment: updates.comment || null,
   }).eq('id', expenseId).select().single();
-  if (!error) await addHistory({ eventId: before.event_id, action: 'Charge modifiée', actorId: userId, before, after: data });
+  if (!error) {
+    await addHistory({ eventId: before.event_id, action: 'Charge modifiée', actorId: userId, before, after: data });
+    await logAudit('expenses', expenseId, 'UPDATE', before, data, userId);
+  }
   return { data, error };
 }
 
 export async function deleteExpense(expense, userId) {
   const { error } = await supabase.from('expenses').delete().eq('id', expense.id);
-  if (!error) await addHistory({ eventId: expense.event_id, action: 'Charge supprimée', actorId: userId, before: expense, after: null });
+  if (!error) {
+    await addHistory({ eventId: expense.event_id, action: 'Charge supprimée', actorId: userId, before: expense, after: null });
+    await logAudit('expenses', expense.id, 'DELETE', expense, null, userId);
+  }
   return { error };
 }
 
@@ -471,6 +509,26 @@ export async function invalidateHistory(historyId, eventId) {
   const { error } = await supabase.from('history').update({ invalidated: true })
     .eq('event_id', eventId).gte('created_at', entry.created_at);
   return { error };
+}
+
+export async function logAudit(tableName, recordId, action, oldValues, newValues, userId) {
+  try {
+    await supabase.from('audit_logs').insert({
+      table_name: tableName, record_id: recordId, action,
+      old_values: oldValues ?? null, new_values: newValues ?? null,
+      performed_by: userId || null,
+    });
+  } catch {}
+}
+
+export async function fetchAuditLogs(tableName, recordId) {
+  const { data, error } = await supabase
+    .from('audit_logs')
+    .select('*')
+    .eq('table_name', tableName)
+    .eq('record_id', recordId)
+    .order('performed_at', { ascending: false });
+  return { data, error };
 }
 
 // ─── NOTIFICATIONS ────────────────────────────────────────────

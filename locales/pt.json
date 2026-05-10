@@ -538,5 +538,19 @@
   "admin_broadcast_confirm": "Enviar para todos os utilizadores",
   "admin_broadcast_limit": "Limite: 1 envio por 7 dias",
   "admin_last_broadcast": "Último envio",
-  "admin_next_broadcast": "Próximo envio possível"
+  "admin_next_broadcast": "Próximo envio possível",
+  "ev_archive_confirm": "Arquivar este evento",
+  "ev_archive_success": "arquivado.",
+  "ev_archived_events": "Eventos arquivados",
+  "ev_restore": "Restaurar",
+  "audit_history": "Histórico de alterações",
+  "audit_no_history": "Sem histórico disponível",
+  "error_no_internet": "Conexão perdida — suas alterações não serão salvas",
+  "error_server_down": "O serviço está temporariamente indisponível.",
+  "error_session_expired": "Sua sessão expirou. Por favor, entre novamente.",
+  "error_retry": "Tentar novamente",
+  "validation_required": "Este campo é obrigatório.",
+  "validation_invalid_amount": "Valor inválido (deve estar entre 0.01 e 999.999).",
+  "validation_duplicate_name": "Este nome já existe.",
+  "validation_future_date": "A data não pode ser no futuro."
 }

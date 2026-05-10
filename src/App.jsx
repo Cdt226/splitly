@@ -50,8 +50,9 @@ const CotisationsPage  = lazy(() => import("./pages/CotisationsPage.jsx").then(m
 
 function AppInner() {
   const [isOnline, setIsOnline] = useState(() => typeof navigator !== "undefined" ? navigator.onLine : true);
+  const [serverError, setServerError] = useState(false);
   useEffect(() => {
-    const on = () => setIsOnline(true);
+    const on = () => { setIsOnline(true); };
     const off = () => setIsOnline(false);
     window.addEventListener("online", on);
     window.addEventListener("offline", off);
@@ -191,6 +192,7 @@ function AppInner() {
     try {
     const { data: evData } = await fetchEvents(user.id);
     if (!evData) return;
+    setServerError(false);
     setEvents(evData);
     const allExp = [], allContrib = {}, allHist = [];
     for (const ev of evData) {
@@ -208,7 +210,7 @@ function AppInner() {
       const { data: paData } = await fetchAllPendingActions(evData.map(e => e.id));
       if (paData) setPendingActions(paData);
     }
-    } catch {} // Les erreurs réseau sont silencieuses — l'UI conserve son état précédent
+    } catch { if (navigator.onLine) setServerError(true); }
   }, [user]);
 
   useEffect(() => { if (user) loadAll(); }, [user, loadAll]);
@@ -399,8 +401,20 @@ function AppInner() {
       `}</style>
       <ToastContainer toasts={toasts} removeToast={removeToast} />
       {!isOnline && (
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 9999, background: "#F57F17", color: "#fff", textAlign: "center", padding: "8px 16px", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-          ⚠️ {t("app_offline_banner")}
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 9999, background: "#F57F17", color: "#fff", textAlign: "center", padding: "8px 16px", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 12 }}>
+          ⚠️ {t("error_no_internet") || t("app_offline_banner")}
+          <button onClick={loadAll} style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.4)", borderRadius: 8, padding: "3px 12px", color: "#fff", fontSize: 12, cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
+            {t("error_retry") || "Réessayer"}
+          </button>
+        </div>
+      )}
+      {serverError && isOnline && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 9998, background: "#C62828", color: "#fff", textAlign: "center", padding: "8px 16px", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 12 }}>
+          🔌 {t("error_server_down") || "Le service est temporairement indisponible."}
+          <button onClick={() => { setServerError(false); loadAll(); }} style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.4)", borderRadius: 8, padding: "3px 12px", color: "#fff", fontSize: 12, cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
+            {t("error_retry") || "Réessayer"}
+          </button>
+          <button onClick={() => setServerError(false)} style={{ background: "none", border: "1px solid rgba(255,255,255,0.4)", borderRadius: 8, padding: "3px 10px", color: "#fff", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>×</button>
         </div>
       )}
       {showOnboarding && <OnboardingWizard onComplete={() => setShowOnboarding(false)} />}

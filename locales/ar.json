@@ -538,5 +538,19 @@
   "admin_broadcast_confirm": "إرسال إلى جميع المستخدمين",
   "admin_broadcast_limit": "الحد: إرسال واحد كل 7 أيام",
   "admin_last_broadcast": "آخر إرسال",
-  "admin_next_broadcast": "الإرسال التالي الممكن"
+  "admin_next_broadcast": "الإرسال التالي الممكن",
+  "ev_archive_confirm": "أرشفة هذا الحدث",
+  "ev_archive_success": "تمت الأرشفة.",
+  "ev_archived_events": "الأحداث المؤرشفة",
+  "ev_restore": "استعادة",
+  "audit_history": "سجل التغييرات",
+  "audit_no_history": "لا يوجد سجل",
+  "error_no_internet": "انقطع الاتصال — لن يتم حفظ تغييراتك",
+  "error_server_down": "الخدمة غير متاحة مؤقتاً.",
+  "error_session_expired": "انتهت جلستك. يرجى تسجيل الدخول مجدداً.",
+  "error_retry": "إعادة المحاولة",
+  "validation_required": "هذا الحقل مطلوب.",
+  "validation_invalid_amount": "مبلغ غير صالح (يجب أن يكون بين 0.01 و 999,999).",
+  "validation_duplicate_name": "هذا الاسم موجود بالفعل.",
+  "validation_future_date": "لا يمكن أن يكون التاريخ في المستقبل."
 }
