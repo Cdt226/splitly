@@ -27,15 +27,127 @@ function detectMimeFromBytes(base64) {
 }
 
 // ─── Logger ───────────────────────────────────────────────────
-async function logOCR(client, userId, success, errorReason, levelRejected) {
+async function logOCR(client, userId, success, errorReason, levelRejected, classificationMethod = null) {
   try {
     await client.from('ocr_logs').insert({
       user_id: userId,
       success,
       error_reason: errorReason ?? null,
       level_rejected: levelRejected ?? null,
+      classification_method: classificationMethod ?? null,
     });
   } catch {}
+}
+
+// ─── Promise.race timeout (3s pour les classifieurs) ─────────
+function withTimeout(promise, ms = 3000) {
+  const timeout = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error(`Timeout (${ms}ms)`)), ms)
+  );
+  return Promise.race([promise, timeout]);
+}
+
+// ─── Tentative 1 : Claude Vision ─────────────────────────────
+async function classifyWithClaude(image, detectedMime) {
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY absent');
+  const res = await withTimeout(
+    fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-opus-4-20250514',
+        max_tokens: 150,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: detectedMime, data: image } },
+            { type: 'text', text: 'Look at this image. Is it a photo of a receipt or invoice? Reply ONLY in JSON: {"isReceipt": boolean, "reason": string}. Be strict: photos of people, landscapes, animals, screenshots unrelated to commerce must return isReceipt: false.' },
+          ],
+        }],
+      }),
+    })
+  );
+  const data = await res.json();
+  const rawText = data.content?.[0]?.text || '{}';
+  const match = rawText.match(/\{[\s\S]*?\}/);
+  const parsed = match ? JSON.parse(match[0]) : {};
+  if (typeof parsed.isReceipt !== 'boolean') throw new Error('Réponse Claude invalide');
+  return { isReceipt: parsed.isReceipt, reason: parsed.reason || '', method: 'claude' };
+}
+
+// ─── Tentative 2 : Google Cloud Vision ───────────────────────
+async function classifyWithGoogle(image) {
+  if (!process.env.GOOGLE_VISION_API_KEY) throw new Error('GOOGLE_VISION_API_KEY absent');
+  const res = await withTimeout(
+    fetch(`https://vision.googleapis.com/v1/images:annotate?key=${process.env.GOOGLE_VISION_API_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requests: [{
+          image: { content: image },
+          features: [
+            { type: 'LABEL_DETECTION', maxResults: 10 },
+            { type: 'TEXT_DETECTION', maxResults: 1 },
+          ],
+        }],
+      }),
+    })
+  );
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message || 'Erreur Google Vision');
+  const response = data.responses?.[0] || {};
+
+  const COMMERCIAL_LABELS = ['receipt', 'invoice', 'document', 'paper', 'font', 'text', 'number'];
+  const labels = (response.labelAnnotations || []).map(l => l.description?.toLowerCase() || '');
+  const hasCommercialLabel = labels.some(l => COMMERCIAL_LABELS.some(kw => l.includes(kw)));
+
+  const detectedText = response.textAnnotations?.[0]?.description || '';
+  const hasNumericText = /\d+[.,]\d{2}/.test(detectedText);
+
+  const isReceipt = hasCommercialLabel && hasNumericText;
+  return { isReceipt, reason: 'Google Vision labels', method: 'google' };
+}
+
+// ─── Tentative 3 : Heuristique locale ────────────────────────
+function classifyHeuristic(image) {
+  // Recherche de patterns typiques d'un reçu dans les octets bruts (métadonnées, EXIF, texte embarqué)
+  const rawText = Buffer.from(image, 'base64').toString('latin1');
+  const hasAmount  = /\d+[.,]\d{2}/.test(rawText);
+  const hasDate    = /\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}/.test(rawText);
+  const textBlocks = (rawText.match(/[\x20-\x7E]{4,}/g) || []).length;
+  const isReceipt  = textBlocks > 3 && hasAmount && hasDate;
+  return { isReceipt, confidence: isReceipt ? 0.6 : 0.4, method: 'heuristic' };
+}
+
+// ─── Orchestrateur de classification (niveau 2) ───────────────
+async function classifyImage(image, detectedMime) {
+  // Tentative 1 — Claude Vision
+  try {
+    return await classifyWithClaude(image, detectedMime);
+  } catch (err) {
+    console.error('[OCR Fallback] Claude Vision failed:', err.message);
+  }
+
+  // Tentative 2 — Google Cloud Vision
+  try {
+    return await classifyWithGoogle(image);
+  } catch (err) {
+    console.error('[OCR Fallback] Google Vision failed:', err.message);
+  }
+
+  // Tentative 3 — Heuristique locale (ne peut jamais échouer)
+  try {
+    return classifyHeuristic(image);
+  } catch (err) {
+    console.error('[OCR Fallback] Heuristic failed:', err.message);
+  }
+
+  // Tentative 4 — Fallback final
+  return { isReceipt: true, confidence: 0, method: 'unverified' };
 }
 
 // ─── Fetch with timeout ───────────────────────────────────────
@@ -118,55 +230,15 @@ export default async function handler(req, res) {
     });
   }
 
-  // ── Niveau 2 : pré-classification Claude Vision ───────────────
-  let isReceipt = true;
-  let claudeReason = '';
-  try {
-    const claudeRes = await fetchWithTimeout(
-      'https://api.anthropic.com/v1/messages',
-      {
-        method: 'POST',
-        headers: {
-          'x-api-key': process.env.ANTHROPIC_API_KEY,
-          'anthropic-version': '2023-06-01',
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 150,
-          messages: [{
-            role: 'user',
-            content: [
-              {
-                type: 'image',
-                source: { type: 'base64', media_type: detectedMime, data: image },
-              },
-              {
-                type: 'text',
-                text: 'Look at this image. Is it a photo of a receipt or invoice? Reply ONLY in JSON: {"isReceipt": boolean, "reason": string}. Be strict: photos of people, landscapes, animals, screenshots unrelated to commerce must return isReceipt: false.',
-              },
-            ],
-          }],
-        }),
-      },
-      15000
-    );
-    const claudeData = await claudeRes.json();
-    const rawText = claudeData.content?.[0]?.text || '{}';
-    const match = rawText.match(/\{[\s\S]*?\}/);
-    const parsed = match ? JSON.parse(match[0]) : {};
-    isReceipt = parsed.isReceipt !== false; // default true on parse error
-    claudeReason = parsed.reason || '';
-  } catch {
-    // Si Claude échoue, on continue vers Azure
-    isReceipt = true;
-  }
+  // ── Niveau 2 : chaîne de fallback classification ─────────────
+  const classification = await classifyImage(image, detectedMime);
+  const { isReceipt, reason: classifyReason, method: classificationMethod } = classification;
 
   if (!isReceipt) {
-    const reason = claudeReason
-      ? `Ce document ne semble pas être un reçu : ${claudeReason}`
+    const reason = classifyReason
+      ? `Ce document ne semble pas être un reçu : ${classifyReason}`
       : 'Ce document ne semble pas être un reçu ou une facture.';
-    await logOCR(supabase, user.id, false, reason, 2);
+    await logOCR(supabase, user.id, false, reason, 2, classificationMethod);
     return res.status(422).json({ error: reason, isReceipt: false, level_rejected: 2 });
   }
 
@@ -218,7 +290,7 @@ export default async function handler(req, res) {
 
     analyzeResult = pollData.analyzeResult;
   } catch (err) {
-    await logOCR(supabase, user.id, false, err.message, 3);
+    await logOCR(supabase, user.id, false, err.message, 3, classificationMethod);
     return res.status(503).json({
       error: `Erreur OCR : ${err.message}`,
       level_rejected: 3,
@@ -250,17 +322,19 @@ export default async function handler(req, res) {
   }).filter(i => i.description);
 
   const result = {
-    merchant:          fields.MerchantName?.content || fields.MerchantName?.valueString || '',
-    date:              fields.TransactionDate?.valueDate || fields.TransactionDate?.content || '',
-    total:             getFieldValue(fields.Total),
-    tax:               getFieldValue(fields.TotalTax),
-    currency:          fields.CurrencyCode?.content || 'EUR',
+    merchant:             fields.MerchantName?.content || fields.MerchantName?.valueString || '',
+    date:                 fields.TransactionDate?.valueDate || fields.TransactionDate?.content || '',
+    total:                getFieldValue(fields.Total),
+    tax:                  getFieldValue(fields.TotalTax),
+    currency:             fields.CurrencyCode?.content || 'EUR',
     items,
-    confidence:        Math.round(confidence * 100) / 100,
+    confidence:           Math.round(confidence * 100) / 100,
     needsManualReview,
+    verificationStatus:   classificationMethod === 'unverified' ? 'unverified' : 'verified',
+    classificationMethod,
   };
 
-  await logOCR(supabase, user.id, true, null, null);
+  await logOCR(supabase, user.id, true, null, null, classificationMethod);
 
   return res.status(200).json(result);
 }
