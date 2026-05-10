@@ -23,6 +23,13 @@ export function SuperAdminPage({ user, isMobile, addToast }) {
   const [search, setSearch] = useState("");
   const [filterRole, setFilterRole] = useState("all");
   const [updatingReport, setUpdatingReport] = useState(null);
+  const [ocrLogs, setOcrLogs] = useState([]);
+  const [lastBroadcast, setLastBroadcast] = useState(null);
+  const [broadcastSubject, setBroadcastSubject] = useState("");
+  const [broadcastBody, setBroadcastBody] = useState("");
+  const [sendingBroadcast, setSendingBroadcast] = useState(false);
+  const [broadcastSent, setBroadcastSent] = useState(null);
+  const [showBroadcastConfirm, setShowBroadcastConfirm] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -35,6 +42,23 @@ export function SuperAdminPage({ user, isMobile, addToast }) {
     try {
       const { data: rData } = await fetchReports();
       setReports(rData || []);
+    } catch {}
+    try {
+      const { data: ocrData } = await supabase
+        .from('ocr_logs')
+        .select('user_id, success, level_rejected, classification_method, created_at')
+        .order('created_at', { ascending: false })
+        .limit(5000);
+      setOcrLogs(ocrData || []);
+    } catch {}
+    try {
+      const { data: blData } = await supabase
+        .from('broadcast_logs')
+        .select('sent_at, recipient_count, subject')
+        .order('sent_at', { ascending: false })
+        .limit(1)
+        .single();
+      setLastBroadcast(blData || null);
     } catch {}
     setLoading(false);
   };
@@ -61,7 +85,62 @@ export function SuperAdminPage({ user, isMobile, addToast }) {
     { key: "overview",  icon: "📊", label: "Vue d'ensemble" },
     { key: "users",     icon: "👥", label: "Utilisateurs" },
     { key: "reports",   icon: "🚨", label: `Signalements${openReports > 0 ? ` (${openReports})` : ""}` },
+    { key: "ocr",       icon: "📷", label: "OCR Stats" },
+    { key: "broadcast", icon: "📣", label: "Email groupé" },
   ];
+
+  // ── OCR Stats (calculés côté client) ──────────────────────
+  const ocrTotal = ocrLogs.length;
+  const ocrSuccess = ocrLogs.filter(l => l.success).length;
+  const ocrSuccessRate = ocrTotal > 0 ? ((ocrSuccess / ocrTotal) * 100).toFixed(1) : 0;
+  const ocrMethods = {};
+  ocrLogs.forEach(l => { if (l.classification_method) ocrMethods[l.classification_method] = (ocrMethods[l.classification_method] || 0) + 1; });
+  const ocrLevels = {};
+  ocrLogs.filter(l => !l.success).forEach(l => { const k = l.level_rejected || 'unknown'; ocrLevels[k] = (ocrLevels[k] || 0) + 1; });
+  const ocrByUser = {};
+  ocrLogs.forEach(l => {
+    if (!ocrByUser[l.user_id]) ocrByUser[l.user_id] = { total: 0, success: 0 };
+    ocrByUser[l.user_id].total++;
+    if (l.success) ocrByUser[l.user_id].success++;
+  });
+  const ocrTopUsers = Object.entries(ocrByUser)
+    .sort((a, b) => b[1].total - a[1].total)
+    .slice(0, 50)
+    .map(([uid, stats]) => {
+      const u = users.find(x => x.id === uid);
+      return { uid, email: u?.email || uid.slice(0, 8) + '…', ...stats };
+    });
+  const nextBroadcastAllowed = lastBroadcast
+    ? new Date(new Date(lastBroadcast.sent_at).getTime() + 7 * 24 * 60 * 60 * 1000)
+    : null;
+  const broadcastBlocked = nextBroadcastAllowed && nextBroadcastAllowed > new Date();
+
+  const handleSendBroadcast = async () => {
+    setShowBroadcastConfirm(false);
+    setSendingBroadcast(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/api/send-broadcast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+        body: JSON.stringify({ subject: broadcastSubject, body: broadcastBody }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        addToast(`✉️ Email envoyé à ${data.sent} utilisateur${data.sent > 1 ? 's' : ''}.`, "success");
+        setBroadcastSent(data.sent);
+        setBroadcastSubject("");
+        setBroadcastBody("");
+        await load();
+      } else if (res.status === 429) {
+        const next = data.nextAllowed ? new Date(data.nextAllowed).toLocaleDateString('fr-FR') : '7 jours';
+        addToast(`Limite atteinte — prochain envoi possible le ${next}.`, "warning");
+      } else {
+        addToast("Erreur lors de l'envoi.", "error");
+      }
+    } catch { addToast("Erreur réseau.", "error"); }
+    setSendingBroadcast(false);
+  };
 
   const reportCategoryLabel = {
     bug: "🐛 Bug technique",
@@ -452,6 +531,168 @@ export function SuperAdminPage({ user, isMobile, addToast }) {
       )}
       </div>
       )} {/* fin onglet users */}
+
+      {/* ── OCR STATS ── */}
+      {activeTab === "ocr" && (
+        <div>
+          {loading ? (
+            <div style={{ textAlign: "center", padding: 60 }}><Spinner fullscreen={false} /></div>
+          ) : (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+                {[
+                  { label: t("admin_total_scans"), value: ocrTotal, sub: `${ocrSuccess} réussis`, accent: "#1565C0" },
+                  { label: t("admin_success_rate"), value: `${ocrSuccessRate}%`, sub: `${ocrTotal - ocrSuccess} échecs`, accent: Number(ocrSuccessRate) >= 80 ? "#2E7D32" : "#C62828" },
+                  { label: "Azure (L1)", value: ocrMethods.azure || 0, sub: "Document Intelligence", accent: "#0078D4" },
+                  { label: "Fallbacks (L2+)", value: (ocrMethods.claude || 0) + (ocrMethods.google || 0) + (ocrMethods.heuristic || 0), sub: "Claude · Google · Heuristique", accent: "#F57F17" },
+                ].map(k => (
+                  <div key={k.label} style={{ background: "var(--bg-secondary)", borderRadius: 14, padding: "16px 18px", border: "1px solid var(--border)", borderLeft: `4px solid ${k.accent}` }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-sub)", textTransform: "uppercase", letterSpacing: 0.9, marginBottom: 6 }}>{k.label}</div>
+                    <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'Playfair Display', serif", color: "var(--text)" }}>{k.value}</div>
+                    <div style={{ fontSize: 11, color: "var(--text-sub)", marginTop: 3 }}>{k.sub}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16, marginBottom: 16 }}>
+                <div style={{ background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border)", padding: 20 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 16 }}>📊 {t("admin_method_breakdown")}</div>
+                  {[
+                    { label: "Azure L1",          value: ocrMethods.azure      || 0, color: "#0078D4" },
+                    { label: "Claude Vision L2",  value: ocrMethods.claude     || 0, color: "#6A1B9A" },
+                    { label: "Google Vision L3",  value: ocrMethods.google     || 0, color: "#2E7D32" },
+                    { label: "Heuristique L4",    value: ocrMethods.heuristic  || 0, color: "#F57F17" },
+                    { label: "Non vérifié",       value: ocrMethods.unverified || 0, color: "#888" },
+                  ].map(s => (
+                    <div key={s.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 10, marginBottom: 10, borderBottom: "1px solid var(--border)" }}>
+                      <span style={{ fontSize: 13, color: "var(--text-sub)" }}>{s.label}</span>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: s.color }}>{s.value}</span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border)", padding: 20 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 16 }}>❌ Rejections par niveau</div>
+                  {Object.keys(ocrLevels).length === 0 ? (
+                    <div style={{ color: "var(--text-sub)", fontSize: 13 }}>Aucun rejet enregistré.</div>
+                  ) : Object.entries(ocrLevels).map(([level, count]) => (
+                    <div key={level} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 10, marginBottom: 10, borderBottom: "1px solid var(--border)" }}>
+                      <span style={{ fontSize: 13, color: "var(--text-sub)" }}>{level}</span>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: "#C62828" }}>{count}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border)", overflow: "hidden" }}>
+                <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)", fontSize: 14, fontWeight: 700, color: "var(--text)" }}>
+                  👤 Top utilisateurs (par volume OCR)
+                </div>
+                {ocrTopUsers.length === 0 ? (
+                  <EmptyState icon="📷" title="Aucune donnée OCR" subtitle="Les scans apparaîtront ici." />
+                ) : (
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                      <thead>
+                        <tr style={{ background: "var(--hover-bg)" }}>
+                          {["Utilisateur", "Scans", "Réussis", "Taux"].map(h => (
+                            <th key={h} style={{ padding: "10px 16px", fontSize: 10, fontWeight: 700, color: "var(--text-sub)", textAlign: "left", textTransform: "uppercase", letterSpacing: 0.7 }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ocrTopUsers.map((u, i) => (
+                          <tr key={u.uid} style={{ borderBottom: i < ocrTopUsers.length - 1 ? "1px solid var(--border)" : "none" }}
+                            onMouseEnter={e => e.currentTarget.style.background = "var(--hover-bg)"}
+                            onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                            <td style={{ padding: "10px 16px", fontSize: 13, color: "var(--text)" }}>{u.email}</td>
+                            <td style={{ padding: "10px 16px", fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{u.total}</td>
+                            <td style={{ padding: "10px 16px", fontSize: 13, fontWeight: 700, color: "#2E7D32" }}>{u.success}</td>
+                            <td style={{ padding: "10px 16px", fontSize: 13, color: "var(--text-sub)" }}>{u.total > 0 ? `${((u.success / u.total) * 100).toFixed(0)}%` : "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── BROADCAST EMAIL ── */}
+      {activeTab === "broadcast" && (
+        <div>
+          {showBroadcastConfirm && (
+            <Modal title="📣 Confirmer l'envoi groupé" onClose={() => setShowBroadcastConfirm(false)}>
+              <div style={{ fontSize: 14, color: "var(--text)", marginBottom: 16, lineHeight: 1.6 }}>
+                <div style={{ background: "#FFF8E1", border: "1px solid #FFE082", borderRadius: 10, padding: "12px 16px", marginBottom: 14, fontSize: 13, color: "#E65100" }}>
+                  ⚠️ Cet email sera envoyé à <strong>tous les utilisateurs</strong> de SplitLy (hors désabonnés). Cette action ne peut pas être annulée.
+                </div>
+                <div style={{ fontSize: 13 }}><strong>Sujet :</strong> {broadcastSubject}</div>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={handleSendBroadcast}
+                  style={{ ...S.btnDark, flex: 1, justifyContent: "center", display: "flex" }}>
+                  ✉️ Confirmer l'envoi
+                </button>
+                <button onClick={() => setShowBroadcastConfirm(false)}
+                  style={{ ...S.btnGhost, flex: 1, justifyContent: "center", display: "flex" }}>Annuler</button>
+              </div>
+            </Modal>
+          )}
+
+          {lastBroadcast && (
+            <div style={{ background: "var(--bg-secondary)", borderRadius: 14, border: "1px solid var(--border)", padding: "14px 18px", marginBottom: 16, display: "flex", gap: 32, flexWrap: "wrap" }}>
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-sub)", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 4 }}>{t("admin_last_broadcast")}</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{fmtDate(lastBroadcast.sent_at)}</div>
+                <div style={{ fontSize: 11, color: "var(--text-sub)", marginTop: 2 }}>{lastBroadcast.recipient_count} destinataires · {lastBroadcast.subject}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-sub)", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 4 }}>{t("admin_next_broadcast")}</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: broadcastBlocked ? "#C62828" : "#2E7D32" }}>
+                  {broadcastBlocked ? fmtDate(nextBroadcastAllowed.toISOString()) : "✓ Disponible maintenant"}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div style={{ fontSize: 12, color: "var(--text-sub)", marginBottom: 16, padding: "8px 12px", background: "var(--hover-bg)", borderRadius: 8, border: "1px solid var(--border)", display: "inline-block" }}>
+            ℹ️ {t("admin_broadcast_limit")}
+          </div>
+
+          <div style={{ background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border)", padding: 20 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 16 }}>✏️ {t("admin_broadcast")}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-sub)", textTransform: "uppercase", letterSpacing: 0.8, display: "block", marginBottom: 6 }}>{t("admin_broadcast_subject")}</label>
+                <input value={broadcastSubject} onChange={e => setBroadcastSubject(e.target.value)}
+                  placeholder="Objet de l'email groupé..."
+                  style={{ ...S.input, width: "100%" }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-sub)", textTransform: "uppercase", letterSpacing: 0.8, display: "block", marginBottom: 6 }}>{t("admin_broadcast_message")}</label>
+                <textarea value={broadcastBody} onChange={e => setBroadcastBody(e.target.value)}
+                  placeholder="Votre message pour tous les utilisateurs..."
+                  rows={8}
+                  style={{ ...S.input, width: "100%", resize: "vertical", minHeight: 160 }} />
+              </div>
+              <button onClick={() => setShowBroadcastConfirm(true)}
+                disabled={sendingBroadcast || !broadcastSubject.trim() || !broadcastBody.trim() || broadcastBlocked}
+                style={{ ...S.btnDark, justifyContent: "center", display: "flex",
+                  opacity: (!broadcastSubject.trim() || !broadcastBody.trim() || broadcastBlocked) ? 0.5 : 1 }}>
+                {sendingBroadcast ? "Envoi en cours..." : `📣 ${t("admin_broadcast_confirm")}`}
+              </button>
+              {broadcastSent !== null && (
+                <div style={{ fontSize: 13, color: "#2E7D32", padding: "8px 12px", background: "#E8F5E9", borderRadius: 8, border: "1px solid #c8e6c9" }}>
+                  ✓ Dernier envoi : {broadcastSent} destinataire{broadcastSent > 1 ? "s" : ""}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── SIGNALEMENTS ── */}
       {activeTab === "reports" && (

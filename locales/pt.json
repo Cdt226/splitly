@@ -527,5 +527,16 @@
   "ocr_manual_entry_label": "Entrada manual",
   "ocr_currency_warning": "Moeda detectada: {{currency}} — verifique o valor",
   "ocr_field_required": "Campo obrigatório",
-  "ocr_confirm_disabled": "Preencha os campos obrigatórios (*) para confirmar"
+  "ocr_confirm_disabled": "Preencha os campos obrigatórios (*) para confirmar",
+  "admin_ocr_stats": "Estatísticas OCR",
+  "admin_total_scans": "Total digitalizações",
+  "admin_success_rate": "Taxa de sucesso",
+  "admin_method_breakdown": "Distribuição por método",
+  "admin_broadcast": "Email em massa",
+  "admin_broadcast_subject": "Assunto",
+  "admin_broadcast_message": "Mensagem",
+  "admin_broadcast_confirm": "Enviar para todos os utilizadores",
+  "admin_broadcast_limit": "Limite: 1 envio por 7 dias",
+  "admin_last_broadcast": "Último envio",
+  "admin_next_broadcast": "Próximo envio possível"
 }

@@ -527,5 +527,16 @@
   "ocr_manual_entry_label": "Manual entry",
   "ocr_currency_warning": "Detected currency: {{currency}} — please check the amount",
   "ocr_field_required": "Required field",
-  "ocr_confirm_disabled": "Fill in the required fields (*) to confirm"
+  "ocr_confirm_disabled": "Fill in the required fields (*) to confirm",
+  "admin_ocr_stats": "OCR Statistics",
+  "admin_total_scans": "Total scans",
+  "admin_success_rate": "Success rate",
+  "admin_method_breakdown": "Breakdown by method",
+  "admin_broadcast": "Broadcast email",
+  "admin_broadcast_subject": "Subject",
+  "admin_broadcast_message": "Message",
+  "admin_broadcast_confirm": "Send to all users",
+  "admin_broadcast_limit": "Limit: 1 send per 7 days",
+  "admin_last_broadcast": "Last broadcast",
+  "admin_next_broadcast": "Next broadcast allowed"
 }

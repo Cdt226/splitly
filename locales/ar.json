@@ -527,5 +527,16 @@
   "ocr_manual_entry_label": "إدخال يدوي",
   "ocr_currency_warning": "العملة المكتشفة: {{currency}} — تحقق من المبلغ",
   "ocr_field_required": "حقل إلزامي",
-  "ocr_confirm_disabled": "أكمل الحقول الإلزامية (*) للتأكيد"
+  "ocr_confirm_disabled": "أكمل الحقول الإلزامية (*) للتأكيد",
+  "admin_ocr_stats": "إحصائيات OCR",
+  "admin_total_scans": "إجمالي عمليات المسح",
+  "admin_success_rate": "معدل النجاح",
+  "admin_method_breakdown": "توزيع حسب الطريقة",
+  "admin_broadcast": "البريد الإلكتروني الجماعي",
+  "admin_broadcast_subject": "الموضوع",
+  "admin_broadcast_message": "الرسالة",
+  "admin_broadcast_confirm": "إرسال إلى جميع المستخدمين",
+  "admin_broadcast_limit": "الحد: إرسال واحد كل 7 أيام",
+  "admin_last_broadcast": "آخر إرسال",
+  "admin_next_broadcast": "الإرسال التالي الممكن"
 }
