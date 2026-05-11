@@ -401,7 +401,7 @@ export function GuestEditExpenseForm({ expense, events, onSubmit, onCancel, savi
         Charge : <strong>{expense.detail}</strong> · Événement : <strong>{ev?.name}</strong>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 12 }}>
         <div><label style={S.label}>Catégorie</label>
           <select style={S.input} value={form.category} onChange={e => setForm({ ...form, category: e.target.value, sub: "" })}>
             {Object.keys(CATEGORIES).map(c => <option key={c} value={c}>{CATEGORIES[c].icon} {c}</option>)}

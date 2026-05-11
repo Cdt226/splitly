@@ -744,23 +744,23 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
         </Modal>
       )}
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+        <div style={{ flex: "1 1 auto", minWidth: 0 }}>
           <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2 }}>Événements</h2>
           <p style={{ color: "#888", fontSize: 12 }}>{events.length} événement{events.length > 1 ? "s" : ""}</p>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap", alignItems: "center", justifyContent: "flex-end" }}>
           {templates.length > 0 && (
             <button onClick={() => setShowTemplates(!showTemplates)}
-              style={{ ...S.btnGhost, fontSize: 12, padding: "8px 14px" }}>
+              style={{ ...S.btnGhost, fontSize: 12, padding: "8px 14px", whiteSpace: "nowrap" }}>
               📋 Modèles ({templates.length})
             </button>
           )}
           <button onClick={handleToggleArchived}
-            style={{ ...S.btnGhost, fontSize: 12, padding: "8px 14px" }}>
+            style={{ ...S.btnGhost, fontSize: 12, padding: "8px 14px", whiteSpace: "nowrap" }}>
             📦 {t ? t("ev_archived_events") : "Archivés"}{archivedEvents.length > 0 && showArchived ? ` (${archivedEvents.length})` : ""}
           </button>
-          <button onClick={() => { setShowNew(!showNew); setShowTemplates(false); }} style={S.btnDark}>
+          <button onClick={() => { setShowNew(!showNew); setShowTemplates(false); }} style={{ ...S.btnDark, whiteSpace: "nowrap" }}>
             {showNew ? "× Fermer" : "+ Nouveau"}
           </button>
         </div>
@@ -996,21 +996,21 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
                       <div style={{ fontSize: 10, color: "var(--text-sub)" }}>{ev.event_type === "budget" ? "dépenses" : "budget"}</div>
                     </div>
                     {ev.status === "open" && (
-                      <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 4, alignItems: "flex-end" }} onClick={e => e.stopPropagation()}>
+                      <div style={{ display: "flex", flexDirection: "row", gap: 4, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }} onClick={e => e.stopPropagation()}>
                         <button onClick={e => { e.stopPropagation(); handleSaveTemplate(ev); }} title="Modèle"
-                          style={{ padding: isMobile ? "4px 8px" : "5px 12px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--hover-bg)", color: "var(--text-muted)", fontSize: 11, cursor: "pointer", fontWeight: 600, whiteSpace: "nowrap" }}>
+                          style={{ minWidth: 32, minHeight: 32, padding: "6px 10px", borderRadius: 8, border: "1.5px solid var(--border)", background: "var(--hover-bg)", color: "var(--text-muted)", fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
                           📋
                         </button>
                         <button onClick={e => { e.stopPropagation(); openEditEvent(ev); }} title="Modifier"
-                          style={{ padding: isMobile ? "4px 8px" : "5px 12px", borderRadius: 8, border: "1.5px solid #BBDEFB", background: "#E3F2FD", color: "#1565C0", fontSize: 11, cursor: "pointer", fontWeight: 600, whiteSpace: "nowrap" }}>
+                          style={{ minWidth: 32, minHeight: 32, padding: "6px 10px", borderRadius: 8, border: "1.5px solid #BBDEFB", background: "#E3F2FD", color: "#1565C0", fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
                           ✏️
                         </button>
                         {allSettled && (
-                          <button onClick={e => { e.stopPropagation(); handleClose(ev); }} style={{ ...S.btnDark, padding: isMobile ? "4px 8px" : "5px 12px", fontSize: 11, background: "#2E7D32", borderRadius: 8, whiteSpace: "nowrap" }}>
+                          <button onClick={e => { e.stopPropagation(); handleClose(ev); }} style={{ minWidth: 32, minHeight: 32, padding: "6px 10px", borderRadius: 8, border: "none", background: "#2E7D32", color: "#fff", fontSize: 14, cursor: "pointer", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>
                             🔒
                           </button>
                         )}
-                        <button onClick={e => { e.stopPropagation(); handleArchive(ev); }} title={t ? t("ev_archive_confirm") : "Archiver"} style={{ padding: isMobile ? "4px 8px" : "5px 12px", borderRadius: 8, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 11, cursor: "pointer", fontWeight: 600, whiteSpace: "nowrap" }}>
+                        <button onClick={e => { e.stopPropagation(); handleArchive(ev); }} title={t ? t("ev_archive_confirm") : "Archiver"} style={{ minWidth: 32, minHeight: 32, padding: "6px 10px", borderRadius: 8, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
                           🗑
                         </button>
                       </div>

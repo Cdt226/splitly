@@ -413,7 +413,7 @@ export function SuperAdminPage({ user, isMobile, addToast }) {
                 </div>
                 {roleBadge(u.user_role)}
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12, fontSize: 11 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginBottom: 12, fontSize: 11 }}>
                 <div style={{ textAlign: "center" }}>
                   <div style={{ fontWeight: 700, color: "var(--text)" }}>{u.events_total}</div>
                   <div style={{ color: "var(--text-sub)" }}>Événements</div>
