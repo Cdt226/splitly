@@ -229,6 +229,7 @@ function AppInner() {
     if (!user) return;
     const ch = subscribeToNotifications(user.id, () => {
       fetchNotifications(user.id).then(({ data }) => { if (data) setNotifications(data); });
+      setHasNewNotif(true);
     });
     return () => unsubscribe(ch);
   }, [user]);

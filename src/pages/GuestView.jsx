@@ -5,7 +5,7 @@ import { CATEGORIES, CURRENCIES, AVATAR_EMOJIS } from "../constants.js";
 import { fmt, currencySymbol, computeOwed, computeNetBalance, isSettled, isExactlySettled, settleStatus, validateAmount, computeTransactions, getAvatarMap, saveAvatarEmoji } from "../utils.js";
 import { S } from "../styles.js";
 import { Avatar, AvatarStack, EmojiPicker, Truncate, Badge, EmptyState, Chip, ParticipantInput, ParticipantToggle, Modal, ConfirmModal, Spinner, StatCard } from "../components/ui/index.jsx";
-import { fetchEvents, fetchExpenses, fetchContributions, fetchCotisations, createExpense, createCotisation, updateCotisation, deleteCotisation, submitPendingAction, fetchAllPendingActions } from "../supabase.js";
+import { fetchEvents, fetchExpenses, fetchContributions, fetchCotisations, createExpense, createCotisation, updateCotisation, deleteCotisation, submitPendingAction, fetchAllPendingActions, requestPermissions } from "../supabase.js";
 import { useTranslation } from "../i18n.jsx";
 import { ALL_PERMISSIONS, normalizePerms, getAvailablePermissions } from "./Invite.jsx";
 import { OCRCapture } from "../components/OCRCapture.jsx";
@@ -172,15 +172,14 @@ export function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
     // S'abonner aux pending_actions — notifier l'invité si sa demande est traitée
     const pendingCh = supabase
       .channel(`guest-pending-${guestEmail}`)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "pending_actions" },
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "pending_actions", filter: `guest_email=eq.${guestEmail}` },
         (payload) => {
-          // Filtrer côté client sur l'email de l'invité
-          if (payload.new?.guest_email !== guestEmail) return;
           if (payload.new?.status === "approved") {
             addToast(t ? t("guest_approved") : "✅ Votre demande a été approuvée par l'admin !", "success");
             silentReload();
           } else if (payload.new?.status === "rejected") {
             addToast(t ? t("guest_rejected") : "❌ Votre demande a été refusée par l'admin.", "warning");
+            silentReload();
           }
         })
       .subscribe();
@@ -257,15 +256,21 @@ export function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
   const handleRequestPerms = async () => {
     if (!requestEventId || requestedPerms.length === 0) return;
     setRequestSaving(true);
-    const { error } = await requestPermissions(requestEventId, guestEmail, requestedPerms);
-    setRequestSaving(false);
-    if (error) {
-      addToast((t ? t("ev_error") : "Erreur : ") + error.message, "error");
-      return;
+    try {
+      const { error } = await requestPermissions(requestEventId, guestEmail, requestedPerms);
+      if (error) {
+        addToast((t ? t("ev_error") : "Erreur : ") + error.message, "error");
+        return;
+      }
+      setShowRequestPerms(false);
+      setRequestedPerms([]);
+      addToast(t ? t("guest_request_sent_detail") : "Demande envoyée à l'administrateur.", "success");
+      silentReload();
+    } catch (e) {
+      addToast((t ? t("ev_error") : "Erreur : ") + e.message, "error");
+    } finally {
+      setRequestSaving(false);
     }
-    setShowRequestPerms(false);
-    setRequestedPerms([]);
-    addToast(t ? t("guest_request_sent_detail") : "Demande envoyée à l'administrateur.", "success");
   };
 
   if (loading) return <Spinner />;
@@ -409,16 +414,23 @@ export function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
         )}
 
         {/* ── Bandeau droits sur l'événement sélectionné ── */}
-        {filterEventId && active !== "events" && active !== "pending" && selectedEv?.status === "open" && (
-          <div style={{ background: "#f5f5f5", borderRadius: 10, padding: "8px 14px", marginBottom: 14, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 11, color: "#888" }}>Vos droits sur <strong>{selectedEv?.name}</strong> :</span>
-            <MyPermsBadge eventId={filterEventId} />
-            <button onClick={() => setShowRequestPerms(true)}
-              style={{ fontSize: 10, color: "#F57F17", background: "none", border: "none", cursor: "pointer", fontWeight: 700, fontFamily: "inherit", marginLeft: "auto" }}>
-              + Demander plus
-            </button>
-          </div>
-        )}
+        {filterEventId && active !== "events" && active !== "pending" && selectedEv?.status === "open" && (() => {
+          const hasPendingPermReq = myPendingActions.some(
+            a => a.event_id === filterEventId && a.action_type === "request_permissions" && a.status === "pending"
+          );
+          return (
+            <div style={{ background: "#f5f5f5", borderRadius: 10, padding: "8px 14px", marginBottom: 14, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 11, color: "#888" }}>Vos droits sur <strong>{selectedEv?.name}</strong> :</span>
+              <MyPermsBadge eventId={filterEventId} />
+              <button
+                onClick={() => { setRequestEventId(filterEventId); setShowRequestPerms(true); }}
+                disabled={hasPendingPermReq}
+                style={{ fontSize: 10, color: hasPendingPermReq ? "#aaa" : "#F57F17", background: "none", border: "none", cursor: hasPendingPermReq ? "default" : "pointer", fontWeight: 700, fontFamily: "inherit", marginLeft: "auto" }}>
+                {hasPendingPermReq ? "⏳ Demande en cours..." : "+ Demander plus"}
+              </button>
+            </div>
+          );
+        })()}
 
         {/* ─── ONGLET ÉVÉNEMENTS ─── */}
         {active === "events" && (
@@ -698,6 +710,12 @@ export function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
                       <div style={{ fontSize: 10, color: "#aaa" }}>{new Date(action.created_at).toLocaleString("fr-FR")}</div>
                       {action.status === "pending" && (
                         <div style={{ fontSize: 11, color: "#F57F17", marginTop: 6 }}>En attente d'approbation. Vous serez notifié automatiquement.</div>
+                      )}
+                      {action.status === "rejected" && action.action_type === "request_permissions" && (
+                        <button onClick={() => { setRequestEventId(action.event_id); setRequestedPerms(action.action_data?.requested || []); setShowRequestPerms(true); }}
+                          style={{ marginTop: 8, fontSize: 11, color: "#1565C0", background: "none", border: "1px solid #1565C0", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
+                          🔄 Resoumettre
+                        </button>
                       )}
                     </div>
                   );
