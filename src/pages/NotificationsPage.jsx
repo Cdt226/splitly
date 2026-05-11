@@ -186,15 +186,15 @@ export function NotificationsPage({ notifications, events, expenses, pendingActi
                   </div>
                   <div style={{ display: "flex", gap: 6, flexWrap: isMobile ? "wrap" : "nowrap" }}>
                     <button onClick={() => handleApprove(action)} disabled={saving === action.id}
-                      style={{ ...S.btnDark, background: "#2E7D32", padding: "7px 12px", fontSize: 12, flex: 1, justifyContent: "center", display: "flex" }}>
+                      style={{ ...S.btnDark, background: "#2E7D32", padding: "10px 12px", fontSize: 12, flex: 1, justifyContent: "center", display: "flex" }}>
                       {saving === action.id ? "..." : `✓ ${t ? t("notification_approve_all") : "Tout accepter"}`}
                     </button>
                     <button onClick={() => setPartialPermsModal({ action, selectedPerms: normalizePerms(data?.requested || []) })} disabled={saving === action.id}
-                      style={{ ...S.btnGhost, padding: "7px 12px", fontSize: 12, flex: 1, justifyContent: "center", display: "flex" }}>
+                      style={{ ...S.btnGhost, padding: "10px 12px", fontSize: 12, flex: 1, justifyContent: "center", display: "flex" }}>
                       {`⊘ ${t ? t("notification_approve_partial") : "Accepter en partie"}`}
                     </button>
                     <button onClick={() => handleReject(action)} disabled={saving === action.id}
-                      style={{ padding: "7px 12px", borderRadius: 9, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 12, cursor: "pointer", fontWeight: 700, fontFamily: "inherit" }}>
+                      style={{ padding: "10px 12px", borderRadius: 9, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 12, cursor: "pointer", fontWeight: 700, fontFamily: "inherit" }}>
                       {`✗ ${t ? t("notification_reject") : "Refuser"}`}
                     </button>
                   </div>
@@ -234,11 +234,11 @@ export function NotificationsPage({ notifications, events, expenses, pendingActi
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button onClick={() => handleApprove(action)} disabled={saving === action.id}
-                    style={{ ...S.btnDark, background: "#2E7D32", padding: "7px 16px", fontSize: 12, flex: 1, justifyContent: "center", display: "flex" }}>
+                    style={{ ...S.btnDark, background: "#2E7D32", padding: "10px 16px", fontSize: 12, flex: 1, justifyContent: "center", display: "flex" }}>
                     {saving === action.id ? "..." : "✓ Approuver"}
                   </button>
                   <button onClick={() => handleReject(action)} disabled={saving === action.id}
-                    style={{ padding: "7px 16px", borderRadius: 10, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 12, cursor: "pointer", fontWeight: 700, flex: 1 }}>
+                    style={{ padding: "10px 16px", borderRadius: 10, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 12, cursor: "pointer", fontWeight: 700, flex: 1 }}>
                     ✕ Refuser
                   </button>
                 </div>

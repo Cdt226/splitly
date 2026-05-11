@@ -233,9 +233,9 @@ export function Invite({ events, user, isMobile, addToast}) {
             {perms.includes(p.key) && <span style={{ color: "#fff", fontSize: 10 }}>✓</span>}
           </div>
           <span style={{ fontSize: 12 }}>{p.icon}</span>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{p.label}</div>
-            <div style={{ fontSize: 10, color: "var(--text-sub)" }}>{p.desc}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", overflowWrap: "break-word" }}>{p.label}</div>
+            <div style={{ fontSize: 10, color: "var(--text-sub)", overflowWrap: "break-word" }}>{p.desc}</div>
           </div>
         </label>
       ))}
@@ -264,7 +264,7 @@ export function Invite({ events, user, isMobile, addToast}) {
                   { key: "all", label: "⚠️ Tous" },
                 ].map(m => (
                   <button key={m.key} onClick={() => { setManagerMode(m.key); setConfirmAll(false); }}
-                    style={{ flex: 1, padding: "6px 8px", borderRadius: 8, border: "none", background: managerMode === m.key ? (m.key === "all" ? "#C62828" : "#0F0F0F") : "transparent", color: managerMode === m.key ? "#fff" : "var(--text-muted)", fontSize: 11, fontWeight: managerMode === m.key ? 700 : 400, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", transition: "all 0.15s" }}>
+                    style={{ flex: 1, padding: "9px 8px", borderRadius: 8, border: "none", background: managerMode === m.key ? (m.key === "all" ? "#C62828" : "#0F0F0F") : "transparent", color: managerMode === m.key ? "#fff" : "var(--text-muted)", fontSize: 11, fontWeight: managerMode === m.key ? 700 : 400, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", transition: "all 0.15s" }}>
                     {m.label}
                   </button>
                 ))}
@@ -420,10 +420,10 @@ export function Invite({ events, user, isMobile, addToast}) {
                     )}
                   </div>
                 )}
-                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 8 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
                   {availablePerms.map(([key, p]) => (
                     <label key={key} title={`${p.label} — ${p.desc}`} onClick={() => togglePerm(permissions, setPermissions, key)}
-                      style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 10, border: `1.5px solid ${permissions.includes(key) ? p.color : "var(--border)"}`, background: permissions.includes(key) ? p.bg : "var(--bg-secondary)", cursor: "pointer", transition: "all 0.15s" }}>
+                      style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 10, border: `1.5px solid ${permissions.includes(key) ? p.color : "var(--border)"}`, background: permissions.includes(key) ? p.bg : "var(--bg-secondary)", cursor: "pointer", transition: "all 0.15s", minWidth: 0 }}>
                       <div style={{ width: 16, height: 16, borderRadius: 4, border: `2px solid ${permissions.includes(key) ? p.color : "#ccc"}`, background: permissions.includes(key) ? p.color : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                         {permissions.includes(key) && <span style={{ color: "#fff", fontSize: 10 }}>✓</span>}
                       </div>
@@ -493,11 +493,11 @@ export function Invite({ events, user, isMobile, addToast}) {
                   {allAccepted ? "✓ Accepté" : "⏳ En attente"}
                 </span>
                 <button onClick={() => openManager(guestEmail)}
-                  style={{ padding: "5px 12px", borderRadius: 8, border: "1.5px solid #BBDEFB", background: "#E3F2FD", color: "#1565C0", fontSize: 11, cursor: "pointer", fontWeight: 700, flexShrink: 0 }}>
+                  style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #BBDEFB", background: "#E3F2FD", color: "#1565C0", fontSize: 11, cursor: "pointer", fontWeight: 700, flexShrink: 0 }}>
                   {t ? "🔐 " + t("inv_manage_rights") : "🔐 Gérer les droits"}
                 </button>
                 <button onClick={() => { if (window.confirm(`Retirer ${guestEmail} de tous les événements ?`)) guestInvs.forEach(i => handleRemove(i)); }}
-                  style={{ padding: "5px 10px", borderRadius: 8, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 11, cursor: "pointer", fontWeight: 700, flexShrink: 0 }}>
+                  style={{ padding: "8px 10px", borderRadius: 8, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 11, cursor: "pointer", fontWeight: 700, flexShrink: 0 }}>
                   Retirer
                 </button>
               </div>

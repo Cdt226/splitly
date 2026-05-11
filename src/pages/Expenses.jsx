@@ -506,7 +506,7 @@ export function Expenses({ events, expenses, contributions, user, reload, isMobi
               placeholder="Ex: Vin rouge Côtes du Rhône, Salade César..." value={form.detail} onChange={e => setForm({ ...form, detail: e.target.value })} maxLength={100} />
             {form.detail && <div style={{ fontSize: 10, color: "#aaa", marginTop: 2, textAlign: "right" }}>{form.detail.length}/100</div>}
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10, marginBottom: 16 }}>
             <div><label style={S.label}>Quantité</label><input type="number" min="1" max="10000" step="1" style={S.input} value={form.qty} onChange={e => setForm({ ...form, qty: Math.floor(Math.abs(Number(e.target.value))) || 1 })} /></div>
             <div><label style={S.label}>Prix unitaire <span style={{ color: "#C62828" }}>*</span></label>
               <input type="number" min="0" step="0.01" style={{ ...S.input, borderColor: Number(form.unit) > 0 ? "#4CAF50" : form.detail ? "#FFB74D" : undefined }}

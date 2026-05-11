@@ -263,7 +263,7 @@ export function OCRCapture({ onFill, onClose, onManualEntry, isMobile, guestEmai
           <div style={{ fontSize: 13, color: '#C62828', fontWeight: 600, marginBottom: 8 }}>
             ⚠️ {error}
           </div>
-          <button onClick={handleReset} style={{ ...S.btnGhost, fontSize: 12, padding: '6px 12px' }}>
+          <button onClick={handleReset} style={{ ...S.btnGhost, fontSize: 12, padding: '10px 14px' }}>
             Réessayer
           </button>
         </div>
@@ -280,12 +280,12 @@ export function OCRCapture({ onFill, onClose, onManualEntry, isMobile, guestEmai
             🔍 {error}
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button onClick={handleReset} style={{ ...S.btnGhost, fontSize: 12, padding: '6px 12px' }}>
+            <button onClick={handleReset} style={{ ...S.btnGhost, fontSize: 12, padding: '10px 14px' }}>
               Réessayer
             </button>
             <button
               onClick={handleManualEntry}
-              style={{ ...S.btnDark, fontSize: 12, padding: '6px 12px' }}
+              style={{ ...S.btnDark, fontSize: 12, padding: '10px 14px' }}
             >
               Saisir manuellement
             </button>
