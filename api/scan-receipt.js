@@ -122,7 +122,8 @@ function categorizeFromMerchantName(merchantName) {
 }
 
 // ─── Tentative 1 : Claude Vision ─────────────────────────────
-async function classifyWithClaude(image, detectedMime) {
+// ─── T1 & T2 : Claude Vision (modèle paramétrable) ───────────
+async function classifyWithClaude(image, detectedMime, model, timeoutMs) {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY absent');
   const categoryList = buildCategoryPrompt();
   const prompt = `Analyze this receipt/invoice image carefully.
@@ -159,7 +160,7 @@ If isReceipt is false, still provide best-guess category and subcategory based o
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
+        model,
         max_tokens: 300,
         messages: [{
           role: 'user',
@@ -169,24 +170,30 @@ If isReceipt is false, still provide best-guess category and subcategory based o
           ],
         }],
       }),
-    })
+    }),
+    timeoutMs
   );
   const data = await res.json();
+  // Exposer l'erreur HTTP réelle (401, 402, 429…) au lieu de la masquer
+  if (!res.ok) {
+    throw new Error(`Anthropic HTTP ${res.status}: ${data.error?.message || JSON.stringify(data).slice(0, 120)}`);
+  }
   const rawText = data.content?.[0]?.text || '{}';
   const match = rawText.match(/\{[\s\S]*?\}/);
   const parsed = match ? JSON.parse(match[0]) : {};
   if (typeof parsed.isReceipt !== 'boolean') throw new Error('Réponse Claude invalide');
+  const method = model.includes('haiku') ? 'claude_haiku' : 'claude_sonnet';
   return {
     isReceipt:          parsed.isReceipt,
     reason:             parsed.reason || '',
-    method:             'claude',
+    method,
     category:           parsed.category || 'Autre',
     subcategory:        parsed.subcategory || 'Autre',
     categoryConfidence: typeof parsed.categoryConfidence === 'number' ? parsed.categoryConfidence : 0.5,
   };
 }
 
-// ─── Tentative 2 : Google Cloud Vision ───────────────────────
+// ─── T3 : Google Cloud Vision (labels enrichis) ──────────────
 async function classifyWithGoogle(image) {
   if (!process.env.GOOGLE_VISION_API_KEY) throw new Error('GOOGLE_VISION_API_KEY absent');
   const res = await withTimeout(
@@ -197,32 +204,38 @@ async function classifyWithGoogle(image) {
         requests: [{
           image: { content: image },
           features: [
-            { type: 'LABEL_DETECTION', maxResults: 10 },
-            { type: 'TEXT_DETECTION', maxResults: 1 },
+            { type: 'LABEL_DETECTION', maxResults: 15 },
+            { type: 'TEXT_DETECTION',  maxResults: 1  },
           ],
         }],
       }),
-    })
+    }),
+    5000
   );
   const data = await res.json();
   if (data.error) throw new Error(data.error.message || 'Erreur Google Vision');
   const response = data.responses?.[0] || {};
 
-  const COMMERCIAL_LABELS = ['receipt', 'invoice', 'document', 'paper', 'font', 'text', 'number'];
+  const RECEIPT_LABELS = [
+    'receipt', 'invoice', 'bill', 'payment', 'cash register', 'pos', 'retail',
+    'supermarket', 'shopping', 'checkout', 'price', 'total', 'amount', 'tax',
+    'vat', 'tva', 'ttc', 'ht', 'document', 'paper', 'font', 'text', 'number',
+    'ticket', 'purchase', 'sale', 'store', 'shop',
+  ];
   const labels = (response.labelAnnotations || []).map(l => l.description?.toLowerCase() || '');
-  const hasCommercialLabel = labels.some(l => COMMERCIAL_LABELS.some(kw => l.includes(kw)));
+  const hasReceiptLabel  = labels.some(l => RECEIPT_LABELS.some(kw => l.includes(kw)));
+  const detectedText     = response.textAnnotations?.[0]?.description || '';
+  const hasNumericText   = /\d+[.,]\d{2}/.test(detectedText);
+  const hasSubstantialText = detectedText.length > 30;
 
-  const detectedText = response.textAnnotations?.[0]?.description || '';
-  const hasNumericText = /\d+[.,]\d{2}/.test(detectedText);
-
-  const isReceipt = hasCommercialLabel && hasNumericText;
+  // Reçu si label commercial + montant, OU texte substantiel + montant
+  const isReceipt = (hasReceiptLabel && hasNumericText) || (hasSubstantialText && hasNumericText);
   return { isReceipt, reason: null, method: 'google', googleLabels: response.labelAnnotations || [] };
 }
 
-// ─── Tentative 3 : Heuristique locale ────────────────────────
+// ─── T4 : Heuristique locale ─────────────────────────────────
 function classifyHeuristic(image) {
-  // Recherche de patterns typiques d'un reçu dans les octets bruts (métadonnées, EXIF, texte embarqué)
-  const rawText = Buffer.from(image, 'base64').toString('latin1');
+  const rawText    = Buffer.from(image, 'base64').toString('latin1');
   const hasAmount  = /\d+[.,]\d{2}/.test(rawText);
   const hasDate    = /\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}/.test(rawText);
   const textBlocks = (rawText.match(/[\x20-\x7E]{4,}/g) || []).length;
@@ -230,31 +243,46 @@ function classifyHeuristic(image) {
   return { isReceipt, confidence: isReceipt ? 0.6 : 0.4, method: 'heuristic' };
 }
 
-// ─── Orchestrateur de classification (niveau 2) ───────────────
+// ─── Orchestrateur : T1 → T2 → T3 → T4 → laisser passer ─────
 async function classifyImage(image, detectedMime) {
-  // Tentative 1 — Claude Vision
+  // T1 — Claude Haiku (rapide, économique, ~1-2s)
+  console.log('[OCR] T1 — Claude Haiku | API Key présente:', !!process.env.ANTHROPIC_API_KEY);
   try {
-    return await classifyWithClaude(image, detectedMime);
+    const r = await classifyWithClaude(image, detectedMime, 'claude-haiku-4-5-20251001', 8000);
+    console.log('[OCR] T1 OK — isReceipt:', r.isReceipt, '| method:', r.method);
+    return r;
   } catch (err) {
-    console.error('[OCR Fallback] Claude Vision failed:', err.message);
+    console.error('[OCR] T1 Haiku échoué:', err.message);
   }
 
-  // Tentative 2 — Google Cloud Vision
+  // T2 — Claude Sonnet (fallback IA, ~3-5s)
+  console.log('[OCR] T2 — Claude Sonnet...');
   try {
-    return await classifyWithGoogle(image);
+    const r = await classifyWithClaude(image, detectedMime, 'claude-sonnet-4-6', 15000);
+    console.log('[OCR] T2 OK — isReceipt:', r.isReceipt, '| method:', r.method);
+    return r;
   } catch (err) {
-    console.error('[OCR Fallback] Google Vision failed:', err.message);
+    console.error('[OCR] T2 Sonnet échoué:', err.message);
   }
 
-  // Tentative 3 — Heuristique locale (ne peut jamais échouer)
+  // T3 — Google Cloud Vision (labels enrichis)
+  console.log('[OCR] T3 — Google Vision...');
   try {
-    return classifyHeuristic(image);
+    const r = await classifyWithGoogle(image);
+    console.log('[OCR] T3 résultat — isReceipt:', r.isReceipt,
+      '| labels:', (r.googleLabels || []).slice(0, 4).map(l => l.description).join(', '));
+    return r;
   } catch (err) {
-    console.error('[OCR Fallback] Heuristic failed:', err.message);
+    console.error('[OCR] T3 Google Vision échoué:', err.message);
   }
 
-  // Tentative 4 — Fallback final
-  return { isReceipt: true, confidence: 0, method: 'unverified' };
+  // T4 — Heuristique locale (jamais en erreur)
+  console.log('[OCR] T4 — Heuristique locale...');
+  const r = classifyHeuristic(image);
+  console.log('[OCR] T4 résultat — isReceipt:', r.isReceipt);
+  return r;
+
+  // T5 implicite : si heuristique jetait, on laisserait passer
 }
 
 // ─── Fetch with timeout ───────────────────────────────────────
@@ -362,12 +390,12 @@ export default async function handler(req, res) {
 
   // Catégorisation initiale depuis la classification
   let categoryResult = { category: 'Autre', subcategory: 'Autre', categoryConfidence: 0, categoryMethod: 'none' };
-  if (classificationMethod === 'claude' && classification.category) {
+  if ((classificationMethod === 'claude_haiku' || classificationMethod === 'claude_sonnet') && classification.category) {
     categoryResult = {
       category:           classification.category,
       subcategory:        classification.subcategory || 'Autre',
       categoryConfidence: classification.categoryConfidence || 0.7,
-      categoryMethod:     'claude',
+      categoryMethod:     classificationMethod,
     };
   } else if (classificationMethod === 'google') {
     categoryResult = categorizeFromGoogleLabels(classification.googleLabels || [], null);
