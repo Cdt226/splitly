@@ -40,8 +40,8 @@ async function logOCR(client, userId, success, errorReason, levelRejected, class
   } catch {}
 }
 
-// ─── Promise.race timeout (3s pour les classifieurs) ─────────
-function withTimeout(promise, ms = 3000) {
+// ─── Promise.race timeout (15s pour les classifieurs) ────────
+function withTimeout(promise, ms = 15000) {
   const timeout = new Promise((_, reject) =>
     setTimeout(() => reject(new Error(`Timeout (${ms}ms)`)), ms)
   );
@@ -159,7 +159,7 @@ If isReceipt is false, still provide best-guess category and subcategory based o
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'claude-opus-4-20250514',
+        model: 'claude-sonnet-4-6',
         max_tokens: 300,
         messages: [{
           role: 'user',
