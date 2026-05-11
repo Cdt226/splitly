@@ -9,13 +9,21 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { adminId, guestEmail, eventName, requestedPermissions } = req.body || {};
+  const { adminId, eventId, guestEmail, eventName, requestedPermissions } = req.body || {};
   if (!adminId || !guestEmail || !eventName) {
     return res.status(400).json({ error: 'Paramètres manquants' });
   }
 
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
+    // Insérer la notification persistante pour l'admin (service role bypasse les RLS)
+    await supabase.from('notifications').insert({
+      user_id: adminId,
+      event_id: eventId || null,
+      type: 'request',
+      message: `${guestEmail} demande des droits supplémentaires sur "${eventName}"`,
+    });
 
     // Récupérer l'email de l'admin
     const { data: { user: adminUser }, error: userErr } = await supabase.auth.admin.getUserById(adminId);

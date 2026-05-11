@@ -204,28 +204,6 @@ export async function approvePendingAction(actionId, adminUserId, actionData) {
     .update({ status: 'approved', resolved_at: new Date().toISOString(), resolved_by: adminUserId })
     .eq('id', actionId);
 
-  // Notifier l'invité via la table notifications
-  // (on essaie de trouver l'user_id de l'invité via son email, sinon on skip)
-  try {
-    const { data: invData } = await supabase
-      .from('invitations')
-      .select('event_id')
-      .eq('email', actionData.guest_email)
-      .eq('event_id', actionData.event_id)
-      .single();
-    if (invData) {
-      const labels = {
-        add_expense: 'Nouvelle charge ajoutée',
-        modify_expense: 'Modification de charge approuvée',
-        add_cotisation: 'Cotisation enregistrée',
-        edit_cotisation: 'Cotisation mise à jour',
-        add_participant: 'Participant ajouté',
-      };
-      // Stocker dans pending_actions le statut pour que Realtime notifie l'invité
-      // (le Realtime dans GuestView écoute déjà les UPDATE de pending_actions)
-    }
-  } catch {}
-
   return { error };
 }
 
@@ -611,21 +589,14 @@ export async function requestPermissions(eventId, guestEmail, requestedPermissio
     action_data: { requested: requestedPermissions, event_name: ev.name },
     status: 'pending',
   });
-  // Notifier l'admin
+  // Notifier l'admin — email + insertion notification via service role (bypass RLS guest)
   if (!error) {
-    await supabase.from('notifications').insert({
-      user_id: ev.admin_id,
-      type: 'permission_request',
-      title: `Demande de droits`,
-      message: `${guestEmail} demande des droits supplémentaires sur "${ev.name}"`,
-      data: { event_id: eventId, guest_email: guestEmail, requested: requestedPermissions },
-    });
-    // Email fire-and-forget — ne bloque jamais le flux
     fetch('/api/send-notification-admin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         adminId: ev.admin_id,
+        eventId,
         guestEmail,
         eventName: ev.name,
         requestedPermissions,

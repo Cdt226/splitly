@@ -257,8 +257,12 @@ export function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
   const handleRequestPerms = async () => {
     if (!requestEventId || requestedPerms.length === 0) return;
     setRequestSaving(true);
-    await requestPermissions(requestEventId, guestEmail, requestedPerms);
+    const { error } = await requestPermissions(requestEventId, guestEmail, requestedPerms);
     setRequestSaving(false);
+    if (error) {
+      addToast((t ? t("ev_error") : "Erreur : ") + error.message, "error");
+      return;
+    }
     setShowRequestPerms(false);
     setRequestedPerms([]);
     addToast(t ? t("guest_request_sent_detail") : "Demande envoyée à l'administrateur.", "success");
