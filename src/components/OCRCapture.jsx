@@ -23,6 +23,21 @@ const STATUS_PROGRESS = {
   error:       100,
 };
 
+const SOURCE_LABEL = {
+  claude:        '🤖 extrait par Claude',
+  claude_haiku:  '🤖 extrait par Claude',
+  claude_sonnet: '🤖 extrait par Claude',
+  azure:         '📄 extrait par Azure',
+  google:        '🔍 extrait par Google Vision',
+  heuristic:     '⚙️ estimé',
+};
+
+const PAY_LABEL = {
+  cash:   '💵 Espèces',
+  card:   '💳 Carte bancaire',
+  mobile: '📱 Mobile',
+};
+
 // ─── Barre de progression ─────────────────────────────────────
 function ProgressBar({ status }) {
   const pct   = STATUS_PROGRESS[status] || 0;
@@ -112,9 +127,14 @@ export function OCRCapture({ onFill, onClose, onManualEntry, isMobile, guestEmai
       detail:   transformed.detail,
       unit:     transformed.unit,
       // Métadonnées informatives
-      currency: raw.currency  || null,
-      tax:      raw.tax       != null ? String(raw.tax)      : '',
-      subtotal: raw.subtotal  != null ? String(raw.subtotal) : '',
+      currency:     raw.currency       || null,
+      tax:          raw.tax     != null ? String(raw.tax)     : '',
+      subtotal:     raw.subtotal != null ? String(raw.subtotal) : '',
+      // Nouvelles métadonnées
+      receiptNumber:     raw.receiptNumber     || null,
+      paymentMethod:     raw.paymentMethod     || null,
+      confidence:        raw.confidence        ?? 0.5,
+      extractionSources: raw.extractionSources || {},
     });
   };
 
@@ -313,32 +333,13 @@ export function OCRCapture({ onFill, onClose, onManualEntry, isMobile, guestEmai
       {/* Résultat — aperçu modifiable */}
       {isSuccess && editFields && (
         <div>
-          {/* Avertissement confiance faible */}
-          {(result?.raw?.needsManualReview || result?.transformed?._needsManualReview) && (
+          {/* Banner confiance faible */}
+          {editFields.confidence < 0.5 && (
             <div
               aria-live="polite"
               style={{ padding: '8px 12px', borderRadius: 8, background: '#FFF8E1', border: '1px solid #FFE082', marginBottom: 12, fontSize: 12, color: '#E65100' }}
             >
-              ⚠️ Confiance faible ({Math.round((result.raw.confidence || 0) * 100)}%) — vérifiez les données ci-dessous.
-            </div>
-          )}
-
-          {/* Badge devise — warning si différente de MAD */}
-          {editFields.currency && (
-            <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{
-                fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20,
-                background: editFields.currency !== 'MAD' ? '#FFF8E1' : '#E8F5E9',
-                color:      editFields.currency !== 'MAD' ? '#E65100' : '#2E7D32',
-                border:     `1px solid ${editFields.currency !== 'MAD' ? '#FFE082' : '#C8E6C9'}`,
-              }}>
-                {editFields.currency !== 'MAD' ? '⚠️' : '✓'} Devise : {editFields.currency}
-              </span>
-              {editFields.currency !== 'MAD' && (
-                <span style={{ fontSize: 11, color: '#E65100' }}>
-                  — vérifiez le montant
-                </span>
-              )}
+              ⚠️ Certains champs n'ont pas pu être détectés automatiquement. Vérifiez les informations avant de confirmer.
             </div>
           )}
 
@@ -346,7 +347,7 @@ export function OCRCapture({ onFill, onClose, onManualEntry, isMobile, guestEmai
             ✓ Reçu analysé — vérifiez et confirmez
           </div>
 
-          {/* Champs obligatoires */}
+          {/* Commerçant */}
           <ReviewField
             id="ocr-merchant"
             label="Commerçant"
@@ -354,25 +355,46 @@ export function OCRCapture({ onFill, onClose, onManualEntry, isMobile, guestEmai
             required
             onChange={v => setEditFields(f => ({ ...f, merchant: v, detail: v }))}
           />
+          {editFields.extractionSources?.merchant && (
+            <div style={{ fontSize: 10, color: '#aaa', marginTop: -8, marginBottom: 10 }}>
+              {SOURCE_LABEL[editFields.extractionSources.merchant] || '⚙️ estimé'}
+            </div>
+          )}
+
+          {/* Montant + Date */}
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
-            <ReviewField
-              id="ocr-total"
-              label="Montant total"
-              value={editFields.total}
-              type="number"
-              required
-              onChange={v => setEditFields(f => ({ ...f, total: v, unit: v }))}
-            />
-            <ReviewField
-              id="ocr-date"
-              label="Date"
-              value={editFields.date}
-              required
-              onChange={v => setEditFields(f => ({ ...f, date: v, comment: v ? `Reçu du ${v}` : '' }))}
-            />
+            <div>
+              <ReviewField
+                id="ocr-total"
+                label="Montant total"
+                value={editFields.total}
+                type="number"
+                required
+                onChange={v => setEditFields(f => ({ ...f, total: v, unit: v }))}
+              />
+              {editFields.extractionSources?.total && (
+                <div style={{ fontSize: 10, color: '#aaa', marginTop: -8, marginBottom: 10 }}>
+                  {SOURCE_LABEL[editFields.extractionSources.total] || '⚙️ estimé'}
+                </div>
+              )}
+            </div>
+            <div>
+              <ReviewField
+                id="ocr-date"
+                label="Date"
+                value={editFields.date}
+                required
+                onChange={v => setEditFields(f => ({ ...f, date: v, comment: v ? `Reçu du ${v}` : '' }))}
+              />
+              {editFields.extractionSources?.date && (
+                <div style={{ fontSize: 10, color: '#aaa', marginTop: -8, marginBottom: 10 }}>
+                  {SOURCE_LABEL[editFields.extractionSources.date] || '⚙️ estimé'}
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Catégorie détectée automatiquement */}
+          {/* Catégorie */}
           <div style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
               Catégorie
@@ -401,29 +423,63 @@ export function OCRCapture({ onFill, onClose, onManualEntry, isMobile, guestEmai
               </select>
             </div>
             {editFields.categoryMethod && editFields.categoryMethod !== 'none' && (
-              <div style={{ fontSize: 11, color: 'var(--text-sub)', marginTop: 4 }}>
-                {editFields.categoryMethod === 'claude' && '🤖 Détecté par Claude Vision'}
+              <div style={{ fontSize: 10, color: '#aaa', marginTop: 4 }}>
+                {(editFields.categoryMethod === 'claude_haiku' || editFields.categoryMethod === 'claude_sonnet') && '🤖 Détecté par Claude Vision'}
+                {editFields.categoryMethod === 'azure' && '📄 Détecté par Azure Document Intelligence'}
                 {editFields.categoryMethod === 'google_labels' && '🔍 Détecté par Google Vision'}
                 {editFields.categoryMethod?.startsWith('heuristic') && '⚙️ Détecté automatiquement — vérifiez'}
               </div>
             )}
           </div>
 
-          {/* TVA — informatif si disponible */}
-          {editFields.tax && (
+          {/* Devise */}
+          {editFields.currency && (
+            <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{
+                fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20,
+                background: editFields.currency !== 'MAD' ? '#FFF8E1' : '#E8F5E9',
+                color:      editFields.currency !== 'MAD' ? '#E65100' : '#2E7D32',
+                border:     `1px solid ${editFields.currency !== 'MAD' ? '#FFE082' : '#C8E6C9'}`,
+              }}>
+                {editFields.currency !== 'MAD' ? '⚠️' : '✓'} Devise : {editFields.currency}
+              </span>
+              {editFields.currency !== 'MAD' && (
+                <span style={{ fontSize: 11, color: '#E65100' }}>— vérifiez le montant</span>
+              )}
+            </div>
+          )}
+
+          {/* TVA + HT — informatif */}
+          {(editFields.tax || editFields.subtotal) && (
             <div style={{
               fontSize: 12, color: 'var(--text-sub)', padding: '6px 10px',
               background: 'var(--hover-bg)', borderRadius: 8, marginBottom: 10,
-              display: 'flex', gap: 8,
+              display: 'flex', gap: 8, flexWrap: 'wrap',
             }}>
-              <span>TVA :</span>
-              <strong style={{ color: 'var(--text)' }}>{editFields.tax}</strong>
+              {editFields.tax && (
+                <><span>TVA :</span><strong style={{ color: 'var(--text)' }}>{editFields.tax}</strong></>
+              )}
+              {editFields.tax && editFields.subtotal && (
+                <span style={{ color: 'var(--border)' }}>·</span>
+              )}
               {editFields.subtotal && (
-                <>
-                  <span style={{ color: 'var(--border)' }}>·</span>
-                  <span>HT :</span>
-                  <strong style={{ color: 'var(--text)' }}>{editFields.subtotal}</strong>
-                </>
+                <><span>HT :</span><strong style={{ color: 'var(--text)' }}>{editFields.subtotal}</strong></>
+              )}
+            </div>
+          )}
+
+          {/* N° de reçu + mode de paiement — informatif */}
+          {(editFields.receiptNumber || editFields.paymentMethod) && (
+            <div style={{
+              fontSize: 11, color: 'var(--text-sub)', padding: '6px 10px',
+              background: 'var(--hover-bg)', borderRadius: 8, marginBottom: 10,
+              display: 'flex', gap: 12, flexWrap: 'wrap',
+            }}>
+              {editFields.receiptNumber && (
+                <span>🧾 Reçu n° <strong style={{ color: 'var(--text)' }}>{editFields.receiptNumber}</strong></span>
+              )}
+              {editFields.paymentMethod && (
+                <span>💳 {PAY_LABEL[editFields.paymentMethod] || editFields.paymentMethod}</span>
               )}
             </div>
           )}
@@ -435,7 +491,6 @@ export function OCRCapture({ onFill, onClose, onManualEntry, isMobile, guestEmai
             onChange={v => setEditFields(f => ({ ...f, comment: v }))}
           />
 
-          {/* Message si champs obligatoires manquants */}
           {!requiredOk && (
             <div style={{ fontSize: 11, color: '#E65100', marginBottom: 8 }}>
               Complétez les champs obligatoires (*) pour confirmer.

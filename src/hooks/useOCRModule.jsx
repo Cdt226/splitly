@@ -35,10 +35,15 @@ export const receiptAdapter = (raw) => {
     included: [],
     eventId:  '',
     // Métadonnées (préfixe _ = non envoyées au formulaire principal)
-    _needsManualReview: needsManualReview,
-    _currency:          raw.currency  || null,
-    _tax:               cleanNumeric(raw.tax),
-    _subtotal:          cleanNumeric(raw.subtotal),
+    _needsManualReview:  needsManualReview,
+    _currency:           raw.currency        || null,
+    _tax:                cleanNumeric(raw.tax),
+    _subtotal:           cleanNumeric(raw.subtotal),
+    _receiptNumber:      raw.receiptNumber   || null,
+    _paymentMethod:      raw.paymentMethod   || null,
+    _items:              raw.items           || [],
+    _confidence:         raw.confidence      ?? 0,
+    _extractionSources:  raw.extractionSources || {},
   };
 };
 

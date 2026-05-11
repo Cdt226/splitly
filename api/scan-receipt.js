@@ -22,7 +22,6 @@ function detectMimeFromBytes(base64) {
   if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) return 'image/png';
   if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
       buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50) return 'image/webp';
-  // HEIC: ftyp box at offset 4
   if (buf[4] === 0x66 && buf[5] === 0x74 && buf[6] === 0x79 && buf[7] === 0x70) return 'image/heic';
   return null;
 }
@@ -40,7 +39,7 @@ async function logOCR(client, userId, success, errorReason, levelRejected, class
   } catch {}
 }
 
-// ─── Promise.race timeout (15s pour les classifieurs) ────────
+// ─── Promise.race timeout ─────────────────────────────────────
 function withTimeout(promise, ms = 15000) {
   const timeout = new Promise((_, reject) =>
     setTimeout(() => reject(new Error(`Timeout (${ms}ms)`)), ms)
@@ -60,7 +59,41 @@ function buildCategoryPrompt() {
     .join('\n');
 }
 
-// ─── Catégorisation depuis les labels Google Vision ───────────
+// ─── Normalisation date → YYYY-MM-DD ─────────────────────────
+function normalizeDate(dateStr) {
+  if (!dateStr) return null;
+  const s = String(dateStr).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const dmy = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
+  if (dmy) {
+    const [, d, m, y] = dmy;
+    const year = y.length === 2 ? `20${y}` : y;
+    return `${year}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+  const ymd = s.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
+  if (ymd) {
+    const [, y, m, d] = ymd;
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+  return null;
+}
+
+// ─── Détection devise depuis texte brut ──────────────────────
+function detectCurrencyFromText(text) {
+  if (!text) return null;
+  if (/\bDH\b|\bMAD\b|\bDhs\b/i.test(text)) return 'MAD';
+  if (/\bEUR\b|€/.test(text)) return 'EUR';
+  if (/\bUSD\b|\$/.test(text)) return 'USD';
+  if (/\bGBP\b|£/.test(text)) return 'GBP';
+  return null;
+}
+
+// ─── Détection devise depuis résultat Azure ──────────────────
+function detectCurrencyFromContent(azureResult) {
+  return detectCurrencyFromText(azureResult?.content || '');
+}
+
+// ─── Catégorisation depuis les labels Google Vision ──────────
 function categorizeFromGoogleLabels(labels, merchantName) {
   const labelMap = {
     food: 'Nourriture', restaurant: 'Nourriture', meal: 'Nourriture',
@@ -121,49 +154,258 @@ function categorizeFromMerchantName(merchantName) {
   return { category: 'Autre', subcategory: 'Autre', categoryConfidence: 0.2, categoryMethod: 'heuristic_default' };
 }
 
-// ─── Tentative 1 : Claude Vision ─────────────────────────────
-// ─── T1 & T2 : Claude Vision (modèle paramétrable) ───────────
+// ─── Extraction structurée depuis Azure Document Intelligence ─
+function extractFromAzure(analyzeResult) {
+  const doc    = analyzeResult?.documents?.[0];
+  const fields = doc?.fields || {};
+
+  const fv = (field) => {
+    if (!field) return null;
+    if (field.valueCurrency?.amount != null) return field.valueCurrency.amount;
+    if (typeof field.value === 'number') return field.value;
+    if (field.valueNumber != null) return field.valueNumber;
+    const parsed = parseFloat(String(field.content || '').replace(',', '.'));
+    return isNaN(parsed) ? null : parsed;
+  };
+
+  const merchant = fields.MerchantName?.content || fields.VendorName?.content || null;
+
+  const items = (fields.Items?.valueArray || []).map(item => {
+    const o = item.valueObject || {};
+    return {
+      name:      o.Description?.content || o.Name?.content || null,
+      amount:    o.TotalPrice?.valueCurrency?.amount ?? fv(o.TotalPrice),
+      quantity:  o.Quantity?.valueNumber ?? null,
+      unitPrice: o.UnitPrice?.valueCurrency?.amount ?? fv(o.UnitPrice),
+    };
+  }).filter(i => i.name || i.amount != null);
+
+  const currency = fields.Total?.valueCurrency?.currencyCode
+    || fields.CurrencyCode?.content
+    || detectCurrencyFromContent(analyzeResult)
+    || 'MAD';
+
+  const categoryResult = merchant
+    ? categorizeFromMerchantName(merchant)
+    : { category: 'Autre', subcategory: 'Autre', categoryConfidence: 0.1, categoryMethod: 'heuristic_none' };
+
+  return {
+    merchant,
+    date:            fields.TransactionDate?.valueDate || fields.InvoiceDate?.valueDate || null,
+    total:           fields.Total?.valueCurrency?.amount ?? fields.InvoiceTotal?.valueCurrency?.amount ?? fv(fields.Total),
+    tax:             fields.TotalTax?.valueCurrency?.amount ?? fv(fields.TotalTax),
+    subtotal:        fields.Subtotal?.valueCurrency?.amount ?? fv(fields.Subtotal),
+    currency,
+    receiptNumber:   fields.TransactionId?.content || fields.InvoiceId?.content || null,
+    paymentMethod:   fields.PaymentType?.content || null,
+    merchantPhone:   fields.MerchantPhoneNumber?.content || null,
+    merchantAddress: fields.MerchantAddress?.content || null,
+    items,
+    confidence:      doc?.confidence ?? 0.5,
+    ...categoryResult,
+  };
+}
+
+// ─── Extraction depuis Google Cloud Vision ───────────────────
+function extractFromGoogleVision(googleResponse) {
+  const resp         = googleResponse?.responses?.[0] || {};
+  const labels       = resp.labelAnnotations || [];
+  const text         = resp.textAnnotations?.[0]?.description || '';
+  const webEntities  = resp.webDetection?.webEntities || [];
+
+  // Date depuis texte brut
+  let extractedDate = null;
+  for (const re of [
+    /(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/,
+    /(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/,
+  ]) {
+    const m = text.match(re);
+    if (m) { extractedDate = normalizeDate(m[0]); break; }
+  }
+
+  // Montant depuis texte brut
+  let extractedAmount = null;
+  for (const re of [
+    /(?:total|montant|amount|ttc)[:\s]*(\d+[.,]\d{2})/i,
+    /(\d+[.,]\d{2})\s*(?:dh|mad|eur|€|\$)/i,
+  ]) {
+    const m = text.match(re);
+    if (m) { extractedAmount = parseFloat(m[1].replace(',', '.')); break; }
+  }
+
+  // Marchand depuis webEntities
+  const merchantEntity   = webEntities.find(e => e.score > 0.5 && e.description);
+  const extractedMerchant = merchantEntity?.description || null;
+
+  const categoryResult = categorizeFromGoogleLabels(labels, extractedMerchant);
+
+  return {
+    merchant:      extractedMerchant,
+    date:          extractedDate,
+    total:         extractedAmount,
+    tax:           null,
+    subtotal:      null,
+    currency:      detectCurrencyFromText(text) || 'MAD',
+    receiptNumber: null,
+    paymentMethod: null,
+    items:         [],
+    confidence:    0.4,
+    ...categoryResult,
+  };
+}
+
+// ─── Extraction heuristique depuis texte OCR brut ────────────
+function extractFromHeuristic(rawText, merchant) {
+  const text = rawText || '';
+
+  const dateMatch = text.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/);
+  const date      = dateMatch ? normalizeDate(dateMatch[0]) : null;
+
+  const amounts = [...text.matchAll(/(\d+[.,]\d{2})/g)]
+    .map(m => parseFloat(m[1].replace(',', '.')));
+  const total = amounts.length > 0 ? Math.max(...amounts) : null;
+
+  const categoryResult = categorizeFromMerchantName(merchant);
+
+  return {
+    merchant,
+    date,
+    total,
+    tax:           null,
+    subtotal:      null,
+    currency:      detectCurrencyFromText(text) || 'MAD',
+    receiptNumber: null,
+    paymentMethod: null,
+    items:         [],
+    confidence:    0.3,
+    ...categoryResult,
+  };
+}
+
+// ─── Fusion des résultats de toutes les sources ───────────────
+function mergeExtractionResults(claudeData, azureData, googleData, heuristicData) {
+  const pick = (...vals) => vals.find(v => v !== null && v !== undefined && v !== '');
+
+  const claudeGoodCat = (claudeData?.categoryConfidence ?? 0) > 0.7;
+
+  const extractionSources = {
+    merchant: claudeData?.merchant ? 'claude' : azureData?.merchant ? 'azure' : googleData?.merchant ? 'google' : 'heuristic',
+    date:     claudeData?.date     ? 'claude' : azureData?.date     ? 'azure' : googleData?.date     ? 'google' : 'heuristic',
+    total:    claudeData?.total    != null ? 'claude' : azureData?.total != null ? 'azure' : googleData?.total != null ? 'google' : 'heuristic',
+    category: claudeGoodCat ? 'claude' : (azureData?.category && azureData.category !== 'Autre') ? 'azure' : (googleData?.category && googleData.category !== 'Autre') ? 'google' : 'heuristic',
+  };
+
+  return {
+    merchant:        pick(claudeData?.merchant, azureData?.merchant, googleData?.merchant, heuristicData?.merchant),
+    date:            pick(claudeData?.date, azureData?.date, googleData?.date, heuristicData?.date),
+    total:           pick(claudeData?.total, azureData?.total, googleData?.total, heuristicData?.total),
+    tax:             pick(claudeData?.tax, azureData?.tax),
+    subtotal:        pick(azureData?.subtotal),
+    currency:        pick(claudeData?.currency, azureData?.currency, googleData?.currency, heuristicData?.currency, 'MAD'),
+    category:        pick(
+      claudeGoodCat ? claudeData?.category : null,
+      azureData?.category   !== 'Autre' ? azureData?.category   : null,
+      googleData?.category  !== 'Autre' ? googleData?.category  : null,
+      heuristicData?.category,
+      'Autre'
+    ),
+    subcategory:     pick(
+      claudeGoodCat ? claudeData?.subcategory : null,
+      azureData?.subcategory  !== 'Autre' ? azureData?.subcategory  : null,
+      googleData?.subcategory !== 'Autre' ? googleData?.subcategory : null,
+      heuristicData?.subcategory,
+      'Autre'
+    ),
+    categoryConfidence: pick(
+      claudeGoodCat   ? claudeData?.categoryConfidence   : null,
+      azureData?.categoryConfidence,
+      googleData?.categoryConfidence,
+      heuristicData?.categoryConfidence,
+      0.1
+    ),
+    categoryMethod:  pick(
+      claudeGoodCat ? claudeData?.categoryMethod : null,
+      azureData?.categoryMethod,
+      googleData?.categoryMethod,
+      heuristicData?.categoryMethod,
+      'none'
+    ),
+    items:           pick(
+      claudeData?.items?.length   > 0 ? claudeData.items   : null,
+      azureData?.items?.length    > 0 ? azureData.items    : null,
+      []
+    ),
+    receiptNumber:   pick(claudeData?.receiptNumber, azureData?.receiptNumber),
+    paymentMethod:   pick(claudeData?.paymentMethod, azureData?.paymentMethod),
+    merchantPhone:   pick(azureData?.merchantPhone),
+    merchantAddress: pick(azureData?.merchantAddress),
+    confidence:      Math.max(
+      claudeData?.confidence    || 0,
+      azureData?.confidence     || 0,
+      googleData?.confidence    || 0,
+      heuristicData?.confidence || 0
+    ),
+    extractionSources,
+  };
+}
+
+// ─── T1 & T2 : Claude Vision (Haiku ou Sonnet) ───────────────
 async function classifyWithClaude(image, detectedMime, model, timeoutMs) {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY absent');
   const categoryList = buildCategoryPrompt();
-  const prompt = `Analyze this receipt/invoice image carefully.
+
+  const prompt = `You are a receipt and invoice analysis expert.
+
+Analyze this image carefully and extract ALL available information.
 
 Reply ONLY in this exact JSON format, no other text:
-{"isReceipt": boolean, "reason": "string", "category": "string", "subcategory": "string", "categoryConfidence": number}
+{
+  "isReceipt": boolean,
+  "reason": "string",
+  "merchant": "string or null",
+  "date": "YYYY-MM-DD or null",
+  "total": number or null,
+  "tax": number or null,
+  "currency": "string or null",
+  "category": "string",
+  "subcategory": "string",
+  "categoryConfidence": number,
+  "items": [{"name": "string", "amount": number, "quantity": number or null}],
+  "paymentMethod": "string or null",
+  "receiptNumber": "string or null",
+  "confidence": number
+}
 
-Rules for isReceipt:
-- true ONLY for commercial receipts, invoices, tickets
-- false for: photos of people, landscapes, animals, screenshots, handwritten notes, non-commercial documents
-
-Rules for category — choose EXACTLY ONE from this list:
+Rules:
+- isReceipt: true ONLY for commercial receipts, invoices, tickets
+- merchant: exact business name as shown on the document
+- date: convert any date format to YYYY-MM-DD
+- total: numeric value only, no currency symbol
+- tax: numeric value only, no currency symbol
+- currency: ISO code (MAD, EUR, USD, GBP...) — default to MAD if Moroccan merchant detected
+- category: choose EXACTLY ONE from:
 ${categoryList}
-
-Rules for subcategory:
-- Must be one of the valid subcategories for the chosen category
-- If unsure, use "Autre"
-- Must match exactly the subcategory values listed above
-
-Rules for categoryConfidence:
-- 0.0 to 1.0 — how confident you are in the category choice
-- Use 0.9+ only when the merchant type is unambiguous
-- Use 0.5-0.7 when inferring from context
-- Use 0.3 when guessing
-
-If isReceipt is false, still provide best-guess category and subcategory based on image content, but set categoryConfidence to 0.`;
+- subcategory: must match the chosen category's subcategories
+- categoryConfidence: 0.0 to 1.0 — how confident you are in the category
+- items: list of individual line items if visible on the receipt
+- paymentMethod: "cash", "card", "mobile" or null
+- receiptNumber: ticket/invoice number if visible
+- confidence: overall extraction confidence 0.0-1.0
+- If isReceipt is false, set merchant/date/total/tax/currency/items to null`;
 
   const res = await withTimeout(
     fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'x-api-key':         process.env.ANTHROPIC_API_KEY,
         'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
+        'content-type':      'application/json',
       },
       body: JSON.stringify({
         model,
-        max_tokens: 300,
+        max_tokens: 800,
         messages: [{
-          role: 'user',
+          role:    'user',
           content: [
             { type: 'image', source: { type: 'base64', media_type: detectedMime, data: image } },
             { type: 'text', text: prompt },
@@ -174,63 +416,38 @@ If isReceipt is false, still provide best-guess category and subcategory based o
     timeoutMs
   );
   const data = await res.json();
-  // Exposer l'erreur HTTP réelle (401, 402, 429…) au lieu de la masquer
   if (!res.ok) {
     throw new Error(`Anthropic HTTP ${res.status}: ${data.error?.message || JSON.stringify(data).slice(0, 120)}`);
   }
-  const rawText = data.content?.[0]?.text || '{}';
-  const match = rawText.match(/\{[\s\S]*?\}/);
-  const parsed = match ? JSON.parse(match[0]) : {};
+
+  const rawText  = data.content?.[0]?.text || '{}';
+  const jsonStart = rawText.indexOf('{');
+  const jsonEnd   = rawText.lastIndexOf('}');
+  const jsonStr   = jsonStart !== -1 && jsonEnd > jsonStart ? rawText.slice(jsonStart, jsonEnd + 1) : '{}';
+  const parsed    = JSON.parse(jsonStr);
+
   if (typeof parsed.isReceipt !== 'boolean') throw new Error('Réponse Claude invalide');
+
   const method = model.includes('haiku') ? 'claude_haiku' : 'claude_sonnet';
   return {
     isReceipt:          parsed.isReceipt,
     reason:             parsed.reason || '',
     method,
-    category:           parsed.category || 'Autre',
+    merchant:           parsed.merchant   || null,
+    date:               parsed.date       || null,
+    total:              typeof parsed.total === 'number' ? parsed.total : null,
+    tax:                typeof parsed.tax  === 'number' ? parsed.tax   : null,
+    subtotal:           null,
+    currency:           parsed.currency   || null,
+    category:           parsed.category   || 'Autre',
     subcategory:        parsed.subcategory || 'Autre',
     categoryConfidence: typeof parsed.categoryConfidence === 'number' ? parsed.categoryConfidence : 0.5,
+    categoryMethod:     method,
+    items:              Array.isArray(parsed.items) ? parsed.items.filter(i => i.name || i.amount != null) : [],
+    paymentMethod:      parsed.paymentMethod  || null,
+    receiptNumber:      parsed.receiptNumber  || null,
+    confidence:         typeof parsed.confidence === 'number' ? parsed.confidence : 0.7,
   };
-}
-
-// ─── T3 : Google Cloud Vision (labels enrichis) ──────────────
-async function classifyWithGoogle(image) {
-  if (!process.env.GOOGLE_VISION_API_KEY) throw new Error('GOOGLE_VISION_API_KEY absent');
-  const res = await withTimeout(
-    fetch(`https://vision.googleapis.com/v1/images:annotate?key=${process.env.GOOGLE_VISION_API_KEY}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        requests: [{
-          image: { content: image },
-          features: [
-            { type: 'LABEL_DETECTION', maxResults: 15 },
-            { type: 'TEXT_DETECTION',  maxResults: 1  },
-          ],
-        }],
-      }),
-    }),
-    5000
-  );
-  const data = await res.json();
-  if (data.error) throw new Error(data.error.message || 'Erreur Google Vision');
-  const response = data.responses?.[0] || {};
-
-  const RECEIPT_LABELS = [
-    'receipt', 'invoice', 'bill', 'payment', 'cash register', 'pos', 'retail',
-    'supermarket', 'shopping', 'checkout', 'price', 'total', 'amount', 'tax',
-    'vat', 'tva', 'ttc', 'ht', 'document', 'paper', 'font', 'text', 'number',
-    'ticket', 'purchase', 'sale', 'store', 'shop',
-  ];
-  const labels = (response.labelAnnotations || []).map(l => l.description?.toLowerCase() || '');
-  const hasReceiptLabel  = labels.some(l => RECEIPT_LABELS.some(kw => l.includes(kw)));
-  const detectedText     = response.textAnnotations?.[0]?.description || '';
-  const hasNumericText   = /\d+[.,]\d{2}/.test(detectedText);
-  const hasSubstantialText = detectedText.length > 30;
-
-  // Reçu si label commercial + montant, OU texte substantiel + montant
-  const isReceipt = (hasReceiptLabel && hasNumericText) || (hasSubstantialText && hasNumericText);
-  return { isReceipt, reason: null, method: 'google', googleLabels: response.labelAnnotations || [] };
 }
 
 // ─── T3 : Azure Document Intelligence (classification + extraction) ─
@@ -245,7 +462,7 @@ async function classifyWithAzure(image) {
       method: 'POST',
       headers: {
         'Ocp-Apim-Subscription-Key': azureKey,
-        'Content-Type': 'application/json',
+        'Content-Type':              'application/json',
       },
       body: JSON.stringify({ base64Source: image }),
     },
@@ -278,21 +495,68 @@ async function classifyWithAzure(image) {
   }
 
   const analyzeResult = pollData.analyzeResult;
-  const doc = analyzeResult?.documents?.[0];
-  const confidence = doc?.confidence ?? 0;
-  const fields = doc?.fields || {};
-  const hasKeyFields = !!(fields.Total || fields.MerchantName || fields.TransactionDate);
-  const isReceipt = confidence >= 0.3 || hasKeyFields;
+  const extracted     = extractFromAzure(analyzeResult);
+  const hasKeyFields  = !!(extracted.total != null || extracted.merchant || extracted.date);
+  const isReceipt     = extracted.confidence >= 0.3 || hasKeyFields;
 
   return {
     isReceipt,
     method: 'azure',
+    reason: isReceipt ? null : `Confiance Azure insuffisante (${Math.round(extracted.confidence * 100)}%)`,
     analyzeResult,
-    reason: isReceipt ? null : `Confiance Azure insuffisante (${Math.round(confidence * 100)}%)`,
+    ...extracted,
   };
 }
 
-// ─── T5 : Heuristique locale ─────────────────────────────────
+// ─── T4 : Google Cloud Vision (labels + texte + web entities) ─
+async function classifyWithGoogle(image) {
+  if (!process.env.GOOGLE_VISION_API_KEY) throw new Error('GOOGLE_VISION_API_KEY absent');
+  const res = await withTimeout(
+    fetch(`https://vision.googleapis.com/v1/images:annotate?key=${process.env.GOOGLE_VISION_API_KEY}`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requests: [{
+          image:    { content: image },
+          features: [
+            { type: 'LABEL_DETECTION',  maxResults: 15 },
+            { type: 'TEXT_DETECTION',   maxResults: 1  },
+            { type: 'WEB_DETECTION',    maxResults: 5  },
+          ],
+        }],
+      }),
+    }),
+    5000
+  );
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message || 'Erreur Google Vision');
+  const response = data.responses?.[0] || {};
+
+  const RECEIPT_LABELS = [
+    'receipt', 'invoice', 'bill', 'payment', 'cash register', 'pos', 'retail',
+    'supermarket', 'shopping', 'checkout', 'price', 'total', 'amount', 'tax',
+    'vat', 'tva', 'ttc', 'ht', 'document', 'paper', 'font', 'text', 'number',
+    'ticket', 'purchase', 'sale', 'store', 'shop',
+  ];
+  const labels          = (response.labelAnnotations || []).map(l => l.description?.toLowerCase() || '');
+  const hasReceiptLabel = labels.some(l => RECEIPT_LABELS.some(kw => l.includes(kw)));
+  const detectedText    = response.textAnnotations?.[0]?.description || '';
+  const hasNumericText  = /\d+[.,]\d{2}/.test(detectedText);
+  const hasSubstantialText = detectedText.length > 30;
+
+  const isReceipt = (hasReceiptLabel && hasNumericText) || (hasSubstantialText && hasNumericText);
+  const extracted = extractFromGoogleVision(data);
+
+  return {
+    isReceipt,
+    reason:       null,
+    method:       'google',
+    googleLabels: response.labelAnnotations || [],
+    ...extracted,
+  };
+}
+
+// ─── T5 : Heuristique locale (classification seulement) ──────
 function classifyHeuristic(image) {
   const rawText    = Buffer.from(image, 'base64').toString('latin1');
   const hasAmount  = /\d+[.,]\d{2}/.test(rawText);
@@ -302,9 +566,8 @@ function classifyHeuristic(image) {
   return { isReceipt, confidence: isReceipt ? 0.6 : 0.4, method: 'heuristic' };
 }
 
-// ─── Orchestrateur : T1 → T2 → T3 → T4 → T5 → laisser passer ─
+// ─── Orchestrateur T1 → T2 → T3 → T4 → T5 → laisser passer ──
 async function classifyImage(image, detectedMime) {
-  // T1 — Claude Haiku (rapide, économique, ~1-2s)
   console.log('[OCR] T1 — Claude Haiku | API Key présente:', !!process.env.ANTHROPIC_API_KEY);
   try {
     const r = await classifyWithClaude(image, detectedMime, 'claude-haiku-4-5-20251001', 8000);
@@ -314,7 +577,6 @@ async function classifyImage(image, detectedMime) {
     console.error('[OCR] T1 Haiku échoué:', err.message);
   }
 
-  // T2 — Claude Sonnet (fallback IA, ~3-5s)
   console.log('[OCR] T2 — Claude Sonnet...');
   try {
     const r = await classifyWithClaude(image, detectedMime, 'claude-sonnet-4-6', 15000);
@@ -324,8 +586,7 @@ async function classifyImage(image, detectedMime) {
     console.error('[OCR] T2 Sonnet échoué:', err.message);
   }
 
-  // T3 — Azure Document Intelligence (classification + extraction en un seul appel)
-  console.log('[OCR] T3 — Azure Document Intelligence | Endpoint:', !!(process.env.AZURE_DOC_INTELLIGENCE_ENDPOINT));
+  console.log('[OCR] T3 — Azure Document Intelligence | Endpoint présent:', !!(process.env.AZURE_DOC_INTELLIGENCE_ENDPOINT));
   try {
     const r = await classifyWithAzure(image);
     console.log('[OCR] T3 résultat — isReceipt:', r.isReceipt, '| reason:', r.reason);
@@ -334,7 +595,6 @@ async function classifyImage(image, detectedMime) {
     console.error('[OCR] T3 Azure échoué:', err.message);
   }
 
-  // T4 — Google Cloud Vision (labels enrichis)
   console.log('[OCR] T4 — Google Vision...');
   try {
     const r = await classifyWithGoogle(image);
@@ -345,14 +605,13 @@ async function classifyImage(image, detectedMime) {
     console.error('[OCR] T4 Google Vision échoué:', err.message);
   }
 
-  // T5 — Heuristique locale (jamais en erreur)
   console.log('[OCR] T5 — Heuristique locale...');
   const r = classifyHeuristic(image);
   console.log('[OCR] T5 résultat — isReceipt:', r.isReceipt);
   return r;
 }
 
-// ─── Fetch with timeout ───────────────────────────────────────
+// ─── Fetch avec timeout (AbortController) ────────────────────
 async function fetchWithTimeout(url, options, ms = 25000) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), ms);
@@ -400,14 +659,13 @@ export default async function handler(req, res) {
     });
   }
 
-  // Auth : JWT admin ou email invité (header X-Guest-Email)
-  const authHeader  = req.headers.authorization || '';
-  const guestEmail  = (req.headers['x-guest-email'] || '').trim().toLowerCase();
-  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  // ── Auth ──────────────────────────────────────────────────────
+  const authHeader = req.headers.authorization || '';
+  const guestEmail = (req.headers['x-guest-email'] || '').trim().toLowerCase();
+  const supabase   = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   let userId;
 
   if (guestEmail) {
-    // Valider que cet email est bien un invité actif dans la table invitations
     const { data: inv, error: invErr } = await supabase
       .from('invitations')
       .select('email')
@@ -418,7 +676,6 @@ export default async function handler(req, res) {
     if (invErr || !inv) {
       return res.status(401).json({ error: 'Invité non reconnu', level_rejected: 1 });
     }
-    // Rate limit par email (userId fictif = hash stable de l'email)
     userId = `guest:${guestEmail}`;
   } else {
     if (!authHeader.startsWith('Bearer ')) {
@@ -435,7 +692,7 @@ export default async function handler(req, res) {
     userId = user.id;
   }
 
-  // Rate limit : 20 scans/heure
+  // ── Rate limit : 20 scans/heure ───────────────────────────────
   const oneHourAgo = new Date(Date.now() - 3_600_000).toISOString();
   const { count } = await supabase
     .from('ocr_logs')
@@ -451,23 +708,9 @@ export default async function handler(req, res) {
     });
   }
 
-  // ── Niveau 2 : chaîne de fallback classification ─────────────
+  // ── Niveau 2 : chaîne de classification ──────────────────────
   const classification = await classifyImage(image, detectedMime);
   const { isReceipt, reason: classifyReason, method: classificationMethod } = classification;
-
-  // Catégorisation initiale depuis la classification
-  let categoryResult = { category: 'Autre', subcategory: 'Autre', categoryConfidence: 0, categoryMethod: 'none' };
-  if ((classificationMethod === 'claude_haiku' || classificationMethod === 'claude_sonnet') && classification.category) {
-    categoryResult = {
-      category:           classification.category,
-      subcategory:        classification.subcategory || 'Autre',
-      categoryConfidence: classification.categoryConfidence || 0.7,
-      categoryMethod:     classificationMethod,
-    };
-  } else if (classificationMethod === 'google') {
-    categoryResult = categorizeFromGoogleLabels(classification.googleLabels || [], null);
-  }
-  // azure : catégorisation différée depuis le nom du marchand (enrichi plus bas)
 
   if (!isReceipt) {
     const userMessage = 'Cette image ne ressemble pas à un reçu. Vérifiez que vous avez bien photographié un ticket de caisse ou une facture.';
@@ -481,18 +724,18 @@ export default async function handler(req, res) {
     });
   }
 
-  // ── Niveau 3 : Azure Document Intelligence OCR ────────────────
-  let analyzeResult = null;
+  // ── Niveau 3 : Azure Document Intelligence (extraction) ───────
+  let azureData = null;
 
   if (classificationMethod === 'azure' && classification.analyzeResult) {
-    // Résultats déjà obtenus lors de la classification — pas de second appel Azure
-    console.log('[OCR] Niveau 3 — réutilisation des résultats Azure (classification T3)');
-    analyzeResult = classification.analyzeResult;
+    // Réutiliser les résultats Azure déjà obtenus lors de la classification T3
+    console.log('[OCR] Niveau 3 — réutilisation des résultats Azure (T3)');
+    azureData = extractFromAzure(classification.analyzeResult);
   } else {
     try {
       console.log('[OCR] Niveau 3 — appel Azure Document Intelligence OCR...');
       const azureResult = await classifyWithAzure(image);
-      analyzeResult = azureResult.analyzeResult;
+      azureData = extractFromAzure(azureResult.analyzeResult);
     } catch (err) {
       await logOCR(supabase, userId, false, err.message, 3, classificationMethod);
       return res.status(503).json({
@@ -502,60 +745,44 @@ export default async function handler(req, res) {
     }
   }
 
-  // ── Niveau 4 : structuration résultat ─────────────────────────
-  const doc = analyzeResult?.documents?.[0];
-  const fields = doc?.fields || {};
-  const confidence = doc?.confidence ?? 0;
-  const needsManualReview = confidence < 0.7;
+  // ── Niveau 4 : fusion multi-sources ──────────────────────────
+  // Données du classifieur (si Claude ou Google)
+  const isClaudeMethod = classificationMethod === 'claude_haiku' || classificationMethod === 'claude_sonnet';
+  const claudeData     = isClaudeMethod ? classification : null;
+  const googleData     = classificationMethod === 'google' ? classification : null;
 
-  const getFieldValue = (field) => {
-    if (!field) return null;
-    // v4 currency amount
-    if (field.valueCurrency?.amount != null) return field.valueCurrency.amount;
-    if (field.value != null) return field.value;
-    if (field.valueNumber != null) return field.valueNumber;
-    if (field.content) return field.content;
-    return null;
-  };
+  // Extraction heuristique depuis le texte brut Azure (toujours disponible)
+  const heuristicData  = extractFromHeuristic(
+    classification.analyzeResult?.content || azureData?.merchant || '',
+    azureData?.merchant || null
+  );
 
-  const items = (fields.Items?.valueArray || []).map(item => {
-    const obj = item.valueObject || {};
-    return {
-      description: obj.Description?.content || obj.Name?.content || '',
-      amount: getFieldValue(obj.TotalPrice) ?? getFieldValue(obj.Price) ?? 0,
-    };
-  }).filter(i => i.description);
-
-  const merchant = fields.MerchantName?.content || fields.MerchantName?.valueString || '';
-
-  // Enrichissement catégorisation depuis le nom du marchand si confiance faible
-  if (categoryResult.categoryConfidence < 0.5 && merchant) {
-    const merchantCategory = categorizeFromMerchantName(merchant);
-    if (merchantCategory.categoryConfidence > categoryResult.categoryConfidence) {
-      categoryResult = merchantCategory;
-    }
-  }
-
-  const result = {
-    merchant,
-    date:                 fields.TransactionDate?.valueDate || fields.TransactionDate?.content || '',
-    total:                getFieldValue(fields.Total),
-    subtotal:             getFieldValue(fields.Subtotal),
-    tax:                  getFieldValue(fields.TotalTax),
-    tip:                  getFieldValue(fields.Tip),
-    currency:             fields.Total?.valueCurrency?.currencyCode || fields.CurrencyCode?.content || null,
-    items,
-    confidence:           Math.round(confidence * 100) / 100,
-    needsManualReview,
-    verificationStatus:   classificationMethod === 'unverified' ? 'unverified' : 'verified',
-    classificationMethod,
-    category:             categoryResult.category,
-    subcategory:          categoryResult.subcategory,
-    categoryConfidence:   categoryResult.categoryConfidence,
-    categoryMethod:       categoryResult.categoryMethod,
-  };
+  const merged = mergeExtractionResults(claudeData, azureData, googleData, heuristicData);
 
   await logOCR(supabase, userId, true, null, null, classificationMethod);
 
-  return res.status(200).json(result);
+  return res.status(200).json({
+    // Champs formulaire
+    merchant:           merged.merchant,
+    date:               merged.date,
+    total:              merged.total,
+    tax:                merged.tax,
+    subtotal:           merged.subtotal,
+    currency:           merged.currency,
+    category:           merged.category,
+    subcategory:        merged.subcategory,
+    categoryConfidence: merged.categoryConfidence,
+    categoryMethod:     merged.categoryMethod,
+    items:              merged.items,
+    receiptNumber:      merged.receiptNumber,
+    paymentMethod:      merged.paymentMethod,
+    merchantPhone:      merged.merchantPhone,
+    merchantAddress:    merged.merchantAddress,
+    // Métadonnées
+    confidence:          merged.confidence,
+    needsManualReview:   merged.confidence < 0.5,
+    verificationStatus:  classificationMethod === 'unverified' ? 'unverified' : 'verified',
+    classificationMethod,
+    extractionSources:   merged.extractionSources,
+  });
 }
