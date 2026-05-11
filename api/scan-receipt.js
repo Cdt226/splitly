@@ -233,7 +233,66 @@ async function classifyWithGoogle(image) {
   return { isReceipt, reason: null, method: 'google', googleLabels: response.labelAnnotations || [] };
 }
 
-// ─── T4 : Heuristique locale ─────────────────────────────────
+// ─── T3 : Azure Document Intelligence (classification + extraction) ─
+async function classifyWithAzure(image) {
+  const endpoint = (process.env.AZURE_DOC_INTELLIGENCE_ENDPOINT || '').replace(/\/$/, '');
+  const azureKey = process.env.AZURE_DOC_INTELLIGENCE_KEY;
+  if (!endpoint || !azureKey) throw new Error('Azure config absente');
+
+  const submitRes = await fetchWithTimeout(
+    `${endpoint}/documentintelligence/documentModels/prebuilt-receipt:analyze?api-version=2024-11-30`,
+    {
+      method: 'POST',
+      headers: {
+        'Ocp-Apim-Subscription-Key': azureKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ base64Source: image }),
+    },
+    10000
+  );
+
+  if (!submitRes.ok) {
+    const errText = await submitRes.text();
+    throw new Error(`Azure ${submitRes.status}: ${errText.slice(0, 200)}`);
+  }
+
+  const operationUrl =
+    submitRes.headers.get('Operation-Location') ||
+    submitRes.headers.get('operation-location');
+  if (!operationUrl) throw new Error('Operation-Location manquant dans la réponse Azure');
+
+  const deadline = Date.now() + 20000;
+  let pollData = null;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 1200));
+    const pollRes = await fetch(operationUrl, {
+      headers: { 'Ocp-Apim-Subscription-Key': azureKey },
+    });
+    pollData = await pollRes.json();
+    if (pollData.status === 'succeeded' || pollData.status === 'failed') break;
+  }
+
+  if (!pollData || pollData.status !== 'succeeded') {
+    throw new Error(`Analyse Azure : ${pollData?.status || 'timeout'}`);
+  }
+
+  const analyzeResult = pollData.analyzeResult;
+  const doc = analyzeResult?.documents?.[0];
+  const confidence = doc?.confidence ?? 0;
+  const fields = doc?.fields || {};
+  const hasKeyFields = !!(fields.Total || fields.MerchantName || fields.TransactionDate);
+  const isReceipt = confidence >= 0.3 || hasKeyFields;
+
+  return {
+    isReceipt,
+    method: 'azure',
+    analyzeResult,
+    reason: isReceipt ? null : `Confiance Azure insuffisante (${Math.round(confidence * 100)}%)`,
+  };
+}
+
+// ─── T5 : Heuristique locale ─────────────────────────────────
 function classifyHeuristic(image) {
   const rawText    = Buffer.from(image, 'base64').toString('latin1');
   const hasAmount  = /\d+[.,]\d{2}/.test(rawText);
@@ -243,7 +302,7 @@ function classifyHeuristic(image) {
   return { isReceipt, confidence: isReceipt ? 0.6 : 0.4, method: 'heuristic' };
 }
 
-// ─── Orchestrateur : T1 → T2 → T3 → T4 → laisser passer ─────
+// ─── Orchestrateur : T1 → T2 → T3 → T4 → T5 → laisser passer ─
 async function classifyImage(image, detectedMime) {
   // T1 — Claude Haiku (rapide, économique, ~1-2s)
   console.log('[OCR] T1 — Claude Haiku | API Key présente:', !!process.env.ANTHROPIC_API_KEY);
@@ -265,24 +324,32 @@ async function classifyImage(image, detectedMime) {
     console.error('[OCR] T2 Sonnet échoué:', err.message);
   }
 
-  // T3 — Google Cloud Vision (labels enrichis)
-  console.log('[OCR] T3 — Google Vision...');
+  // T3 — Azure Document Intelligence (classification + extraction en un seul appel)
+  console.log('[OCR] T3 — Azure Document Intelligence | Endpoint:', !!(process.env.AZURE_DOC_INTELLIGENCE_ENDPOINT));
+  try {
+    const r = await classifyWithAzure(image);
+    console.log('[OCR] T3 résultat — isReceipt:', r.isReceipt, '| reason:', r.reason);
+    return r;
+  } catch (err) {
+    console.error('[OCR] T3 Azure échoué:', err.message);
+  }
+
+  // T4 — Google Cloud Vision (labels enrichis)
+  console.log('[OCR] T4 — Google Vision...');
   try {
     const r = await classifyWithGoogle(image);
-    console.log('[OCR] T3 résultat — isReceipt:', r.isReceipt,
+    console.log('[OCR] T4 résultat — isReceipt:', r.isReceipt,
       '| labels:', (r.googleLabels || []).slice(0, 4).map(l => l.description).join(', '));
     return r;
   } catch (err) {
-    console.error('[OCR] T3 Google Vision échoué:', err.message);
+    console.error('[OCR] T4 Google Vision échoué:', err.message);
   }
 
-  // T4 — Heuristique locale (jamais en erreur)
-  console.log('[OCR] T4 — Heuristique locale...');
+  // T5 — Heuristique locale (jamais en erreur)
+  console.log('[OCR] T5 — Heuristique locale...');
   const r = classifyHeuristic(image);
-  console.log('[OCR] T4 résultat — isReceipt:', r.isReceipt);
+  console.log('[OCR] T5 résultat — isReceipt:', r.isReceipt);
   return r;
-
-  // T5 implicite : si heuristique jetait, on laisserait passer
 }
 
 // ─── Fetch with timeout ───────────────────────────────────────
@@ -400,6 +467,7 @@ export default async function handler(req, res) {
   } else if (classificationMethod === 'google') {
     categoryResult = categorizeFromGoogleLabels(classification.googleLabels || [], null);
   }
+  // azure : catégorisation différée depuis le nom du marchand (enrichi plus bas)
 
   if (!isReceipt) {
     const userMessage = 'Cette image ne ressemble pas à un reçu. Vérifiez que vous avez bien photographié un ticket de caisse ou une facture.';
@@ -414,58 +482,24 @@ export default async function handler(req, res) {
   }
 
   // ── Niveau 3 : Azure Document Intelligence OCR ────────────────
-  const endpoint = (process.env.AZURE_DOC_INTELLIGENCE_ENDPOINT || '').replace(/\/$/, '');
-  const azureKey = process.env.AZURE_DOC_INTELLIGENCE_KEY;
-
   let analyzeResult = null;
-  try {
-    // Soumettre l'analyse
-    const submitRes = await fetchWithTimeout(
-      `${endpoint}/documentintelligence/documentModels/prebuilt-receipt:analyze?api-version=2024-11-30`,
-      {
-        method: 'POST',
-        headers: {
-          'Ocp-Apim-Subscription-Key': azureKey,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ base64Source: image }),
-      },
-      10000
-    );
 
-    if (!submitRes.ok) {
-      const errText = await submitRes.text();
-      throw new Error(`Azure ${submitRes.status}: ${errText.slice(0, 200)}`);
-    }
-
-    const operationUrl =
-      submitRes.headers.get('Operation-Location') ||
-      submitRes.headers.get('operation-location');
-    if (!operationUrl) throw new Error('Operation-Location manquant dans la réponse Azure');
-
-    // Polling
-    const deadline = Date.now() + 20000;
-    let pollData = null;
-    while (Date.now() < deadline) {
-      await new Promise(r => setTimeout(r, 1200));
-      const pollRes = await fetch(operationUrl, {
-        headers: { 'Ocp-Apim-Subscription-Key': azureKey },
+  if (classificationMethod === 'azure' && classification.analyzeResult) {
+    // Résultats déjà obtenus lors de la classification — pas de second appel Azure
+    console.log('[OCR] Niveau 3 — réutilisation des résultats Azure (classification T3)');
+    analyzeResult = classification.analyzeResult;
+  } else {
+    try {
+      console.log('[OCR] Niveau 3 — appel Azure Document Intelligence OCR...');
+      const azureResult = await classifyWithAzure(image);
+      analyzeResult = azureResult.analyzeResult;
+    } catch (err) {
+      await logOCR(supabase, userId, false, err.message, 3, classificationMethod);
+      return res.status(503).json({
+        error: `Erreur OCR : ${err.message}`,
+        level_rejected: 3,
       });
-      pollData = await pollRes.json();
-      if (pollData.status === 'succeeded' || pollData.status === 'failed') break;
     }
-
-    if (!pollData || pollData.status !== 'succeeded') {
-      throw new Error(`Analyse Azure : ${pollData?.status || 'timeout'}`);
-    }
-
-    analyzeResult = pollData.analyzeResult;
-  } catch (err) {
-    await logOCR(supabase, userId, false, err.message, 3, classificationMethod);
-    return res.status(503).json({
-      error: `Erreur OCR : ${err.message}`,
-      level_rejected: 3,
-    });
   }
 
   // ── Niveau 4 : structuration résultat ─────────────────────────

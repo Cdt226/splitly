@@ -290,6 +290,7 @@ export function OCRCapture({ onFill, onClose, onManualEntry, isMobile, guestEmai
           {invalidMeta?.classificationMethod && (
             <div style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>
               {(invalidMeta.classificationMethod === 'claude_haiku' || invalidMeta.classificationMethod === 'claude_sonnet') && '🤖 Analysé par Claude Vision'}
+              {invalidMeta.classificationMethod === 'azure'     && '📄 Analysé par Azure Document Intelligence'}
               {invalidMeta.classificationMethod === 'google'    && '🔍 Analysé par Google Vision'}
               {invalidMeta.classificationMethod === 'heuristic' && '⚙️ Analyse automatique'}
               {invalidMeta.debugReason && ` — ${invalidMeta.debugReason}`}
