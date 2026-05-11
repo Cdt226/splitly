@@ -46,14 +46,16 @@ const BUILT_IN_ADAPTERS = { receipt: receiptAdapter };
 
 // ─── Hook ─────────────────────────────────────────────────────
 export function useOCRModule({ adapter = 'receipt', onSuccess, onInvalid, onError, guestEmail } = {}) {
-  const [status, setStatus]   = useState('idle');   // idle|compressing|uploading|processing|validating|success|error
-  const [result, setResult]   = useState(null);
-  const [error,  setError]    = useState(null);
+  const [status,      setStatus]      = useState('idle');   // idle|compressing|uploading|processing|validating|success|error
+  const [result,      setResult]      = useState(null);
+  const [error,       setError]       = useState(null);
+  const [invalidMeta, setInvalidMeta] = useState(null);  // { classificationMethod, debugReason } — renseigné sur 422
 
   const reset = useCallback(() => {
     setStatus('idle');
     setResult(null);
     setError(null);
+    setInvalidMeta(null);
   }, []);
 
   const scan = useCallback(async (file) => {
@@ -116,6 +118,7 @@ export function useOCRModule({ adapter = 'receipt', onSuccess, onInvalid, onErro
         // Niveau 2 : pas un reçu
         if (res.status === 422 && data.isReceipt === false) {
           setError(data.error);
+          setInvalidMeta({ classificationMethod: data.classificationMethod || null, debugReason: data.debugReason || null });
           setStatus('error');
           onInvalid?.(data.error);
           return;
@@ -142,5 +145,5 @@ export function useOCRModule({ adapter = 'receipt', onSuccess, onInvalid, onErro
     }
   }, [adapter, onSuccess, onInvalid, onError, guestEmail]);
 
-  return { scan, status, result, error, reset };
+  return { scan, status, result, error, invalidMeta, reset };
 }

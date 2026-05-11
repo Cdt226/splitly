@@ -216,7 +216,7 @@ async function classifyWithGoogle(image) {
   const hasNumericText = /\d+[.,]\d{2}/.test(detectedText);
 
   const isReceipt = hasCommercialLabel && hasNumericText;
-  return { isReceipt, reason: 'Google Vision labels', method: 'google', googleLabels: response.labelAnnotations || [] };
+  return { isReceipt, reason: null, method: 'google', googleLabels: response.labelAnnotations || [] };
 }
 
 // ─── Tentative 3 : Heuristique locale ────────────────────────
@@ -374,11 +374,15 @@ export default async function handler(req, res) {
   }
 
   if (!isReceipt) {
-    const reason = classifyReason
-      ? `Ce document ne semble pas être un reçu : ${classifyReason}`
-      : 'Ce document ne semble pas être un reçu ou une facture.';
-    await logOCR(supabase, userId, false, reason, 2, classificationMethod);
-    return res.status(422).json({ error: reason, isReceipt: false, level_rejected: 2 });
+    const userMessage = 'Cette image ne ressemble pas à un reçu. Vérifiez que vous avez bien photographié un ticket de caisse ou une facture.';
+    await logOCR(supabase, userId, false, classifyReason || classificationMethod, 2, classificationMethod);
+    return res.status(422).json({
+      error: userMessage,
+      debugReason: classifyReason || null,
+      classificationMethod,
+      isReceipt: false,
+      level_rejected: 2,
+    });
   }
 
   // ── Niveau 3 : Azure Document Intelligence OCR ────────────────

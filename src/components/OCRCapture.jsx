@@ -118,7 +118,7 @@ export function OCRCapture({ onFill, onClose, onManualEntry, isMobile, guestEmai
     });
   };
 
-  const { scan, status, result, error, reset } = useOCRModule({
+  const { scan, status, result, error, invalidMeta, reset } = useOCRModule({
     adapter:    'receipt',
     onSuccess:  handleSuccess,
     guestEmail,
@@ -127,7 +127,7 @@ export function OCRCapture({ onFill, onClose, onManualEntry, isMobile, guestEmai
   const isActive  = !['idle', 'success', 'error'].includes(status);
   const isSuccess = status === 'success';
   const isError   = status === 'error';
-  const isInvalid = isError && result === null && error && !error.includes('images sont acceptées');
+  const isInvalid = isError && invalidMeta !== null;
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
@@ -284,9 +284,17 @@ export function OCRCapture({ onFill, onClose, onManualEntry, isMobile, guestEmai
           role="alert"
           style={{ padding: '12px 14px', borderRadius: 10, background: '#FFF8E1', border: '1px solid #FFE082', marginBottom: 14 }}
         >
-          <div style={{ fontSize: 13, color: '#E65100', fontWeight: 600, marginBottom: 10 }}>
+          <div style={{ fontSize: 13, color: '#E65100', fontWeight: 600, marginBottom: 6 }}>
             🔍 {error}
           </div>
+          {invalidMeta?.classificationMethod && (
+            <div style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>
+              {invalidMeta.classificationMethod === 'claude'    && '🤖 Analysé par Claude Vision'}
+              {invalidMeta.classificationMethod === 'google'    && '🔍 Analysé par Google Vision'}
+              {invalidMeta.classificationMethod === 'heuristic' && '⚙️ Analyse automatique'}
+              {invalidMeta.debugReason && ` — ${invalidMeta.debugReason}`}
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button onClick={handleReset} style={{ ...S.btnGhost, fontSize: 12, padding: '10px 14px' }}>
               Réessayer
