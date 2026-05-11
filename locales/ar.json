@@ -567,5 +567,10 @@
   "notification_approve_partial": "موافقة جزئية",
   "notification_reject": "رفض",
   "invite_default_permissions": "الأذونات الافتراضية",
-  "invite_permission_hint": "حدد الحقوق الممنوحة للضيف"
+  "invite_permission_hint": "حدد الحقوق الممنوحة للضيف",
+  "ocr_category_detected": "الفئة المكتشفة",
+  "ocr_category_low_confidence": "ثقة منخفضة — تحقق",
+  "ocr_detected_by_claude": "تم الاكتشاف بواسطة Claude Vision",
+  "ocr_detected_by_google": "تم الاكتشاف بواسطة Google Vision",
+  "ocr_detected_by_heuristic": "تم الاكتشاف تلقائياً — تحقق"
 }

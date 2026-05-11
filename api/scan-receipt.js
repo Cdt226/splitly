@@ -2,6 +2,7 @@
 // Vercel Serverless Function — Pipeline OCR 4 niveaux
 
 import { createClient } from '@supabase/supabase-js';
+import { CATEGORIES } from '../src/constants.js';
 
 const SUPABASE_URL = 'https://okwucwvdmdsepqkkmnug.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9rd3Vjd3ZkbWRzZXBxa2ttbnVnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczMzU5NTksImV4cCI6MjA5MjkxMTk1OX0.9p9hdCQWNKCLLNCaxxwE6eJIKntjk-v_d9rMo4Yklhs';
@@ -47,9 +48,108 @@ function withTimeout(promise, ms = 3000) {
   return Promise.race([promise, timeout]);
 }
 
+// ─── Construction dynamique du prompt catégories ─────────────
+function buildCategoryPrompt() {
+  return Object.entries(CATEGORIES)
+    .map(([cat, val]) => {
+      const subs = val.subs && val.subs.length > 0
+        ? ` (sous-catégories: ${val.subs.join(', ')})`
+        : '';
+      return `- "${cat}"${subs}`;
+    })
+    .join('\n');
+}
+
+// ─── Catégorisation depuis les labels Google Vision ───────────
+function categorizeFromGoogleLabels(labels, merchantName) {
+  const labelMap = {
+    food: 'Nourriture', restaurant: 'Nourriture', meal: 'Nourriture',
+    dish: 'Nourriture', cuisine: 'Nourriture', menu: 'Nourriture',
+    drink: 'Boisson', beverage: 'Boisson', coffee: 'Boisson',
+    tea: 'Boisson', juice: 'Boisson',
+    taxi: 'Transport', car: 'Transport', vehicle: 'Transport',
+    fuel: 'Transport', ticket: 'Transport', parking: 'Transport',
+    hotel: 'Hébergement', room: 'Hébergement',
+    accommodation: 'Hébergement', lodging: 'Hébergement',
+    supermarket: 'Courses & Épicerie', grocery: 'Courses & Épicerie',
+    market: 'Courses & Épicerie', store: 'Courses & Épicerie',
+    pharmacy: 'Santé & Bien-être', medicine: 'Santé & Bien-être',
+    health: 'Santé & Bien-être', medical: 'Santé & Bien-être',
+    cinema: 'Loisirs & Activités', entertainment: 'Loisirs & Activités',
+    sport: 'Loisirs & Activités', museum: 'Loisirs & Activités',
+    technology: 'Technologie & Services', electronics: 'Technologie & Services',
+    software: 'Technologie & Services',
+    electricity: 'Loyer & Factures', utility: 'Loyer & Factures',
+    internet: 'Loyer & Factures', bill: 'Loyer & Factures',
+  };
+
+  for (const label of (labels || [])) {
+    const labelLower = (label.description || '').toLowerCase();
+    if (labelMap[labelLower]) {
+      const cat = labelMap[labelLower];
+      const subs = CATEGORIES[cat]?.subs || [];
+      return { category: cat, subcategory: subs[0] || 'Autre', categoryConfidence: 0.6, categoryMethod: 'google_labels' };
+    }
+  }
+  return categorizeFromMerchantName(merchantName);
+}
+
+// ─── Catégorisation heuristique depuis le nom du marchand ─────
+function categorizeFromMerchantName(merchantName) {
+  if (!merchantName) {
+    return { category: 'Autre', subcategory: 'Autre', categoryConfidence: 0.1, categoryMethod: 'heuristic_none' };
+  }
+  const name = merchantName.toLowerCase();
+  const patterns = [
+    { keywords: ['restaurant', 'resto', 'pizzeria', 'sushi', 'burger', 'mcdonald', 'kfc', 'pizza', 'grill', 'brasserie', 'bistro', 'trattoria', 'snack', 'sandwicherie', 'kebab', 'tacos'], category: 'Nourriture', subcategory: 'Plat', confidence: 0.8 },
+    { keywords: ['café', 'coffee', 'starbucks', 'bar', 'pub', 'lounge', 'smoothie'], category: 'Boisson', subcategory: 'Autre', confidence: 0.8 },
+    { keywords: ['boulangerie', 'pâtisserie', 'bakery', 'pain', 'croissant'], category: 'Nourriture', subcategory: 'Autre', confidence: 0.8 },
+    { keywords: ['taxi', 'uber', 'bolt', 'careem', 'parking', 'station', 'essence', 'carburant', 'total', 'shell', 'afriquia', 'petrom', 'vivo'], category: 'Transport', subcategory: 'Taxi', confidence: 0.8 },
+    { keywords: ['hotel', 'hôtel', 'riad', 'airbnb', 'auberge', 'motel', 'hostel', 'residence'], category: 'Hébergement', subcategory: 'Hôtel', confidence: 0.85 },
+    { keywords: ['marjane', 'carrefour', 'bim', 'label vie', 'acima', 'épicerie', 'supermarché', 'supermarket', 'grocery', 'hanout', 'souk'], category: 'Courses & Épicerie', subcategory: 'Supermarché', confidence: 0.85 },
+    { keywords: ['pharmacie', 'pharmacy', 'clinique', 'clinic', 'médecin', 'doctor', 'labo', 'laboratoire', 'dentiste', 'opticien', 'optique'], category: 'Santé & Bien-être', subcategory: 'Pharmacie', confidence: 0.85 },
+    { keywords: ['cinéma', 'cinema', 'concert', 'musée', 'museum', 'théâtre', 'sport', 'gym', 'fitness', 'hammam', 'spa', 'bowling', 'karting'], category: 'Loisirs & Activités', subcategory: 'Cinéma', confidence: 0.75 },
+    { keywords: ['maroc telecom', 'inwi', 'orange', 'sfr', 'apple', 'samsung', 'microsoft', 'google', 'amazon', 'netflix', 'spotify', 'abonnement'], category: 'Technologie & Services', subcategory: 'Abonnement', confidence: 0.8 },
+    { keywords: ['lydec', 'amendis', 'radeef', 'onee', 'iam', 'électricité', 'eau', 'loyer', 'charges'], category: 'Loyer & Factures', subcategory: 'Électricité', confidence: 0.85 },
+  ];
+
+  for (const pattern of patterns) {
+    if (pattern.keywords.some(kw => name.includes(kw))) {
+      return { category: pattern.category, subcategory: pattern.subcategory, categoryConfidence: pattern.confidence, categoryMethod: 'heuristic_merchant' };
+    }
+  }
+  return { category: 'Autre', subcategory: 'Autre', categoryConfidence: 0.2, categoryMethod: 'heuristic_default' };
+}
+
 // ─── Tentative 1 : Claude Vision ─────────────────────────────
 async function classifyWithClaude(image, detectedMime) {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY absent');
+  const categoryList = buildCategoryPrompt();
+  const prompt = `Analyze this receipt/invoice image carefully.
+
+Reply ONLY in this exact JSON format, no other text:
+{"isReceipt": boolean, "reason": "string", "category": "string", "subcategory": "string", "categoryConfidence": number}
+
+Rules for isReceipt:
+- true ONLY for commercial receipts, invoices, tickets
+- false for: photos of people, landscapes, animals, screenshots, handwritten notes, non-commercial documents
+
+Rules for category — choose EXACTLY ONE from this list:
+${categoryList}
+
+Rules for subcategory:
+- Must be one of the valid subcategories for the chosen category
+- If unsure, use "Autre"
+- Must match exactly the subcategory values listed above
+
+Rules for categoryConfidence:
+- 0.0 to 1.0 — how confident you are in the category choice
+- Use 0.9+ only when the merchant type is unambiguous
+- Use 0.5-0.7 when inferring from context
+- Use 0.3 when guessing
+
+If isReceipt is false, still provide best-guess category and subcategory based on image content, but set categoryConfidence to 0.`;
+
   const res = await withTimeout(
     fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -60,12 +160,12 @@ async function classifyWithClaude(image, detectedMime) {
       },
       body: JSON.stringify({
         model: 'claude-opus-4-20250514',
-        max_tokens: 150,
+        max_tokens: 300,
         messages: [{
           role: 'user',
           content: [
             { type: 'image', source: { type: 'base64', media_type: detectedMime, data: image } },
-            { type: 'text', text: 'Look at this image. Is it a photo of a receipt or invoice? Reply ONLY in JSON: {"isReceipt": boolean, "reason": string}. Be strict: photos of people, landscapes, animals, screenshots unrelated to commerce must return isReceipt: false.' },
+            { type: 'text', text: prompt },
           ],
         }],
       }),
@@ -76,7 +176,14 @@ async function classifyWithClaude(image, detectedMime) {
   const match = rawText.match(/\{[\s\S]*?\}/);
   const parsed = match ? JSON.parse(match[0]) : {};
   if (typeof parsed.isReceipt !== 'boolean') throw new Error('Réponse Claude invalide');
-  return { isReceipt: parsed.isReceipt, reason: parsed.reason || '', method: 'claude' };
+  return {
+    isReceipt:          parsed.isReceipt,
+    reason:             parsed.reason || '',
+    method:             'claude',
+    category:           parsed.category || 'Autre',
+    subcategory:        parsed.subcategory || 'Autre',
+    categoryConfidence: typeof parsed.categoryConfidence === 'number' ? parsed.categoryConfidence : 0.5,
+  };
 }
 
 // ─── Tentative 2 : Google Cloud Vision ───────────────────────
@@ -109,7 +216,7 @@ async function classifyWithGoogle(image) {
   const hasNumericText = /\d+[.,]\d{2}/.test(detectedText);
 
   const isReceipt = hasCommercialLabel && hasNumericText;
-  return { isReceipt, reason: 'Google Vision labels', method: 'google' };
+  return { isReceipt, reason: 'Google Vision labels', method: 'google', googleLabels: response.labelAnnotations || [] };
 }
 
 // ─── Tentative 3 : Heuristique locale ────────────────────────
@@ -253,6 +360,19 @@ export default async function handler(req, res) {
   const classification = await classifyImage(image, detectedMime);
   const { isReceipt, reason: classifyReason, method: classificationMethod } = classification;
 
+  // Catégorisation initiale depuis la classification
+  let categoryResult = { category: 'Autre', subcategory: 'Autre', categoryConfidence: 0, categoryMethod: 'none' };
+  if (classificationMethod === 'claude' && classification.category) {
+    categoryResult = {
+      category:           classification.category,
+      subcategory:        classification.subcategory || 'Autre',
+      categoryConfidence: classification.categoryConfidence || 0.7,
+      categoryMethod:     'claude',
+    };
+  } else if (classificationMethod === 'google') {
+    categoryResult = categorizeFromGoogleLabels(classification.googleLabels || [], null);
+  }
+
   if (!isReceipt) {
     const reason = classifyReason
       ? `Ce document ne semble pas être un reçu : ${classifyReason}`
@@ -340,8 +460,18 @@ export default async function handler(req, res) {
     };
   }).filter(i => i.description);
 
+  const merchant = fields.MerchantName?.content || fields.MerchantName?.valueString || '';
+
+  // Enrichissement catégorisation depuis le nom du marchand si confiance faible
+  if (categoryResult.categoryConfidence < 0.5 && merchant) {
+    const merchantCategory = categorizeFromMerchantName(merchant);
+    if (merchantCategory.categoryConfidence > categoryResult.categoryConfidence) {
+      categoryResult = merchantCategory;
+    }
+  }
+
   const result = {
-    merchant:             fields.MerchantName?.content || fields.MerchantName?.valueString || '',
+    merchant,
     date:                 fields.TransactionDate?.valueDate || fields.TransactionDate?.content || '',
     total:                getFieldValue(fields.Total),
     subtotal:             getFieldValue(fields.Subtotal),
@@ -353,6 +483,10 @@ export default async function handler(req, res) {
     needsManualReview,
     verificationStatus:   classificationMethod === 'unverified' ? 'unverified' : 'verified',
     classificationMethod,
+    category:             categoryResult.category,
+    subcategory:          categoryResult.subcategory,
+    categoryConfidence:   categoryResult.categoryConfidence,
+    categoryMethod:       categoryResult.categoryMethod,
   };
 
   await logOCR(supabase, userId, true, null, null, classificationMethod);

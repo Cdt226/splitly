@@ -26,9 +26,11 @@ export const receiptAdapter = (raw) => {
     unit:     total != null ? String(total) : '',
     qty:      1,
     comment:  raw.date ? `Reçu du ${raw.date}` : '',
-    // Champs que l'utilisateur remplit lui-même
-    category: '',
-    sub:      '',
+    // Catégorisation automatique OCR
+    category:           raw.category    || 'Autre',
+    sub:                raw.subcategory || 'Autre',
+    categoryConfidence: raw.categoryConfidence || 0,
+    categoryMethod:     raw.categoryMethod     || 'none',
     paidBy:   '',
     included: [],
     eventId:  '',

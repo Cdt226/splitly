@@ -567,5 +567,10 @@
   "notification_approve_partial": "Aprovar parcialmente",
   "notification_reject": "Rejeitar",
   "invite_default_permissions": "Permissões padrão",
-  "invite_permission_hint": "Marque os direitos a conceder ao convidado"
+  "invite_permission_hint": "Marque os direitos a conceder ao convidado",
+  "ocr_category_detected": "Categoria detectada",
+  "ocr_category_low_confidence": "Baixa confiança — verifique",
+  "ocr_detected_by_claude": "Detectado pelo Claude Vision",
+  "ocr_detected_by_google": "Detectado pelo Google Vision",
+  "ocr_detected_by_heuristic": "Detectado automaticamente — verifique"
 }

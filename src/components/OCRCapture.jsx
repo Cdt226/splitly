@@ -3,6 +3,7 @@
 
 import { useRef, useState } from 'react';
 import { useOCRModule } from '../hooks/useOCRModule.jsx';
+import { CATEGORIES } from '../constants.js';
 import { S } from '../styles.js';
 
 const STATUS_LABELS = {
@@ -102,6 +103,11 @@ export function OCRCapture({ onFill, onClose, onManualEntry, isMobile, guestEmai
       total:    raw.total != null ? String(raw.total) : '',
       date:     raw.date  || '',
       comment:  transformed.comment,
+      // Catégorisation automatique OCR
+      category:           transformed.category    || 'Autre',
+      subcategory:        transformed.sub         || 'Autre',
+      categoryConfidence: raw.categoryConfidence  || 0,
+      categoryMethod:     raw.categoryMethod      || 'none',
       // Champs internes pour l'adapter
       detail:   transformed.detail,
       unit:     transformed.unit,
@@ -145,6 +151,8 @@ export function OCRCapture({ onFill, onClose, onManualEntry, isMobile, guestEmai
       unit:    editFields.total || editFields.unit,
       qty:     1,
       comment: editFields.comment,
+      category: editFields.category,
+      sub:      editFields.subcategory,
     });
   };
 
@@ -353,6 +361,43 @@ export function OCRCapture({ onFill, onClose, onManualEntry, isMobile, guestEmai
               required
               onChange={v => setEditFields(f => ({ ...f, date: v, comment: v ? `Reçu du ${v}` : '' }))}
             />
+          </div>
+
+          {/* Catégorie détectée automatiquement */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+              Catégorie
+              {editFields.categoryConfidence > 0 && editFields.categoryConfidence < 0.5 && (
+                <span style={{ fontSize: 10, color: '#E65100', fontWeight: 600, textTransform: 'none' }}>— faible confiance, vérifiez</span>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <select
+                value={editFields.category}
+                onChange={e => setEditFields(f => ({ ...f, category: e.target.value, subcategory: 'Autre' }))}
+                style={{ ...S.input, flex: '1 1 140px' }}
+              >
+                {Object.keys(CATEGORIES).map(cat => (
+                  <option key={cat} value={cat}>{CATEGORIES[cat].icon} {cat}</option>
+                ))}
+              </select>
+              <select
+                value={editFields.subcategory}
+                onChange={e => setEditFields(f => ({ ...f, subcategory: e.target.value }))}
+                style={{ ...S.input, flex: '1 1 120px' }}
+              >
+                {(CATEGORIES[editFields.category]?.subs || ['Autre']).map(sub => (
+                  <option key={sub} value={sub}>{sub}</option>
+                ))}
+              </select>
+            </div>
+            {editFields.categoryMethod && editFields.categoryMethod !== 'none' && (
+              <div style={{ fontSize: 11, color: 'var(--text-sub)', marginTop: 4 }}>
+                {editFields.categoryMethod === 'claude' && '🤖 Détecté par Claude Vision'}
+                {editFields.categoryMethod === 'google_labels' && '🔍 Détecté par Google Vision'}
+                {editFields.categoryMethod?.startsWith('heuristic') && '⚙️ Détecté automatiquement — vérifiez'}
+              </div>
+            )}
           </div>
 
           {/* TVA — informatif si disponible */}

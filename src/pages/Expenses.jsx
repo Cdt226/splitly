@@ -423,10 +423,12 @@ export function Expenses({ events, expenses, contributions, user, reload, isMobi
           onFill={(extracted) => {
             setForm(f => ({
               ...f,
-              detail:  extracted.detail  || f.detail,
-              unit:    extracted.unit    || f.unit,
-              qty:     extracted.qty     || f.qty,
-              comment: extracted.comment || f.comment,
+              detail:   extracted.detail    || f.detail,
+              unit:     extracted.unit      || f.unit,
+              qty:      extracted.qty       || f.qty,
+              comment:  extracted.comment   || f.comment,
+              category: extracted.category  || f.category,
+              sub:      extracted.sub       || f.sub,
             }));
             setShowOCR(false);
             setShowForm(true);

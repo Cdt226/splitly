@@ -567,5 +567,10 @@
   "notification_approve_partial": "Accepter en partie",
   "notification_reject": "Refuser",
   "invite_default_permissions": "Permissions par défaut",
-  "invite_permission_hint": "Cochez les droits à accorder à l'invité"
+  "invite_permission_hint": "Cochez les droits à accorder à l'invité",
+  "ocr_category_detected": "Catégorie détectée",
+  "ocr_category_low_confidence": "Faible confiance — vérifiez",
+  "ocr_detected_by_claude": "Détecté par Claude Vision",
+  "ocr_detected_by_google": "Détecté par Google Vision",
+  "ocr_detected_by_heuristic": "Détecté automatiquement — vérifiez"
 }

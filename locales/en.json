@@ -567,5 +567,10 @@
   "notification_approve_partial": "Partially approve",
   "notification_reject": "Reject",
   "invite_default_permissions": "Default permissions",
-  "invite_permission_hint": "Check the permissions to grant to the guest"
+  "invite_permission_hint": "Check the permissions to grant to the guest",
+  "ocr_category_detected": "Detected category",
+  "ocr_category_low_confidence": "Low confidence — please verify",
+  "ocr_detected_by_claude": "Detected by Claude Vision",
+  "ocr_detected_by_google": "Detected by Google Vision",
+  "ocr_detected_by_heuristic": "Auto-detected — please verify"
 }
