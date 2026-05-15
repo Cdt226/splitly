@@ -130,10 +130,10 @@ export function Expenses({ events, expenses, contributions, user, reload, isMobi
       const token = session?.access_token;
       if (!token) throw new Error('Non authentifié — reconnectez-vous');
 
-      const res = await fetch('/api/scan-document', {
+      const res = await fetch('/api/scan-receipt', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ image: base64, contentType: file.type }),
+        body: JSON.stringify({ image: base64, contentType: file.type, action: 'quick' }),
       });
 
       const data = await res.json();

@@ -12,7 +12,7 @@ const MAX_SIZE_BYTES = 4 * 1024 * 1024;
 const RATE_LIMIT = 20;
 
 export const config = {
-  api: { bodyParser: { sizeLimit: '10mb' } },
+  api: { bodyParser: { sizeLimit: '15mb' } },
 };
 
 // ─── Magic bytes detection ────────────────────────────────────
@@ -626,37 +626,115 @@ async function fetchWithTimeout(url, options, ms = 25000) {
   }
 }
 
+// ─── Quick scan (action=quick) — pré-remplissage inline ─────
+const QUICK_ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'application/pdf'];
+const QUICK_MAX_BYTES    = 10 * 1024 * 1024;
+
+async function quickScanDocument(image, mime) {
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY absent');
+  const categoryList = buildCategoryPrompt();
+
+  const userText = `Analyse ce document et réponds UNIQUEMENT en JSON valide, sans markdown ni commentaire.
+
+Commence par déterminer si ce document contient une ou plusieurs dépenses (reçu, facture, note manuscrite de frais, addition, ticket de caisse, screenshot de paiement, etc.).
+
+Si ce n'est PAS une dépense (photo de nourriture sans prix, document administratif, contrat, etc.), renvoie :
+{ "is_expense": false, "reason": "explication courte" }
+
+Si c'est une dépense, renvoie :
+{
+  "is_expense": true,
+  "document_type": "<reçu imprimé|facture|note manuscrite|addition restaurant|screenshot paiement|autre>",
+  "amount": <montant total TTC, nombre uniquement>,
+  "currency": "<devise ISO: EUR, MAD, XOF, USD...>",
+  "category": "<catégorie parmi la liste ci-dessous>",
+  "subcategory": "<sous-catégorie correspondante>",
+  "detail": "<description courte et claire du contenu>",
+  "merchant": "<nom du commerce si lisible, sinon null>",
+  "date": "<JJ/MM/AAAA si lisible, sinon null>",
+  "items": [{"name": "<article>", "amount": <montant>}],
+  "handwritten": <true|false>,
+  "confidence": <0 à 1>,
+  "unreadable_parts": "<ce qui n'a pas pu être lu, ou null>"
+}
+
+Catégories disponibles :
+${categoryList}`;
+
+  const contentBlock = mime === 'application/pdf'
+    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: image } }
+    : { type: 'image',    source: { type: 'base64', media_type: mime, data: image } };
+
+  const res = await withTimeout(
+    fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key':         process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type':      'application/json',
+      },
+      body: JSON.stringify({
+        model:      'claude-sonnet-4-6',
+        max_tokens: 1024,
+        system:     "Tu es un assistant d'analyse de documents pour une app de gestion de dépenses partagées.",
+        messages: [{ role: 'user', content: [contentBlock, { type: 'text', text: userText }] }],
+      }),
+    }),
+    20000
+  );
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(`Anthropic HTTP ${res.status}: ${data.error?.message || 'Erreur API'}`);
+
+  const rawText   = data.content?.[0]?.text || '{}';
+  const jsonStart = rawText.indexOf('{');
+  const jsonEnd   = rawText.lastIndexOf('}');
+  if (jsonStart === -1 || jsonEnd <= jsonStart) throw new Error('Réponse non structurée');
+
+  try { return JSON.parse(rawText.slice(jsonStart, jsonEnd + 1)); }
+  catch { throw new Error('Réponse JSON invalide'); }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { image, contentType } = req.body || {};
+  const { image, contentType, action } = req.body || {};
   if (!image || typeof image !== 'string') {
     return res.status(400).json({ error: 'Image manquante', level_rejected: 1 });
   }
 
-  // ── Niveau 1 : validation format ─────────────────────────────
-  const declared = (contentType || '').toLowerCase();
-  if (!ALLOWED_MIME.includes(declared)) {
-    return res.status(400).json({
-      error: 'Seules les images sont acceptées (JPEG, PNG, WEBP, HEIC)',
-      level_rejected: 1,
-    });
-  }
-
-  const detectedMime = detectMimeFromBytes(image);
-  if (!detectedMime || !ALLOWED_MIME.includes(detectedMime)) {
-    return res.status(400).json({
-      error: 'Seules les images sont acceptées (JPEG, PNG, WEBP, HEIC)',
-      level_rejected: 1,
-    });
-  }
-
+  const declared   = (contentType || '').toLowerCase();
   const imageBytes = Buffer.from(image, 'base64');
-  if (imageBytes.length > MAX_SIZE_BYTES) {
-    return res.status(400).json({
-      error: "L'image ne doit pas dépasser 4 Mo",
-      level_rejected: 1,
-    });
+
+  // ── Validation spécifique action=quick (images + PDF, 10 Mo) ─
+  if (action === 'quick') {
+    if (!QUICK_ALLOWED_MIME.includes(declared)) {
+      return res.status(400).json({ error: 'Format non supporté — utilisez JPEG, PNG, WEBP ou PDF', level_rejected: 1 });
+    }
+    if (imageBytes.length > QUICK_MAX_BYTES) {
+      return res.status(400).json({ error: 'Fichier trop volumineux (max 10 Mo)', level_rejected: 1 });
+    }
+  } else {
+    // ── Niveau 1 : validation format pipeline complet (images, 4 Mo) ─
+    if (!ALLOWED_MIME.includes(declared)) {
+      return res.status(400).json({
+        error: 'Seules les images sont acceptées (JPEG, PNG, WEBP, HEIC)',
+        level_rejected: 1,
+      });
+    }
+    const detectedMime = detectMimeFromBytes(image);
+    if (!detectedMime || !ALLOWED_MIME.includes(detectedMime)) {
+      return res.status(400).json({
+        error: 'Seules les images sont acceptées (JPEG, PNG, WEBP, HEIC)',
+        level_rejected: 1,
+      });
+    }
+    if (imageBytes.length > MAX_SIZE_BYTES) {
+      return res.status(400).json({
+        error: "L'image ne doit pas dépasser 4 Mo",
+        level_rejected: 1,
+      });
+    }
   }
 
   // ── Auth ──────────────────────────────────────────────────────
@@ -708,7 +786,23 @@ export default async function handler(req, res) {
     });
   }
 
-  // ── Niveau 2 : chaîne de classification ──────────────────────
+  // ── Action quick scan : analyse directe via Claude ───────────
+  if (action === 'quick') {
+    try {
+      const parsed = await quickScanDocument(image, declared);
+      await logOCR(supabase, userId, true, null, null, 'claude_sonnet');
+      return res.status(200).json(parsed);
+    } catch (err) {
+      await logOCR(supabase, userId, false, err.message, null, 'claude_sonnet');
+      if (err.name === 'AbortError') {
+        return res.status(504).json({ error: 'Délai dépassé — réessayez avec un fichier plus léger' });
+      }
+      return res.status(500).json({ error: err.message || "Erreur lors de l'analyse" });
+    }
+  }
+
+  // ── Niveau 2 : chaîne de classification (pipeline complet) ───
+  const detectedMime  = detectMimeFromBytes(image);
   const classification = await classifyImage(image, detectedMime);
   const { isReceipt, reason: classifyReason, method: classificationMethod } = classification;
 
