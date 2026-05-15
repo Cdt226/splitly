@@ -85,8 +85,11 @@ export function Expenses({ events, expenses, contributions, user, reload, isMobi
   const [auditModal, setAuditModal] = useState(null);
   const [auditLogs, setAuditLogs] = useState([]);
   const [auditLoading, setAuditLoading] = useState(false);
+  const [scanLoading, setScanLoading] = useState(false);
+  const [scanFeedback, setScanFeedback] = useState(null);
+  const scanRef = useRef(null);
 
-  const closeAll = () => { setShowForm(false); setShowOCR(false); setShowChoice(false); };
+  const closeAll = () => { setShowForm(false); setShowOCR(false); setShowChoice(false); setScanFeedback(null); setScanLoading(false); };
   const empty = { eventId: defaultEventId || "", category: "", sub: "", detail: "", qty: 1, unit: "", paidBy: "", included: [], comment: "" };
   const [form, setForm] = useState(empty);
 
@@ -101,6 +104,69 @@ export function Expenses({ events, expenses, contributions, user, reload, isMobi
   const total = (Number(form.qty) || 0) * (Number(form.unit) || 0);
   const sharePerPerson = form.included.length > 0 ? total / form.included.length : 0;
   const sym = currencySymbol(currentEvent?.currency);
+
+  const handleScanFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      setScanFeedback({ type: 'error', message: 'Fichier trop volumineux (max 10 Mo).' });
+      return;
+    }
+
+    setScanFeedback(null);
+    setScanLoading(true);
+
+    try {
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload  = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error('Non authentifié — reconnectez-vous');
+
+      const res = await fetch('/api/scan-document', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ image: base64, contentType: file.type }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Erreur ${res.status}`);
+
+      if (data.is_expense === false) {
+        setScanFeedback({ type: 'not_expense', message: 'Ce document ne semble pas contenir de dépense.', reason: data.reason || '' });
+        return;
+      }
+
+      // Pré-remplissage des champs
+      const updates = {};
+      if (data.amount != null)  updates.unit   = String(data.amount);
+      if (data.detail)          updates.detail = data.detail;
+      if (data.category && CATEGORIES[data.category]) {
+        updates.category = data.category;
+        const catSubs = CATEGORIES[data.category].subs || [];
+        updates.sub = catSubs.includes(data.subcategory) ? data.subcategory : catSubs[0] || '';
+      }
+      setForm(f => ({ ...f, ...updates }));
+
+      if ((data.confidence ?? 1) < 0.5) {
+        setScanFeedback({ type: 'warning', message: 'Lecture incertaine, vérifiez les montants' });
+      } else {
+        setScanFeedback({ type: 'success', message: data.document_type || 'document' });
+      }
+
+    } catch (err) {
+      setScanFeedback({ type: 'error', message: err.message || "Erreur lors de l'analyse" });
+    } finally {
+      setScanLoading(false);
+    }
+  };
 
   const handleSave = async () => {
     const isBudgetEvent = currentEvent?.event_type === "budget";
@@ -387,7 +453,7 @@ export function Expenses({ events, expenses, contributions, user, reload, isMobi
               </div>
             </button>
             <button
-              onClick={() => { setForm(empty); setEditingEx(null); setShowForm(true); setShowChoice(false); }}
+              onClick={() => { setForm(empty); setEditingEx(null); setShowForm(true); setShowChoice(false); setScanFeedback(null); }}
               style={{
                 flex: 1, padding: "20px 16px", borderRadius: 12,
                 border: "1.5px solid var(--border)", background: "var(--bg-secondary)",
@@ -439,10 +505,71 @@ export function Expenses({ events, expenses, contributions, user, reload, isMobi
 
       {showForm && (
         <div style={{ ...S.card, marginBottom: 16, border: editingEx ? "1.5px solid #F57F17" : "1px solid var(--border)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: editingEx ? 16 : 10 }}>
             <div style={S.sectionTitle}>{editingEx ? "✏️ Modifier la charge" : "➕ Nouvelle charge"}</div>
             {editingEx && <span style={{ fontSize: 11, color: "#F57F17", fontWeight: 600 }}>Mode édition</span>}
           </div>
+
+          {/* Bouton scan inline — nouvelle charge uniquement */}
+          {!editingEx && (
+            <div style={{ marginBottom: 16 }}>
+              <input
+                ref={scanRef}
+                type="file"
+                accept="image/*,.pdf"
+                {...(isMobile ? { capture: "environment" } : {})}
+                onChange={handleScanFile}
+                style={{ display: "none" }}
+              />
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={() => !scanLoading && scanRef.current?.click()}
+                  disabled={scanLoading}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 7,
+                    padding: "7px 14px", borderRadius: 8,
+                    border: "1.5px solid var(--border)", background: "var(--bg-secondary)",
+                    cursor: scanLoading ? "not-allowed" : "pointer", fontFamily: "inherit",
+                    fontSize: 12, color: "var(--text-sub)", opacity: scanLoading ? 0.75 : 1,
+                    transition: "border-color 0.15s",
+                  }}
+                  onMouseEnter={e => { if (!scanLoading) e.currentTarget.style.borderColor = "#1565C0"; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; }}
+                >
+                  {scanLoading
+                    ? <><div style={{ width: 12, height: 12, border: "2px solid #1565C0", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />Analyse du document...</>
+                    : "📷 Scanner un document"
+                  }
+                </button>
+
+                {scanFeedback && !scanLoading && (
+                  <div
+                    role={scanFeedback.type === 'error' || scanFeedback.type === 'not_expense' ? "alert" : "status"}
+                    style={{
+                      fontSize: 12, padding: "5px 12px", borderRadius: 8, lineHeight: 1.5,
+                      background:
+                        scanFeedback.type === "success"   ? "#E8F5E9" :
+                        scanFeedback.type === "warning"   ? "#FFF8E1" : "#FFF3E0",
+                      color:
+                        scanFeedback.type === "success"   ? "#2E7D32" :
+                        scanFeedback.type === "warning"   ? "#E65100" : "#BF360C",
+                      border: `1px solid ${
+                        scanFeedback.type === "success"   ? "#C8E6C9" :
+                        scanFeedback.type === "warning"   ? "#FFE082" : "#FFCCBC"
+                      }`,
+                    }}
+                  >
+                    {scanFeedback.type === "success"     && `✓ Document reconnu : ${scanFeedback.message}`}
+                    {scanFeedback.type === "warning"     && `⚠️ ${scanFeedback.message}`}
+                    {scanFeedback.type === "not_expense" && `${scanFeedback.message}${scanFeedback.reason ? ` — ${scanFeedback.reason}` : ""}`}
+                    {scanFeedback.type === "error"       && `⚠️ ${scanFeedback.message}`}
+                  </div>
+                )}
+              </div>
+              <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+            </div>
+          )}
 
           {/* Bandeau Budget */}
           {currentEvent?.event_type === "budget" && (
@@ -551,7 +678,7 @@ export function Expenses({ events, expenses, contributions, user, reload, isMobi
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={handleSave} disabled={saving} style={{ ...S.btnDark, opacity: saving ? 0.6 : 1 }}>{saving ? "Enregistrement..." : editingEx ? "Enregistrer les modifications" : "Ajouter la charge"}</button>
-            <button onClick={() => { setShowForm(false); setEditingEx(null); setForm(empty); }} style={S.btnGhost}>Annuler</button>
+            <button onClick={() => { setShowForm(false); setEditingEx(null); setForm(empty); setScanFeedback(null); setScanLoading(false); }} style={S.btnGhost}>Annuler</button>
           </div>
           {/* Aide visuelle champs manquants */}
           {(!form.eventId || !form.category || !form.sub || !form.detail || Number(form.unit) <= 0) && (
