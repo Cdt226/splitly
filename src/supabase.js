@@ -395,20 +395,28 @@ export async function fetchExpenses(eventId) {
   return { data, error };
 }
 
+const V2_COLUMNS_ERROR = (e) => e && (e.code === '42703' || e.message?.includes('column') || e.message?.includes('schema cache'));
+
 export async function createExpense(expense, userId) {
-  const { data, error } = await supabase.from('expenses').insert({
+  const base = {
     event_id: expense.eventId, category: expense.category, sub_category: expense.sub,
     detail: expense.detail, qty: expense.qty, unit_price: expense.unit,
     paid_by: expense.is_unpaid ? null : expense.paidBy,
     included: expense.included, created_by: userId,
     is_unpaid: expense.is_unpaid || false,
     comment: expense.comment || null,
+  };
+  let { data, error } = await supabase.from('expenses').insert({
+    ...base,
     expense_date: expense.expense_date || null,
     original_currency: expense.original_currency || null,
     original_amount: expense.original_amount || null,
     exchange_rate: expense.exchange_rate || null,
     exchange_rate_date: expense.exchange_rate_date || null,
   }).select().single();
+  if (V2_COLUMNS_ERROR(error)) {
+    ({ data, error } = await supabase.from('expenses').insert(base).select().single());
+  }
   if (!error) {
     await addHistory({ eventId: expense.eventId, action: 'Charge ajoutée', actorId: userId, before: null, after: data });
     await logAudit('expenses', data.id, 'INSERT', null, data, userId);
@@ -417,19 +425,25 @@ export async function createExpense(expense, userId) {
 }
 
 export async function updateExpense(expenseId, updates, userId, before) {
-  const { data, error } = await supabase.from('expenses').update({
+  const base = {
     category: updates.category, sub_category: updates.sub, detail: updates.detail,
     qty: updates.qty, unit_price: updates.unit,
     paid_by: updates.is_unpaid ? null : updates.paidBy,
     included: updates.included,
     is_unpaid: updates.is_unpaid || false,
     comment: updates.comment || null,
+  };
+  let { data, error } = await supabase.from('expenses').update({
+    ...base,
     expense_date: updates.expense_date || null,
     original_currency: updates.original_currency || null,
     original_amount: updates.original_amount || null,
     exchange_rate: updates.exchange_rate || null,
     exchange_rate_date: updates.exchange_rate_date || null,
   }).eq('id', expenseId).select().single();
+  if (V2_COLUMNS_ERROR(error)) {
+    ({ data, error } = await supabase.from('expenses').update(base).eq('id', expenseId).select().single());
+  }
   if (!error) {
     await addHistory({ eventId: before.event_id, action: 'Charge modifiée', actorId: userId, before, after: data });
     await logAudit('expenses', expenseId, 'UPDATE', before, data, userId);

@@ -76,7 +76,6 @@ function AppInner() {
   const [pageKey, setPageKey] = useState(0);
   const [events, setEvents] = useState([]);
   const [expenses, setExpenses] = useState([]);
-  const [personalExpenses, setPersonalExpenses] = useState([]);
   const [contributions, setContributions] = useState({});
   const [history, setHistory] = useState([]);
   const [notifications, setNotifications] = useState([]);
@@ -210,10 +209,8 @@ function AppInner() {
       const { data: hData } = await fetchHistory(ev.id);
       if (hData) allHist.push(...hData);
     }
-    const personalEvent = evData.find(e => e.event_type === 'personal' && e.admin_id === user.id);
-    const personalEvId = personalEvent?.id;
-    setExpenses(allExp.filter(e => e.event_id !== personalEvId));
-    setPersonalExpenses(allExp.filter(e => e.event_id === personalEvId));
+    const personalEvIds = new Set(evData.filter(e => e.event_type === 'personal').map(e => e.id));
+    setExpenses(allExp.filter(e => !personalEvIds.has(e.event_id)));
     setContributions(allContrib); setHistory(allHist);
     const { data: nData } = await fetchNotifications(user.id);
     if (nData) setNotifications(nData);
@@ -326,7 +323,7 @@ function AppInner() {
     await signOut();
     setUser(null); setProfile(null); setGuestEmail(null);
     setActiveRaw("dashboard");
-    setEvents([]); setExpenses([]); setPersonalExpenses([]);
+    setEvents([]); setExpenses([]);
     setContributions({}); setHistory([]); setNotifications([]); setPendingActions([]);
   };
 
@@ -343,8 +340,8 @@ function AppInner() {
   }, [contributions]);
 
   const sharedProps = useMemo(
-    () => ({ events, expenses, contributions: contribNorm, user, reload: loadAll, isMobile, addToast, t, personalExpenses }),
-    [events, expenses, contribNorm, user, isMobile, addToast, loadAll, t, personalExpenses]
+    () => ({ events, expenses, contributions: contribNorm, user, reload: loadAll, isMobile, addToast, t }),
+    [events, expenses, contribNorm, user, isMobile, addToast, loadAll, t]
   );
 
   if (loading) return <Spinner />;

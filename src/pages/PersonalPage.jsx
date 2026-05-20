@@ -7,7 +7,7 @@ import { Modal, ConfirmModal, Spinner, EmptyState, StatCard } from "../component
 import { OCRCapture } from "../components/OCRCapture.jsx";
 import {
   createExpense, updateExpense, deleteExpense,
-  fetchOrCreatePersonalEvent, updatePersonalEventCurrency,
+  fetchExpenses, fetchOrCreatePersonalEvent, updatePersonalEventCurrency,
 } from "../supabase.js";
 import { useTranslation } from "../i18n.jsx";
 import { usePersonalBudgets } from "../hooks/usePersonalBudgets.js";
@@ -152,7 +152,7 @@ function BudgetRow({ cat, info, currentLimit, onSave, sym }) {
 }
 
 // ─── PAGE PRINCIPALE ──────────────────────────────────────────
-export function PersonalPage({ events, expenses, contributions, user, reload, isMobile, addToast, personalExpenses = [] }) {
+export function PersonalPage({ events, expenses, contributions, user, reload, isMobile, addToast }) {
   const { t } = useTranslation();
   const now = new Date();
 
@@ -216,6 +216,18 @@ export function PersonalPage({ events, expenses, contributions, user, reload, is
   const [dismissedInsights, setDismissedInsights] = useState([]);
   const [saving, setSaving] = useState(false);
   const [confirm, setConfirm] = useState(null);
+  const [localExpenses, setLocalExpenses] = useState([]);
+
+  const loadExpenses = useCallback(async (evId) => {
+    if (!evId) return;
+    const { data } = await fetchExpenses(evId);
+    setLocalExpenses(data || []);
+  }, []);
+
+  useEffect(() => {
+    if (personalEvent?.id) loadExpenses(personalEvent.id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [personalEvent?.id]);
 
   // ── D. Taux de change ─────────────────────────────────────
   const [rateInfo, setRateInfo] = useState(null);
@@ -267,22 +279,22 @@ export function PersonalPage({ events, expenses, contributions, user, reload, is
 
   // ── E. Calculs mois ───────────────────────────────────────
   const currentMonthExpenses = useMemo(() =>
-    personalExpenses.filter(e => {
+    localExpenses.filter(e => {
       const d = new Date(e.expense_date || e.created_at);
       return d.getMonth() === selectedMonth && d.getFullYear() === selectedYear;
     }),
-    [personalExpenses, selectedMonth, selectedYear]
+    [localExpenses, selectedMonth, selectedYear]
   );
 
   const prevMonth = selectedMonth === 0 ? 11 : selectedMonth - 1;
   const prevYear  = selectedMonth === 0 ? selectedYear - 1 : selectedYear;
 
   const prevMonthExpenses = useMemo(() =>
-    personalExpenses.filter(e => {
+    localExpenses.filter(e => {
       const d = new Date(e.expense_date || e.created_at);
       return d.getMonth() === prevMonth && d.getFullYear() === prevYear;
     }),
-    [personalExpenses, prevMonth, prevYear]
+    [localExpenses, prevMonth, prevYear]
   );
 
   const totalMonth = useMemo(
@@ -372,7 +384,7 @@ export function PersonalPage({ events, expenses, contributions, user, reload, is
       addToast("Dépense ajoutée.", "success");
     }
 
-    await reload();
+    await loadExpenses(personalEvent.id);
     setForm({ category: "Alimentation", sub: "Autre", detail: "", unit_price: "", expense_date: todayStr(), expense_currency: baseCurrency });
     setEditingEx(null);
     setShowForm(false);
@@ -385,7 +397,7 @@ export function PersonalPage({ events, expenses, contributions, user, reload, is
       message: `Supprimer "${ex.detail}" ?`,
       onConfirm: async () => {
         await deleteExpense(ex, user.id);
-        await reload();
+        await loadExpenses(personalEvent.id);
         setConfirm(null);
         addToast("Dépense supprimée.", "info");
       },
