@@ -589,5 +589,14 @@
   "dash_filter_all": "All",
   "dash_filter_split": "Split",
   "dash_filter_budget": "Budget",
-  "dash_filter_personal": "Personal"
+  "dash_filter_personal": "Personal",
+  "personal_setup_title": "Initial setup",
+  "personal_setup_desc": "Choose the base currency for your personal expenses.",
+  "personal_setup_confirm": "Confirm",
+  "personal_base_currency": "Base currency",
+  "personal_change_currency": "Change",
+  "personal_date": "Expense date",
+  "personal_currency": "Currency",
+  "personal_conv_loading": "Loading rate…",
+  "personal_conv_error": "Rate unavailable — amount saved as entered"
 }

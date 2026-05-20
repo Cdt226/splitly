@@ -1,35 +1,65 @@
 // src/pages/PersonalPage.jsx
-import { useState, useEffect, useMemo, useCallback } from "react";
-import { PERSONAL_CATEGORIES } from "../constants.js";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { PERSONAL_CATEGORIES, CURRENCIES, CURRENCY_CODES } from "../constants.js";
 import { fmt, currencySymbol } from "../utils.js";
 import { S } from "../styles.js";
 import { Modal, ConfirmModal, Spinner, EmptyState, StatCard } from "../components/ui/index.jsx";
 import { OCRCapture } from "../components/OCRCapture.jsx";
-import { createExpense, updateExpense, deleteExpense, fetchOrCreatePersonalEvent } from "../supabase.js";
+import {
+  createExpense, updateExpense, deleteExpense,
+  fetchOrCreatePersonalEvent, updatePersonalEventCurrency,
+} from "../supabase.js";
 import { useTranslation } from "../i18n.jsx";
 import { usePersonalBudgets } from "../hooks/usePersonalBudgets.js";
 import { usePersonalInsights } from "../hooks/usePersonalInsights.js";
+
+const SETUP_KEY = "splitly_personal_setup_v1";
+const todayStr = () => new Date().toISOString().split("T")[0];
+
+// ─── EXCHANGE RATE (fawazahmed0 CDN) ─────────────────────────
+async function fetchExchangeRate(fromCode, toCode, dateStr) {
+  if (!fromCode || !toCode || fromCode === toCode) return null;
+  const base = fromCode.toLowerCase();
+  const target = toCode.toLowerCase();
+  const urls = [
+    `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${dateStr}/v1/currencies/${base}.min.json`,
+    `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/${base}.min.json`,
+  ];
+  for (const url of urls) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const json = await res.json();
+      const rate = json[base]?.[target];
+      if (rate) return { rate, date: json.date || dateStr };
+    } catch { continue; }
+  }
+  return null;
+}
 
 // ─── PDF EXPORT ───────────────────────────────────────────────
 function exportPersonalPDF(month, year, expenses, sym) {
   const monthLabel = new Date(year, month, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
   const total = expenses.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
-  const fmt2 = n => Number(n || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' ' + sym;
+  const fmt2 = n => Number(n || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' ' + sym;
 
   const byCat = {};
   expenses.forEach(e => { byCat[e.category] = (byCat[e.category] || 0) + e.qty * (e.unit_price ?? 0); });
   const catEntries = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
 
-  const rows = [...expenses].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map((ex, i) => {
+  const rows = [...expenses].sort((a, b) => new Date(b.expense_date || b.created_at) - new Date(a.expense_date || a.created_at)).map((ex, i) => {
     const amt = ex.qty * (ex.unit_price ?? 0);
     const bg = i % 2 === 0 ? '#fff' : '#f9f9f9';
     const info = PERSONAL_CATEGORIES[ex.category] || {};
-    const d = new Date(ex.created_at).toLocaleDateString('fr-FR');
+    const d = new Date(ex.expense_date || ex.created_at).toLocaleDateString('fr-FR');
+    const origCell = ex.original_currency
+      ? `<div style="font-size:10px;color:#888">${Number(ex.original_amount).toFixed(2)} ${ex.original_currency}</div>`
+      : '';
     return `<tr style="background:${bg}">
       <td style="padding:9px 12px">${info.icon || ''} ${ex.category}</td>
       <td style="padding:9px 12px;font-weight:600">${ex.detail}</td>
       <td style="padding:9px 12px">${d}</td>
-      <td style="padding:9px 12px;text-align:right;font-weight:700">${fmt2(amt)}</td>
+      <td style="padding:9px 12px;text-align:right;font-weight:700">${fmt2(amt)}${origCell}</td>
     </tr>`;
   }).join('');
 
@@ -96,7 +126,7 @@ function exportPersonalPDF(month, year, expenses, sym) {
   w.document.close();
 }
 
-// ─── BUDGET ROW (composant enfant pour éviter useState dans .map()) ─
+// ─── BUDGET ROW ───────────────────────────────────────────────
 function BudgetRow({ cat, info, currentLimit, onSave, sym }) {
   const [localVal, setLocalVal] = useState(String(currentLimit || ''));
 
@@ -141,29 +171,104 @@ export function PersonalPage({ events, expenses, contributions, user, reload, is
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [events, user?.id]);
 
-  // ── B. État local ─────────────────────────────────────────
+  // ── B. Setup modal (première visite) ──────────────────────
+  const [showSetup, setShowSetup] = useState(false);
+  const [setupCurrency, setSetupCurrency] = useState("EUR €");
+  const [setupSaving, setSetupSaving] = useState(false);
+
+  const personalEvent = useMemo(
+    () => events.find(e => e.event_type === 'personal' && e.admin_id === user?.id),
+    [events, user?.id]
+  );
+
+  useEffect(() => {
+    if (!personalEvent) return;
+    if (!localStorage.getItem(SETUP_KEY)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSetupCurrency(personalEvent.currency || "EUR €");
+       
+      setShowSetup(true);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [personalEvent?.id]);
+
+  const handleSetupConfirm = async () => {
+    if (!personalEvent) return;
+    setSetupSaving(true);
+    await updatePersonalEventCurrency(personalEvent.id, setupCurrency);
+    await reload();
+    localStorage.setItem(SETUP_KEY, "1");
+    setShowSetup(false);
+    setSetupSaving(false);
+  };
+
+  // ── C. État local ─────────────────────────────────────────
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [showForm, setShowForm] = useState(false);
   const [editingEx, setEditingEx] = useState(null);
-  const [form, setForm] = useState({ category: "Alimentation", sub: "Autre", detail: "", unit_price: "" });
+  const [form, setForm] = useState({
+    category: "Alimentation", sub: "Autre", detail: "", unit_price: "",
+    expense_date: todayStr(), expense_currency: "EUR €",
+  });
   const [showOCR, setShowOCR] = useState(false);
   const [showBudgetModal, setShowBudgetModal] = useState(false);
   const [dismissedInsights, setDismissedInsights] = useState([]);
   const [saving, setSaving] = useState(false);
   const [confirm, setConfirm] = useState(null);
 
-  // ── C. Calculs ────────────────────────────────────────────
-  const personalEvent = useMemo(
-    () => events.find(e => e.event_type === 'personal' && e.admin_id === user?.id),
-    [events, user?.id]
-  );
+  // ── D. Taux de change ─────────────────────────────────────
+  const [rateInfo, setRateInfo] = useState(null);
+  const [rateLoading, setRateLoading] = useState(false);
+  const [rateError, setRateError] = useState(false);
+  const rateTimer = useRef(null);
 
   const sym = useMemo(() => currencySymbol(personalEvent?.currency || 'EUR €'), [personalEvent]);
+  const baseCurrency = personalEvent?.currency || "EUR €";
+  const baseCode = CURRENCY_CODES[baseCurrency] || "eur";
 
+  useEffect(() => {
+    const expCode = CURRENCY_CODES[form.expense_currency] || baseCode;
+    if (expCode === baseCode) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setRateInfo(null);
+       
+      setRateLoading(false);
+       
+      setRateError(false);
+      return;
+    }
+    clearTimeout(rateTimer.current);
+     
+    setRateLoading(true);
+     
+    setRateError(false);
+    rateTimer.current = setTimeout(async () => {
+      const result = await fetchExchangeRate(expCode, baseCode, form.expense_date || todayStr());
+      if (result) {
+        setRateInfo(result);
+        setRateError(false);
+      } else {
+        setRateInfo(null);
+        setRateError(true);
+      }
+      setRateLoading(false);
+    }, 500);
+    return () => clearTimeout(rateTimer.current);
+   
+  }, [form.expense_currency, form.expense_date, baseCode]);
+
+  const convertedAmount = useMemo(() => {
+    if (!rateInfo || !form.unit_price || Number(form.unit_price) <= 0) return null;
+    return Number(form.unit_price) * rateInfo.rate;
+  }, [rateInfo, form.unit_price]);
+
+
+
+  // ── E. Calculs mois ───────────────────────────────────────
   const currentMonthExpenses = useMemo(() =>
     personalExpenses.filter(e => {
-      const d = new Date(e.created_at);
+      const d = new Date(e.expense_date || e.created_at);
       return d.getMonth() === selectedMonth && d.getFullYear() === selectedYear;
     }),
     [personalExpenses, selectedMonth, selectedYear]
@@ -174,7 +279,7 @@ export function PersonalPage({ events, expenses, contributions, user, reload, is
 
   const prevMonthExpenses = useMemo(() =>
     personalExpenses.filter(e => {
-      const d = new Date(e.created_at);
+      const d = new Date(e.expense_date || e.created_at);
       return d.getMonth() === prevMonth && d.getFullYear() === prevYear;
     }),
     [personalExpenses, prevMonth, prevYear]
@@ -191,7 +296,6 @@ export function PersonalPage({ events, expenses, contributions, user, reload, is
   );
 
   const variation = totalPrev > 0 ? Math.round(((totalMonth - totalPrev) / totalPrev) * 100) : null;
-
   const daysInMonth = new Date(selectedYear, selectedMonth + 1, 0).getDate();
   const isCurrentMonth = selectedMonth === now.getMonth() && selectedYear === now.getFullYear();
   const daysElapsed = isCurrentMonth ? now.getDate() : daysInMonth;
@@ -200,15 +304,14 @@ export function PersonalPage({ events, expenses, contributions, user, reload, is
   const byCat = useMemo(() => {
     const map = {};
     currentMonthExpenses.forEach(e => {
-      const amt = e.qty * (e.unit_price ?? 0);
-      map[e.category] = (map[e.category] || 0) + amt;
+      map[e.category] = (map[e.category] || 0) + e.qty * (e.unit_price ?? 0);
     });
     return Object.entries(map).sort((a, b) => b[1] - a[1]);
   }, [currentMonthExpenses]);
 
   const topCategory = byCat[0] || null;
 
-  // ── D. Hooks ──────────────────────────────────────────────
+  // ── F. Hooks ──────────────────────────────────────────────
   const { limits, setLimit, getLimitForCategory } = usePersonalBudgets(user?.id);
 
   const insights = usePersonalInsights({
@@ -221,7 +324,7 @@ export function PersonalPage({ events, expenses, contributions, user, reload, is
     user,
   });
 
-  // ── E. Handlers dépenses ──────────────────────────────────
+  // ── G. Handlers ───────────────────────────────────────────
   const handleSave = async () => {
     if (!form.detail.trim() || form.detail.trim().length < 2) {
       addToast("La description doit contenir au moins 2 caractères.", "warning"); return;
@@ -231,42 +334,47 @@ export function PersonalPage({ events, expenses, contributions, user, reload, is
     }
     if (!personalEvent) { addToast("Événement personnel introuvable.", "error"); return; }
 
+    const expCode = CURRENCY_CODES[form.expense_currency] || baseCode;
+    const needsConversion = expCode !== baseCode;
+
+    if (needsConversion && !rateInfo && !rateError) {
+      addToast("Taux de change en cours de chargement, patientez…", "warning"); return;
+    }
+
     setSaving(true);
     const paidBy = user?.user_metadata?.full_name || user?.email || "Moi";
+    const unitInBase = (needsConversion && rateInfo) ? convertedAmount : Number(form.unit_price);
+
+    const payload = {
+      category: form.category,
+      sub: form.sub || "Autre",
+      detail: form.detail.trim(),
+      qty: 1,
+      unit: unitInBase,
+      paidBy,
+      included: [],
+      is_unpaid: false,
+      comment: null,
+      expense_date: form.expense_date || null,
+      original_currency: (needsConversion && rateInfo) ? form.expense_currency : null,
+      original_amount: (needsConversion && rateInfo) ? Number(form.unit_price) : null,
+      exchange_rate: (needsConversion && rateInfo) ? rateInfo.rate : null,
+      exchange_rate_date: (needsConversion && rateInfo) ? rateInfo.date : null,
+    };
 
     if (editingEx) {
-      await updateExpense(editingEx.id, {
-        category: form.category,
-        sub: form.sub || "Autre",
-        detail: form.detail.trim(),
-        qty: 1,
-        unit: Number(form.unit_price),
-        paidBy,
-        included: [],
-        is_unpaid: false,
-        comment: null,
-      }, user.id, editingEx);
+      await updateExpense(editingEx.id, payload, user.id, editingEx);
       addToast("Dépense modifiée.", "success");
     } else {
-      await createExpense({
-        eventId: personalEvent.id,
-        category: form.category,
-        sub: form.sub || "Autre",
-        detail: form.detail.trim(),
-        qty: 1,
-        unit: Number(form.unit_price),
-        paidBy,
-        included: [],
-        is_unpaid: false,
-        comment: null,
-      }, user.id);
+      await createExpense({ ...payload, eventId: personalEvent.id }, user.id);
       addToast("Dépense ajoutée.", "success");
     }
 
     await reload();
-    setForm({ category: "Alimentation", sub: "Autre", detail: "", unit_price: "" });
+    setForm({ category: "Alimentation", sub: "Autre", detail: "", unit_price: "", expense_date: todayStr(), expense_currency: baseCurrency });
     setEditingEx(null);
     setShowForm(false);
+    setRateInfo(null);
     setSaving(false);
   };
 
@@ -284,12 +392,18 @@ export function PersonalPage({ events, expenses, contributions, user, reload, is
   };
 
   const startEdit = (ex) => {
-    setForm({ category: ex.category, sub: ex.sub_category || "Autre", detail: ex.detail, unit_price: String(ex.unit_price ?? "") });
+    setForm({
+      category: ex.category,
+      sub: ex.sub_category || "Autre",
+      detail: ex.detail,
+      unit_price: String(ex.original_amount ?? ex.unit_price ?? ""),
+      expense_date: ex.expense_date || todayStr(),
+      expense_currency: ex.original_currency || baseCurrency,
+    });
     setEditingEx(ex);
     setShowForm(true);
   };
 
-  // ── Navigation mois ───────────────────────────────────────
   const goMonth = useCallback((dir) => {
     setSelectedMonth(m => {
       const nm = m + dir;
@@ -298,6 +412,14 @@ export function PersonalPage({ events, expenses, contributions, user, reload, is
       return nm;
     });
   }, [setSelectedMonth, setSelectedYear]);
+
+  const openForm = () => {
+    setForm({ category: "Alimentation", sub: "Autre", detail: "", unit_price: "", expense_date: todayStr(), expense_currency: baseCurrency });
+    setEditingEx(null);
+    setRateInfo(null);
+    setShowOCR(false);
+    setShowForm(v => !v);
+  };
 
   const isCurrentMonthSelected = selectedMonth === now.getMonth() && selectedYear === now.getFullYear();
   const monthLabel = new Date(selectedYear, selectedMonth, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
@@ -308,10 +430,32 @@ export function PersonalPage({ events, expenses, contributions, user, reload, is
     </div>
   );
 
-  // ── G. LAYOUT ─────────────────────────────────────────────
+  // ── H. LAYOUT ─────────────────────────────────────────────
   return (
     <div>
       {confirm && <ConfirmModal {...confirm} />}
+
+      {/* ── Modal setup devise ── */}
+      {showSetup && (
+        <Modal title={`💱 ${t("personal_setup_title") || "Configuration initiale"}`} onClose={() => { localStorage.setItem(SETUP_KEY, "1"); setShowSetup(false); }}>
+          <p style={{ fontSize: 13, color: "var(--text-sub)", marginBottom: 20, lineHeight: 1.5 }}>
+            {t("personal_setup_desc") || "Choisissez la devise de base pour vos dépenses personnelles."}
+          </p>
+          <div style={{ marginBottom: 20 }}>
+            <label style={S.label}>{t("personal_base_currency") || "Devise de base"}</label>
+            <select
+              value={setupCurrency}
+              onChange={e => setSetupCurrency(e.target.value)}
+              style={{ ...S.input, marginTop: 6 }}
+            >
+              {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <button onClick={handleSetupConfirm} disabled={setupSaving} style={{ ...S.btnDark, width: "100%", opacity: setupSaving ? 0.5 : 1 }}>
+            {setupSaving ? "…" : `✓ ${t("personal_setup_confirm") || "Confirmer"}`}
+          </button>
+        </Modal>
+      )}
 
       {/* ── En-tête ── */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
@@ -320,7 +464,14 @@ export function PersonalPage({ events, expenses, contributions, user, reload, is
             🧍 {t("personal_title") || "Mes dépenses personnelles"}
           </h2>
           <p style={{ color: "var(--text-sub)", fontSize: 12 }}>
-            {t("personal_total") || "Suivi solo · mois par mois"}
+            {t("personal_base_currency") || "Devise de base"} : <strong>{baseCurrency}</strong>
+            {" "}·{" "}
+            <button
+              onClick={() => { setSetupCurrency(baseCurrency); setShowSetup(true); }}
+              style={{ background: "none", border: "none", color: "var(--accent, #1565C0)", cursor: "pointer", fontSize: 12, padding: 0, fontFamily: "inherit", textDecoration: "underline" }}
+            >
+              {t("personal_change_currency") || "Changer"}
+            </button>
           </p>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -330,7 +481,7 @@ export function PersonalPage({ events, expenses, contributions, user, reload, is
           <button onClick={() => { setShowOCR(v => !v); setShowForm(false); }} style={{ ...S.btnGhost, fontSize: 12, padding: "8px 14px" }}>
             📷 OCR
           </button>
-          <button onClick={() => { setShowForm(v => !v); setShowOCR(false); setEditingEx(null); setForm({ category: "Alimentation", sub: "Autre", detail: "", unit_price: "" }); }} style={S.btnDark}>
+          <button onClick={openForm} style={S.btnDark}>
             {showForm && !editingEx ? "× Fermer" : `+ ${t("personal_add") || "Ajouter"}`}
           </button>
         </div>
@@ -341,12 +492,16 @@ export function PersonalPage({ events, expenses, contributions, user, reload, is
         <OCRCapture
           isMobile={isMobile}
           onFill={(data) => {
+            const detectedCurrency = data.currency
+              ? CURRENCIES.find(c => c.startsWith(data.currency)) || baseCurrency
+              : baseCurrency;
             setForm(f => ({
               ...f,
               unit_price: data.unit || f.unit_price,
               detail: data.detail || f.detail,
               category: PERSONAL_CATEGORIES[data.category] ? data.category : f.category,
               sub: PERSONAL_CATEGORIES[data.category] ? (data.sub || "Autre") : f.sub,
+              expense_currency: detectedCurrency,
             }));
             setShowOCR(false);
             setShowForm(true);
@@ -374,6 +529,7 @@ export function PersonalPage({ events, expenses, contributions, user, reload, is
             </div>
           </div>
 
+          {/* Description + Montant */}
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
             <div>
               <label style={S.label}>Description <span style={{ color: "#C62828" }}>*</span></label>
@@ -387,7 +543,7 @@ export function PersonalPage({ events, expenses, contributions, user, reload, is
               />
             </div>
             <div>
-              <label style={S.label}>Montant ({sym}) <span style={{ color: "#C62828" }}>*</span></label>
+              <label style={S.label}>Montant <span style={{ color: "#C62828" }}>*</span></label>
               <input
                 type="number"
                 min="0"
@@ -401,11 +557,49 @@ export function PersonalPage({ events, expenses, contributions, user, reload, is
             </div>
           </div>
 
+          {/* Date + Devise */}
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div>
+              <label style={S.label}>{t("personal_date") || "Date de la dépense"}</label>
+              <input
+                type="date"
+                style={S.input}
+                value={form.expense_date}
+                max={todayStr()}
+                onChange={e => setForm(f => ({ ...f, expense_date: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label style={S.label}>{t("personal_currency") || "Devise"}</label>
+              <select
+                value={form.expense_currency}
+                onChange={e => setForm(f => ({ ...f, expense_currency: e.target.value }))}
+                style={{ ...S.input }}
+              >
+                {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Aperçu conversion */}
+          {(CURRENCY_CODES[form.expense_currency] || "eur") !== baseCode && (
+            <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 10, border: "1px solid", borderColor: rateError ? "#ffcdd2" : rateLoading ? "var(--border)" : "#C8E6C9", background: rateError ? "#fff5f5" : rateLoading ? "var(--bg-secondary)" : "#F1F8E9", fontSize: 12, color: rateError ? "#C62828" : "var(--text)" }}>
+              {rateLoading && `⏳ ${t("personal_conv_loading") || "Chargement du taux…"}`}
+              {rateError && `⚠️ ${t("personal_conv_error") || "Taux indisponible — montant saisi tel quel"}`}
+              {!rateLoading && !rateError && rateInfo && convertedAmount != null && (
+                <>
+                  <span style={{ fontWeight: 700 }}>≈ {fmt(convertedAmount, sym)}</span>
+                  {" "}(taux : 1 {form.expense_currency} = {rateInfo.rate.toFixed(6)} {baseCurrency} · {rateInfo.date})
+                </>
+              )}
+            </div>
+          )}
+
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={handleSave} disabled={saving} style={{ ...S.btnDark, opacity: saving ? 0.5 : 1 }}>
               {saving ? "Enregistrement…" : editingEx ? "✓ Modifier" : "✓ Enregistrer"}
             </button>
-            <button onClick={() => { setShowForm(false); setEditingEx(null); }} style={S.btnGhost}>
+            <button onClick={() => { setShowForm(false); setEditingEx(null); setRateInfo(null); }} style={S.btnGhost}>
               Annuler
             </button>
           </div>
@@ -537,11 +731,11 @@ export function PersonalPage({ events, expenses, contributions, user, reload, is
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 2, maxHeight: 420, overflowY: "auto" }}>
               {[...currentMonthExpenses]
-                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+                .sort((a, b) => new Date(b.expense_date || b.created_at) - new Date(a.expense_date || a.created_at))
                 .map((ex, i) => {
                   const info = PERSONAL_CATEGORIES[ex.category] || { icon: "❓", color: "#f5f5f5", accent: "#757575" };
                   const amt = ex.qty * (ex.unit_price ?? 0);
-                  const d = new Date(ex.created_at).toLocaleDateString('fr-FR', { day: "2-digit", month: "2-digit" });
+                  const d = new Date(ex.expense_date || ex.created_at).toLocaleDateString('fr-FR', { day: "2-digit", month: "2-digit" });
                   return (
                     <div key={ex.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: i < currentMonthExpenses.length - 1 ? "1px solid var(--border)" : "none" }}>
                       <div style={{ width: 32, height: 32, borderRadius: 10, background: info.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}>
@@ -549,7 +743,12 @@ export function PersonalPage({ events, expenses, contributions, user, reload, is
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ex.detail}</div>
-                        <div style={{ fontSize: 11, color: "var(--text-sub)" }}>{ex.category} · {d}</div>
+                        <div style={{ fontSize: 11, color: "var(--text-sub)" }}>
+                          {ex.category} · {d}
+                          {ex.original_currency && (
+                            <span style={{ marginLeft: 4, color: "#1565C0" }}>· {Number(ex.original_amount).toFixed(2)} {ex.original_currency}</span>
+                          )}
+                        </div>
                       </div>
                       <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", flexShrink: 0 }}>{fmt(amt, sym)}</span>
                       <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>

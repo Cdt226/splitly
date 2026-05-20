@@ -403,6 +403,11 @@ export async function createExpense(expense, userId) {
     included: expense.included, created_by: userId,
     is_unpaid: expense.is_unpaid || false,
     comment: expense.comment || null,
+    expense_date: expense.expense_date || null,
+    original_currency: expense.original_currency || null,
+    original_amount: expense.original_amount || null,
+    exchange_rate: expense.exchange_rate || null,
+    exchange_rate_date: expense.exchange_rate_date || null,
   }).select().single();
   if (!error) {
     await addHistory({ eventId: expense.eventId, action: 'Charge ajoutée', actorId: userId, before: null, after: data });
@@ -419,6 +424,11 @@ export async function updateExpense(expenseId, updates, userId, before) {
     included: updates.included,
     is_unpaid: updates.is_unpaid || false,
     comment: updates.comment || null,
+    expense_date: updates.expense_date || null,
+    original_currency: updates.original_currency || null,
+    original_amount: updates.original_amount || null,
+    exchange_rate: updates.exchange_rate || null,
+    exchange_rate_date: updates.exchange_rate_date || null,
   }).eq('id', expenseId).select().single();
   if (!error) {
     await addHistory({ eventId: before.event_id, action: 'Charge modifiée', actorId: userId, before, after: data });
@@ -566,6 +576,16 @@ export async function updateInvitationPermissions(eventId, email, permissions, a
   }
   const { error } = await supabase.from('invitations').update({ permissions }).eq('event_id', eventId).eq('email', email);
   return { error };
+}
+
+export async function updatePersonalEventCurrency(eventId, currency) {
+  const { data, error } = await supabase
+    .from('events')
+    .update({ currency })
+    .eq('id', eventId)
+    .select()
+    .single();
+  return { data, error };
 }
 
 export async function fetchInvitationPermissions(eventId, email) {

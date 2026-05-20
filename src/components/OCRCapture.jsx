@@ -167,12 +167,13 @@ export function OCRCapture({ onFill, onClose, onManualEntry, isMobile, guestEmai
   const handleConfirm = () => {
     if (!editFields || !requiredOk) return;
     onFill({
-      detail:  editFields.merchant || editFields.detail,
-      unit:    editFields.total || editFields.unit,
-      qty:     1,
-      comment: editFields.comment,
+      detail:   editFields.merchant || editFields.detail,
+      unit:     editFields.total || editFields.unit,
+      qty:      1,
+      comment:  editFields.comment,
       category: editFields.category,
       sub:      editFields.subcategory,
+      currency: editFields.currency || null,
     });
   };
 

@@ -589,5 +589,14 @@
   "dash_filter_all": "Tout",
   "dash_filter_split": "Split",
   "dash_filter_budget": "Budget",
-  "dash_filter_personal": "Perso"
+  "dash_filter_personal": "Perso",
+  "personal_setup_title": "Configuration initiale",
+  "personal_setup_desc": "Choisissez la devise de base pour vos dépenses personnelles.",
+  "personal_setup_confirm": "Confirmer",
+  "personal_base_currency": "Devise de base",
+  "personal_change_currency": "Changer",
+  "personal_date": "Date de la dépense",
+  "personal_currency": "Devise",
+  "personal_conv_loading": "Chargement du taux…",
+  "personal_conv_error": "Taux indisponible — montant saisi tel quel"
 }

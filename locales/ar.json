@@ -589,5 +589,14 @@
   "dash_filter_all": "الكل",
   "dash_filter_split": "مشترك",
   "dash_filter_budget": "ميزانية",
-  "dash_filter_personal": "شخصي"
+  "dash_filter_personal": "شخصي",
+  "personal_setup_title": "الإعداد الأولي",
+  "personal_setup_desc": "اختر العملة الأساسية لمصاريفك الشخصية.",
+  "personal_setup_confirm": "تأكيد",
+  "personal_base_currency": "العملة الأساسية",
+  "personal_change_currency": "تغيير",
+  "personal_date": "تاريخ المصروف",
+  "personal_currency": "العملة",
+  "personal_conv_loading": "جارٍ تحميل السعر…",
+  "personal_conv_error": "السعر غير متوفر — المبلغ محفوظ كما هو"
 }

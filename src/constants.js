@@ -42,6 +42,15 @@ export const PERSONAL_CATEGORIES = {
                        subs: ["Autre"] },
 };
 
+export const CURRENCY_CODES = {
+  "EUR €":    "eur",
+  "USD $":    "usd",
+  "GBP £":    "gbp",
+  "XOF FCFA": "xof",
+  "MAD DH":   "mad",
+  "CAD $":    "cad",
+};
+
 export const AVATAR_EMOJIS = ["😀","😎","🥳","🤩","🦁","🐯","🐻","🦊","🐼","🐨","🦄","🐸","🦋","🌟","⚡","🔥","🌈","🎯","🎸","🚀","💎","🌺","🍀","🎭","👑"];
 
 export const AVATAR_STORAGE_KEY = "splitly_avatars";

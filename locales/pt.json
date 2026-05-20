@@ -589,5 +589,14 @@
   "dash_filter_all": "Tudo",
   "dash_filter_split": "Split",
   "dash_filter_budget": "Budget",
-  "dash_filter_personal": "Pessoal"
+  "dash_filter_personal": "Pessoal",
+  "personal_setup_title": "Configuração inicial",
+  "personal_setup_desc": "Escolha a moeda base para as suas despesas pessoais.",
+  "personal_setup_confirm": "Confirmar",
+  "personal_base_currency": "Moeda base",
+  "personal_change_currency": "Alterar",
+  "personal_date": "Data da despesa",
+  "personal_currency": "Moeda",
+  "personal_conv_loading": "A carregar taxa…",
+  "personal_conv_error": "Taxa indisponível — montante guardado tal qual"
 }
