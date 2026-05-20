@@ -19,6 +19,7 @@ import {
   fetchProfile, fetchAdminUsers, adminUserAction,
   fetchCotisations, createCotisation, updateCotisation, deleteCotisation,
   createReport, fetchReports,
+  fetchOrCreatePersonalEvent,
 } from "./supabase.js";
 import { CATEGORIES, CURRENCIES, AVATAR_EMOJIS, AVATAR_STORAGE_KEY } from "./constants.js";
 import { fmt, currencySymbol, computeOwed, computeNetBalance, isSettled, isExactlySettled, settleStatus, validateAmount, computeTransactions, getAvatarMap, saveAvatarEmoji } from "./utils.js";
@@ -47,6 +48,7 @@ const OnboardingWizard = lazy(() => import("./pages/OnboardingWizard.jsx").then(
 const SuperAdminPage   = lazy(() => import("./pages/SuperAdminPage.jsx").then(m => ({ default: m.SuperAdminPage })));
 const ContributionsPage = lazy(() => import("./pages/ContributionsPage.jsx").then(m => ({ default: m.ContributionsPage })));
 const CotisationsPage  = lazy(() => import("./pages/CotisationsPage.jsx").then(m => ({ default: m.CotisationsPage })));
+const PersonalPage     = lazy(() => import("./pages/PersonalPage.jsx").then(m => ({ default: m.PersonalPage })));
 
 function AppInner() {
   const [isOnline, setIsOnline] = useState(() => typeof navigator !== "undefined" ? navigator.onLine : true);
@@ -74,6 +76,7 @@ function AppInner() {
   const [pageKey, setPageKey] = useState(0);
   const [events, setEvents] = useState([]);
   const [expenses, setExpenses] = useState([]);
+  const [personalExpenses, setPersonalExpenses] = useState([]);
   const [contributions, setContributions] = useState({});
   const [history, setHistory] = useState([]);
   const [notifications, setNotifications] = useState([]);
@@ -116,7 +119,7 @@ function AppInner() {
   // Raccourcis clavier G + lettre (comme Notion/Linear)
   const gPressed = useRef(false);
   useEffect(() => {
-    const KEYS = { d: "dashboard", e: "events", x: "expenses", b: "balance", a: "analytics", h: "history", i: "invite", n: "notifications" };
+    const KEYS = { d: "dashboard", e: "events", x: "expenses", b: "balance", a: "analytics", h: "history", i: "invite", n: "notifications", p: "personal" };
     const down = (e) => {
       if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
       if (e.key === "g" || e.key === "G") { gPressed.current = true; return; }
@@ -142,6 +145,7 @@ function AppInner() {
     invite: t("nav_invite"), notifications: t("nav_notifications"),
     settings: t("nav_settings") || "Paramètres",
     cotisations: t("nav_cotisations") || "Cotisations",
+    personal: t("nav_personal") || "Mes dépenses",
     superadmin: "Super Admin",
   };
 
@@ -206,7 +210,11 @@ function AppInner() {
       const { data: hData } = await fetchHistory(ev.id);
       if (hData) allHist.push(...hData);
     }
-    setExpenses(allExp); setContributions(allContrib); setHistory(allHist);
+    const personalEvent = evData.find(e => e.event_type === 'personal');
+    const personalEvId = personalEvent?.id;
+    setExpenses(allExp.filter(e => e.event_id !== personalEvId));
+    setPersonalExpenses(allExp.filter(e => e.event_id === personalEvId));
+    setContributions(allContrib); setHistory(allHist);
     const { data: nData } = await fetchNotifications(user.id);
     if (nData) setNotifications(nData);
     if (evData.length > 0) {
@@ -318,7 +326,7 @@ function AppInner() {
     await signOut();
     setUser(null); setProfile(null); setGuestEmail(null);
     setActiveRaw("dashboard");
-    setEvents([]); setExpenses([]);
+    setEvents([]); setExpenses([]); setPersonalExpenses([]);
     setContributions({}); setHistory([]); setNotifications([]); setPendingActions([]);
   };
 
@@ -335,8 +343,8 @@ function AppInner() {
   }, [contributions]);
 
   const sharedProps = useMemo(
-    () => ({ events, expenses, contributions: contribNorm, user, reload: loadAll, isMobile, addToast, t }),
-    [events, expenses, contribNorm, user, isMobile, addToast, loadAll, t]
+    () => ({ events, expenses, contributions: contribNorm, user, reload: loadAll, isMobile, addToast, t, personalExpenses }),
+    [events, expenses, contribNorm, user, isMobile, addToast, loadAll, t, personalExpenses]
   );
 
   if (loading) return <Spinner />;
@@ -389,6 +397,7 @@ function AppInner() {
 
   const isAdmin = profile?.user_role === "admin";
   const hasBudgetEvents = events.some(e => e.event_type === "budget");
+  const hasPersonalEvent = events.some(e => e.event_type === "personal");
 
   const pages = isAdmin ? {
     superadmin: <SuperAdminPage user={user} isMobile={isMobile} addToast={addToast} />,
@@ -399,6 +408,7 @@ function AppInner() {
     balance:       <Balance {...sharedProps} />,
     contributions: <ContributionsPage {...sharedProps} />,
     cotisations:   <CotisationsPage events={events} expenses={expenses} user={user} reload={loadAll} isMobile={isMobile} addToast={addToast} t={t} />,
+    personal:      <PersonalPage {...sharedProps} />,
     analytics:     <Analytics {...sharedProps} />,
     history:       <History events={events} history={history} user={user} reload={loadAll} isMobile={isMobile} addToast={addToast} t={t} />,
     invite:        <Invite events={events} user={user} isMobile={isMobile} addToast={addToast} t={t} />,
@@ -446,7 +456,7 @@ function AppInner() {
       <Sidebar active={active} setActive={setActive} unreadCount={unreadCount} pendingCount={pendingCount}
         user={user} onSignOut={handleSignOut} addToast={addToast} isMobile={isMobile} menuOpen={menuOpen} setMenuOpen={setMenuOpen}
         t={t} lang={lang} setLang={setLang} searchQuery={searchQuery} setSearchQuery={setSearchQuery}
-        isAdmin={isAdmin} hasBudgetEvents={hasBudgetEvents} hasNewNotif={hasNewNotif} />
+        isAdmin={isAdmin} hasBudgetEvents={hasBudgetEvents} hasPersonalEvent={hasPersonalEvent} hasNewNotif={hasNewNotif} />
 
       <main role="main" style={{ flex: 1, overflow: "hidden", minWidth: 0, background: "var(--bg)", display: "flex", flexDirection: "column" }}>
         {/* Topbar desktop — breadcrumb léger */}

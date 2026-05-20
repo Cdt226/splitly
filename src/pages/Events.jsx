@@ -747,7 +747,7 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
         <div style={{ flex: "1 1 auto", minWidth: 0 }}>
           <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2 }}>Événements</h2>
-          <p style={{ color: "#888", fontSize: 12 }}>{events.length} événement{events.length > 1 ? "s" : ""}</p>
+          <p style={{ color: "#888", fontSize: 12 }}>{events.filter(e => e.event_type !== 'personal').length} événement{events.filter(e => e.event_type !== 'personal').length > 1 ? "s" : ""}</p>
         </div>
         <div style={{ display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap", alignItems: "center", justifyContent: "flex-end" }}>
           {templates.length > 0 && (
@@ -893,13 +893,13 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
         </div>
       )}
 
-      {events.length === 0 && !showNew ? (
+      {events.filter(e => e.event_type !== 'personal').length === 0 && !showNew ? (
         <EmptyState icon="🎊" title="Aucun événement" subtitle="Créez votre premier événement pour commencer."
           action={<button onClick={() => setShowNew(true)} style={S.btnDark}>+ Créer un événement</button>} />
       ) : (
         <>
           {/* Tri */}
-          {events.length > 1 && (
+          {events.filter(e => e.event_type !== 'personal').length > 1 && (
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
               <select style={{ ...S.input, width: "auto", fontSize: 12 }} value={sortEvents} onChange={e => setSortEvents(e.target.value)}>
                 <option value="date_desc">📅 Plus récent</option>
@@ -911,7 +911,7 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
             </div>
           )}
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {[...events].sort((a, b) => {
+          {[...events].filter(e => e.event_type !== 'personal').sort((a, b) => {
             if (sortEvents === "date_asc") return new Date(a.date) - new Date(b.date);
             if (sortEvents === "name_asc") return a.name.localeCompare(b.name);
             if (sortEvents === "amount_desc") {

@@ -390,7 +390,7 @@ export function Expenses({ events, expenses, contributions, user, reload, isMobi
         </div>
         <select style={{ ...S.input, width: "auto" }} value={filterEvent} onChange={e => setFilterEvent(e.target.value)}>
           <option value="all">Tous les événements ({expenses.length})</option>
-          {events.map(ev => {
+          {events.filter(e => e.event_type !== 'personal').map(ev => {
             const count = expenses.filter(e => e.event_id === ev.id).length;
             return <option key={ev.id} value={ev.id}>{ev.event_type === "budget" ? "🏦 " : "💸 "}{ev.name} ({count})</option>;
           })}

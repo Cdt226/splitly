@@ -8,7 +8,7 @@ import { Avatar, AvatarStack, EmojiPicker, Truncate, Badge, EmptyState, Chip, Pa
 import { useTranslation, LanguageSwitcher, LanguageMenu } from "../i18n.jsx";
 import { useTheme } from "../hooks/useTheme.jsx";
 
-export function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut, addToast, isMobile, menuOpen, setMenuOpen, lang, setLang, searchQuery, setSearchQuery, isAdmin, hasBudgetEvents, hasNewNotif }) {
+export function Sidebar({ active, setActive, unreadCount, pendingCount, user, onSignOut, addToast, isMobile, menuOpen, setMenuOpen, lang, setLang, searchQuery, setSearchQuery, isAdmin, hasPersonalEvent, hasNewNotif }) {
   const { t } = useTranslation();
   const totalBadge = unreadCount + pendingCount;
   const badgeDisplay = totalBadge > 9 ? "9+" : totalBadge;
@@ -28,6 +28,7 @@ export function Sidebar({ active, setActive, unreadCount, pendingCount, user, on
     { key: "history",         icon: "📋", label: t("nav_history") },
     { key: "invite",          icon: "👥", label: t("nav_invite") },
     { key: "notifications",   icon: "🔔", label: t("nav_notifications"), badge: badgeDisplay, pulse: hasNewNotif },
+    { key: "personal",        icon: "🧍", label: t("nav_personal") || "Mes dépenses" },
     { key: "settings",        icon: "⚙️", label: t("nav_settings") || "Paramètres" },
   ];
 
@@ -45,7 +46,7 @@ export function Sidebar({ active, setActive, unreadCount, pendingCount, user, on
   const SHORTCUTS = {
     dashboard: "D", events: "E", expenses: "X",
     balance: "B", analytics: "A", history: "H",
-    invite: "I", notifications: "N",
+    invite: "I", notifications: "N", personal: "P",
   };
 
   const NavButton = ({ n }) => (

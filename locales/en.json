@@ -572,5 +572,22 @@
   "ocr_category_low_confidence": "Low confidence — please verify",
   "ocr_detected_by_claude": "Detected by Claude Vision",
   "ocr_detected_by_google": "Detected by Google Vision",
-  "ocr_detected_by_heuristic": "Auto-detected — please verify"
+  "ocr_detected_by_heuristic": "Auto-detected — please verify",
+  "nav_personal": "My Expenses",
+  "personal_title": "My Personal Expenses",
+  "personal_add": "Add an expense",
+  "personal_no_expenses": "No expenses this month",
+  "personal_total": "Month total",
+  "personal_vs_prev": "vs last month",
+  "personal_avg_day": "Daily average",
+  "personal_top_cat": "Top category",
+  "personal_by_cat": "Breakdown by category",
+  "personal_list": "My expenses",
+  "personal_budgets": "Budget limits",
+  "personal_insights": "SplitSmart tips",
+  "personal_budget_limit": "Monthly limit",
+  "dash_filter_all": "All",
+  "dash_filter_split": "Split",
+  "dash_filter_budget": "Budget",
+  "dash_filter_personal": "Personal"
 }

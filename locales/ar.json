@@ -572,5 +572,22 @@
   "ocr_category_low_confidence": "ثقة منخفضة — تحقق",
   "ocr_detected_by_claude": "تم الاكتشاف بواسطة Claude Vision",
   "ocr_detected_by_google": "تم الاكتشاف بواسطة Google Vision",
-  "ocr_detected_by_heuristic": "تم الاكتشاف تلقائياً — تحقق"
+  "ocr_detected_by_heuristic": "تم الاكتشاف تلقائياً — تحقق",
+  "nav_personal": "مصاريفي",
+  "personal_title": "مصاريفي الشخصية",
+  "personal_add": "إضافة مصروف",
+  "personal_no_expenses": "لا توجد مصاريف هذا الشهر",
+  "personal_total": "إجمالي الشهر",
+  "personal_vs_prev": "مقارنة بالشهر السابق",
+  "personal_avg_day": "المتوسط اليومي",
+  "personal_top_cat": "الفئة الرئيسية",
+  "personal_by_cat": "توزيع حسب الفئة",
+  "personal_list": "مصاريفي",
+  "personal_budgets": "حدود الميزانية",
+  "personal_insights": "نصائح SplitSmart",
+  "personal_budget_limit": "الحد الشهري",
+  "dash_filter_all": "الكل",
+  "dash_filter_split": "مشترك",
+  "dash_filter_budget": "ميزانية",
+  "dash_filter_personal": "شخصي"
 }

@@ -1,15 +1,16 @@
 // src/pages/Dashboard.jsx
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState } from "react";
 import { supabase } from "../supabase.js";
-import { CATEGORIES, CURRENCIES, AVATAR_EMOJIS } from "../constants.js";
+import { CATEGORIES, CURRENCIES, AVATAR_EMOJIS, PERSONAL_CATEGORIES } from "../constants.js";
 import { fmt, currencySymbol, computeOwed, computeNetBalance, isSettled, isExactlySettled, settleStatus, validateAmount, computeTransactions, getAvatarMap, saveAvatarEmoji } from "../utils.js";
 import { S } from "../styles.js";
 import { Avatar, AvatarStack, EmojiPicker, Truncate, Badge, EmptyState, Chip, ParticipantInput, ParticipantToggle, Modal, ConfirmModal, Spinner, StatCard } from "../components/ui/index.jsx";
 import { fetchCotisations, exportPDF } from "../supabase.js";
 import { useTranslation } from "../i18n.jsx";
 
-export function Dashboard({ events, expenses, contributions, user, isMobile, navigateTo, lang }) {
+export function Dashboard({ events, expenses, contributions, user, isMobile, navigateTo, lang, personalExpenses = [] }) {
   const { t } = useTranslation();
+  const [dashFilter, setDashFilter] = useState("all");
   const firstName = user?.user_metadata?.full_name?.split(" ")[0] || "vous";
   const now = new Date();
   // Lire la langue sauvegardée depuis localStorage plutôt que le navigateur
@@ -17,14 +18,27 @@ export function Dashboard({ events, expenses, contributions, user, isMobile, nav
   const locale = savedLang === "ar" ? "ar-MA" : savedLang === "en" ? "en-GB" : savedLang === "es" ? "es-ES" : savedLang === "pt" ? "pt-PT" : "fr-FR";
   const dateLabel = now.toLocaleDateString(locale, { weekday: "long", day: "numeric", month: "long" });
 
+  const hasBudgetEvents = events.some(e => e.event_type === "budget");
+  const hasPersonalExpenses = personalExpenses.length > 0 || events.some(e => e.event_type === "personal");
+
+  // ── Filtrage selon dashFilter ─────────────────────────────
+  const filteredEvents = dashFilter === "all"
+    ? events.filter(e => e.event_type !== "personal")
+    : dashFilter === "personal"
+      ? []
+      : events.filter(e => e.event_type === dashFilter);
+  const filteredExpenses = dashFilter === "personal"
+    ? personalExpenses
+    : expenses.filter(e => filteredEvents.some(ev => ev.id === e.event_id));
+
   // ── KPIs globaux ──────────────────────────────────────────
-  const grandTotal = expenses.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
-  const openEvents = events.filter(e => e.status === "open");
-  const closedEvents = events.filter(e => e.status === "closed");
-  const uniqueParticipants = [...new Set(events.flatMap(e => (e.event_participants || []).map(p => p.name)))];
+  const grandTotal = filteredExpenses.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
+  const openEvents = filteredEvents.filter(e => e.status === "open");
+  const closedEvents = filteredEvents.filter(e => e.status === "closed");
+  const uniqueParticipants = [...new Set(filteredEvents.flatMap(e => (e.event_participants || []).map(p => p.name)))];
 
   // ── Soldes consolidés (tous events ouverts) ───────────────
-  let totalToReceive = 0, totalToPay = 0, pendingReimb = 0;
+  let pendingReimb = 0;
   openEvents.forEach(ev => {
     const evExp = expenses.filter(e => e.event_id === ev.id);
     const evContribs = {};
@@ -33,14 +47,29 @@ export function Dashboard({ events, expenses, contributions, user, isMobile, nav
     pendingReimb += txns.length;
   });
 
-  // ── Activité récente (10 dernières charges) ───────────────
-  const recentExpenses = [...expenses]
+  // ── KPIs personnels (filtre personal) ────────────────────
+  const thisMonth = now.getMonth(), thisYear = now.getFullYear();
+  const prevMonth = thisMonth === 0 ? 11 : thisMonth - 1;
+  const prevYear  = thisMonth === 0 ? thisYear - 1 : thisYear;
+  const curMonthExp  = personalExpenses.filter(e => { const d = new Date(e.created_at); return d.getMonth() === thisMonth && d.getFullYear() === thisYear; });
+  const prevMonthExp = personalExpenses.filter(e => { const d = new Date(e.created_at); return d.getMonth() === prevMonth && d.getFullYear() === prevYear; });
+  const personalTotal     = curMonthExp.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
+  const personalPrevTotal = prevMonthExp.reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
+  const personalVariation = personalPrevTotal > 0 ? Math.round(((personalTotal - personalPrevTotal) / personalPrevTotal) * 100) : null;
+  const personalAvgDay    = personalTotal / (now.getDate() || 1);
+  const byCatPersonal = {};
+  curMonthExp.forEach(e => { byCatPersonal[e.category] = (byCatPersonal[e.category] || 0) + e.qty * (e.unit_price ?? 0); });
+  const topCatEntry = Object.entries(byCatPersonal).sort((a, b) => b[1] - a[1])[0];
+
+  // ── Activité récente ──────────────────────────────────────
+  const recentExpenses = [...filteredExpenses]
     .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
     .slice(0, 5);
 
   // ── Top catégories ────────────────────────────────────────
-  const byCategory = Object.keys(CATEGORIES).map(cat => ({
-    cat, total: expenses.filter(e => e.category === cat).reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0)
+  const catDict = dashFilter === "personal" ? PERSONAL_CATEGORIES : CATEGORIES;
+  const byCategory = Object.keys(dashFilter === "personal" ? byCatPersonal : catDict).map(cat => ({
+    cat, total: filteredExpenses.filter(e => e.category === cat).reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0)
   })).filter(c => c.total > 0).sort((a, b) => b.total - a.total).slice(0, 5);
 
   // ── Progression bouclage par event ouvert ─────────────────
@@ -85,18 +114,49 @@ export function Dashboard({ events, expenses, contributions, user, isMobile, nav
         )}
       </div>
 
-      {events.length === 0 ? (
+      {/* ── Barre de filtres ── */}
+      {(events.filter(e => e.event_type !== "personal").length > 0 || hasPersonalExpenses) && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+          <button onClick={() => setDashFilter("all")} style={{ padding: "6px 14px", borderRadius: 20, border: dashFilter === "all" ? "none" : "1.5px solid var(--border)", background: dashFilter === "all" ? "#0F0F0F" : "transparent", color: dashFilter === "all" ? "#fff" : "var(--text-muted)", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
+            {t("dash_filter_all") || "✦ Tout"}
+          </button>
+          <button onClick={() => setDashFilter("split")} style={{ padding: "6px 14px", borderRadius: 20, border: dashFilter === "split" ? "none" : "1.5px solid var(--border)", background: dashFilter === "split" ? "#0F0F0F" : "transparent", color: dashFilter === "split" ? "#fff" : "var(--text-muted)", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
+            {t("dash_filter_split") || "🎊 Split"}
+          </button>
+          {hasBudgetEvents && (
+            <button onClick={() => setDashFilter("budget")} style={{ padding: "6px 14px", borderRadius: 20, border: dashFilter === "budget" ? "none" : "1.5px solid var(--border)", background: dashFilter === "budget" ? "#0F0F0F" : "transparent", color: dashFilter === "budget" ? "#fff" : "var(--text-muted)", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
+              {t("dash_filter_budget") || "💼 Budget"}
+            </button>
+          )}
+          {hasPersonalExpenses && (
+            <button onClick={() => setDashFilter("personal")} style={{ padding: "6px 14px", borderRadius: 20, border: dashFilter === "personal" ? "none" : "1.5px solid var(--border)", background: dashFilter === "personal" ? "#0F0F0F" : "transparent", color: dashFilter === "personal" ? "#fff" : "var(--text-muted)", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
+              {t("dash_filter_personal") || "🧍 Perso"}
+            </button>
+          )}
+        </div>
+      )}
+
+    {filteredEvents.length === 0 && dashFilter !== "personal" ? (
         <EmptyState icon="🎊" title={t("dash_no_events")} subtitle={t("dash_no_events_desc")}
           action={navigateTo && <button onClick={() => navigateTo("events")} style={S.btnDark}>{t("dash_create_event_btn")}</button>} />
       ) : (
         <>
           {/* ── KPIs ── */}
+          {dashFilter === "personal" ? (
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 12, marginBottom: 24, minWidth: 0 }}>
+              <KpiCard icon="💶" label={t("personal_total") || "Total du mois"} value={fmt(personalTotal)} sub={`${curMonthExp.length} dépense${curMonthExp.length > 1 ? "s" : ""}`} accent="#0F0F0F" onClick={() => navigateTo && navigateTo("personal")} />
+              <KpiCard icon={personalVariation !== null && personalVariation > 10 ? "📈" : "📉"} label={t("personal_vs_prev") || "vs mois précédent"} value={personalVariation !== null ? `${personalVariation > 0 ? "+" : ""}${personalVariation}%` : "—"} sub={personalPrevTotal > 0 ? `${fmt(personalPrevTotal)} le mois dernier` : "Pas de données"} accent={personalVariation !== null && personalVariation > 10 ? "#C62828" : personalVariation !== null && personalVariation < 0 ? "#2E7D32" : "#F57F17"} />
+              <KpiCard icon="📅" label={t("personal_avg_day") || "Moyenne / jour"} value={fmt(personalAvgDay)} sub={`Jour ${now.getDate()}/${new Date(thisYear, thisMonth + 1, 0).getDate()}`} accent="#1565C0" />
+              <KpiCard icon={topCatEntry ? "🏷️" : "—"} label={t("personal_top_cat") || "Top catégorie"} value={topCatEntry ? topCatEntry[0] : "—"} sub={topCatEntry ? fmt(topCatEntry[1]) : "Aucune dépense"} accent="#6A1B9A" onClick={() => navigateTo && navigateTo("personal")} />
+            </div>
+          ) : (
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 12, marginBottom: 24, minWidth: 0 }}>
-            <KpiCard icon="💰" label={t("dash_budget_total")} value={fmt(grandTotal)} sub={`${expenses.length} charge${expenses.length > 1 ? "s" : ""}`} accent="#0F0F0F" onClick={() => navigateTo && navigateTo("expenses")} />
-            <KpiCard icon="🎊" label={t("dash_events")} value={events.length} sub={`${openEvents.length} ${t("dash_open_count")}${openEvents.length > 1 ? "s" : ""} · ${closedEvents.length} ${t("dash_closed_count")}${closedEvents.length > 1 ? "s" : ""}`} accent="#2E7D32" onClick={() => navigateTo && navigateTo("events")} />
+            <KpiCard icon="💰" label={t("dash_budget_total")} value={fmt(grandTotal)} sub={`${filteredExpenses.length} charge${filteredExpenses.length > 1 ? "s" : ""}`} accent="#0F0F0F" onClick={() => navigateTo && navigateTo("expenses")} />
+            <KpiCard icon="🎊" label={t("dash_events")} value={filteredEvents.length} sub={`${openEvents.length} ${t("dash_open_count")}${openEvents.length > 1 ? "s" : ""} · ${closedEvents.length} ${t("dash_closed_count")}${closedEvents.length > 1 ? "s" : ""}`} accent="#2E7D32" onClick={() => navigateTo && navigateTo("events")} />
             <KpiCard icon="👥" label={t("dash_participants")} value={uniqueParticipants.length} sub={t("dash_unique_profiles")} accent="#1565C0" onClick={() => navigateTo && navigateTo("analytics")} />
             <KpiCard icon="⏳" label={t("dash_reimbursements_label")} value={pendingReimb} sub={t("dash_pending")} accent={pendingReimb > 0 ? "#F57F17" : "#2E7D32"} onClick={() => navigateTo && navigateTo("balance")} />
           </div>
+          )}
 
           {/* ── Progression bouclage ── */}
           {evProgression.length > 0 && (
@@ -140,9 +200,11 @@ export function Dashboard({ events, expenses, contributions, user, isMobile, nav
               </div>
               {byCategory.length === 0 ? (
                 <div style={{ color: "var(--text-sub)", fontSize: 13, textAlign: "center", padding: "20px 0" }}>{t("dash_no_charges")}</div>
-              ) : byCategory.map(c => (
+              ) : byCategory.map(c => {
+                const catInfo = catDict[c.cat] || CATEGORIES[c.cat] || {};
+                return (
                 <div key={c.cat} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-                  <span style={{ fontSize: 18, flexShrink: 0, width: 26 }}>{CATEGORIES[c.cat].icon}</span>
+                  <span style={{ fontSize: 18, flexShrink: 0, width: 26 }}>{catInfo.icon || "🏷️"}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                       <span style={{ fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.cat}</span>
@@ -151,12 +213,13 @@ export function Dashboard({ events, expenses, contributions, user, isMobile, nav
                       </span>
                     </div>
                     <div style={{ background: "var(--border)", borderRadius: 6, height: 5, overflow: "hidden" }}>
-                      <div style={{ background: CATEGORIES[c.cat].accent, borderRadius: 6, height: 5, width: `${grandTotal > 0 ? (c.total / grandTotal) * 100 : 0}%`, transition: "width 0.5s" }} />
+                      <div style={{ background: catInfo.accent || "#0F0F0F", borderRadius: 6, height: 5, width: `${grandTotal > 0 ? (c.total / grandTotal) * 100 : 0}%`, transition: "width 0.5s" }} />
                     </div>
                   </div>
                   <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", flexShrink: 0, minWidth: 48, textAlign: "right" }}>{fmt(c.total)}</span>
                 </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Activité récente */}
@@ -169,7 +232,7 @@ export function Dashboard({ events, expenses, contributions, user, isMobile, nav
                 <div style={{ color: "var(--text-sub)", fontSize: 13, textAlign: "center", padding: "20px 0" }}>{t("dash_no_recent")}</div>
               ) : recentExpenses.map((ex, i) => {
                 const ev = events.find(e => e.id === ex.event_id);
-                const cat = CATEGORIES[ex.category];
+                const cat = CATEGORIES[ex.category] || PERSONAL_CATEGORIES[ex.category];
                 const total = ex.qty * (ex.unit_price ?? 0);
                 const sym = currencySymbol(ev?.currency);
                 return (

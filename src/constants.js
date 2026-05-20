@@ -17,6 +17,31 @@ export const CATEGORIES = {
 
 export const CURRENCIES = ["EUR €", "USD $", "GBP £", "XOF FCFA", "MAD DH", "CAD $"];
 
+export const PERSONAL_CATEGORIES = {
+  "Logement":        { icon: "🏠", color: "#E3F2FD", accent: "#1565C0",
+                       subs: ["Loyer", "Charges", "Assurance habitation", "Réparations", "Autre"] },
+  "Alimentation":    { icon: "🛒", color: "#E8F5E9", accent: "#2E7D32",
+                       subs: ["Courses", "Restaurants", "Livraison", "Café", "Autre"] },
+  "Transport":       { icon: "🚗", color: "#FFF8E1", accent: "#F57F17",
+                       subs: ["Carburant", "Transport commun", "Parking", "Entretien", "Autre"] },
+  "Santé":           { icon: "💊", color: "#E8EAF6", accent: "#283593",
+                       subs: ["Médecin", "Pharmacie", "Mutuelle", "Sport", "Autre"] },
+  "Loisirs":         { icon: "🎭", color: "#FCE4EC", accent: "#AD1457",
+                       subs: ["Sorties", "Streaming", "Sport", "Lecture", "Autre"] },
+  "Vêtements":       { icon: "👕", color: "#F3E5F5", accent: "#6A1B9A",
+                       subs: ["Vêtements", "Chaussures", "Accessoires", "Autre"] },
+  "Abonnements":     { icon: "📱", color: "#ECEFF1", accent: "#455A64",
+                       subs: ["Téléphone", "Internet", "Streaming", "Presse", "Autre"] },
+  "Épargne":         { icon: "💎", color: "#E0F7FA", accent: "#00695C",
+                       subs: ["Virement épargne", "Investissement", "Assurance vie", "Autre"] },
+  "Famille":         { icon: "👨‍👩‍👧", color: "#FFF3E0", accent: "#E65100",
+                       subs: ["Enfants", "Cadeaux", "Aide proche", "Autre"] },
+  "Impôts & Taxes":  { icon: "🏛️", color: "#FAFAFA", accent: "#616161",
+                       subs: ["Impôt revenu", "Taxe habitation", "Cotisations", "Autre"] },
+  "Divers":          { icon: "❓", color: "#F5F5F5", accent: "#757575",
+                       subs: ["Autre"] },
+};
+
 export const AVATAR_EMOJIS = ["😀","😎","🥳","🤩","🦁","🐯","🐻","🦊","🐼","🐨","🦄","🐸","🦋","🌟","⚡","🔥","🌈","🎯","🎸","🚀","💎","🌺","🍀","🎭","👑"];
 
 export const AVATAR_STORAGE_KEY = "splitly_avatars";

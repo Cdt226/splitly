@@ -1011,3 +1011,62 @@ export async function sendReminderForEvent(eventId) {
   if (!response.ok) return { error: new Error(json.error || "Erreur serveur") };
   return { data: json, error: null };
 }
+
+// ─── PERSONAL EVENT ───────────────────────────────────────────
+export async function fetchOrCreatePersonalEvent(userId) {
+  const { data: existing } = await supabase
+    .from('events')
+    .select('*')
+    .eq('admin_id', userId)
+    .eq('event_type', 'personal')
+    .neq('archived', true)
+    .maybeSingle();
+
+  if (existing) return { data: existing, error: null };
+
+  const today = new Date().toISOString().split('T')[0];
+  const { data, error } = await supabase
+    .from('events')
+    .insert({
+      name: 'Mes dépenses',
+      date: today,
+      currency: 'EUR €',
+      admin_id: userId,
+      event_type: 'personal',
+      status: 'open',
+    })
+    .select()
+    .single();
+
+  return { data, error };
+}
+
+// ─── PERSONAL BUDGET LIMITS ───────────────────────────────────
+export async function fetchPersonalBudgetLimits(userId) {
+  const { data, error } = await supabase
+    .from('personal_budget_limits')
+    .select('*')
+    .eq('user_id', userId)
+    .order('category');
+  return { data: data || [], error };
+}
+
+export async function upsertPersonalBudgetLimit(userId, category, monthlyLimit, currency) {
+  if (monthlyLimit <= 0) {
+    const { error } = await supabase
+      .from('personal_budget_limits')
+      .delete()
+      .eq('user_id', userId)
+      .eq('category', category);
+    return { error };
+  }
+  const { data, error } = await supabase
+    .from('personal_budget_limits')
+    .upsert(
+      { user_id: userId, category, monthly_limit: monthlyLimit, currency, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id,category' }
+    )
+    .select()
+    .single();
+  return { data, error };
+}
