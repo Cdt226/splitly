@@ -363,10 +363,12 @@ export function PersonalPage({ events, expenses, contributions, user, reload, is
     };
 
     if (editingEx) {
-      await updateExpense(editingEx.id, payload, user.id, editingEx);
+      const { error } = await updateExpense(editingEx.id, payload, user.id, editingEx);
+      if (error) { addToast(`Erreur : ${error.message}`, "error"); setSaving(false); return; }
       addToast("Dépense modifiée.", "success");
     } else {
-      await createExpense({ ...payload, eventId: personalEvent.id }, user.id);
+      const { error } = await createExpense({ ...payload, eventId: personalEvent.id }, user.id);
+      if (error) { addToast(`Erreur : ${error.message}`, "error"); setSaving(false); return; }
       addToast("Dépense ajoutée.", "success");
     }
 

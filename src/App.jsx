@@ -210,7 +210,7 @@ function AppInner() {
       const { data: hData } = await fetchHistory(ev.id);
       if (hData) allHist.push(...hData);
     }
-    const personalEvent = evData.find(e => e.event_type === 'personal');
+    const personalEvent = evData.find(e => e.event_type === 'personal' && e.admin_id === user.id);
     const personalEvId = personalEvent?.id;
     setExpenses(allExp.filter(e => e.event_id !== personalEvId));
     setPersonalExpenses(allExp.filter(e => e.event_id === personalEvId));
