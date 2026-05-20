@@ -9,6 +9,40 @@ import { createReport } from "../supabase.js";
 import { useTheme } from "../hooks/useTheme.jsx";
 import { useTranslation, LanguageMenu } from "../i18n.jsx";
 
+function Section({ title, children }) {
+  return (
+    <div style={{ background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border)", overflow: "hidden", marginBottom: 16 }}>
+      <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)", fontSize: 12, fontWeight: 700, color: "var(--text-sub)", textTransform: "uppercase", letterSpacing: 1 }}>
+        {title}
+      </div>
+      <div style={{ padding: "4px 0" }}>{children}</div>
+    </div>
+  );
+}
+
+function Row({ icon, label, desc, right }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 20px", borderBottom: "1px solid var(--border)" }}>
+      <div style={{ fontSize: 20, width: 32, textAlign: "center", flexShrink: 0 }}>{icon}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>{label}</div>
+        {desc && <div style={{ fontSize: 12, color: "var(--text-sub)", marginTop: 2 }}>{desc}</div>}
+      </div>
+      <div style={{ flexShrink: 0 }}>{right}</div>
+    </div>
+  );
+}
+
+function Toggle({ value, onToggle }) {
+  return (
+    <button onClick={onToggle} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+      <div style={{ width: 44, height: 24, borderRadius: 12, background: value ? "#2E7D32" : "var(--border)", position: "relative", transition: "background 0.2s" }}>
+        <div style={{ position: "absolute", top: 3, left: value ? 22 : 3, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left 0.2s", boxShadow: "0 1px 4px rgba(0,0,0,0.2)" }} />
+      </div>
+    </button>
+  );
+}
+
 export function SettingsPage({ user, onSignOut, isMobile, addToast, events }) {
   const { t } = useTranslation();
   const { dark, toggle } = useTheme();
@@ -79,34 +113,6 @@ export function SettingsPage({ user, onSignOut, isMobile, addToast, events }) {
       addToast("Erreur lors de l'activation : " + e.message, "warning");
     }
   };
-
-  const Section = ({ title, children }) => (
-    <div style={{ background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border)", overflow: "hidden", marginBottom: 16 }}>
-      <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)", fontSize: 12, fontWeight: 700, color: "var(--text-sub)", textTransform: "uppercase", letterSpacing: 1 }}>
-        {title}
-      </div>
-      <div style={{ padding: "4px 0" }}>{children}</div>
-    </div>
-  );
-
-  const Row = ({ icon, label, desc, right }) => (
-    <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 20px", borderBottom: "1px solid var(--border)" }}>
-      <div style={{ fontSize: 20, width: 32, textAlign: "center", flexShrink: 0 }}>{icon}</div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>{label}</div>
-        {desc && <div style={{ fontSize: 12, color: "var(--text-sub)", marginTop: 2 }}>{desc}</div>}
-      </div>
-      <div style={{ flexShrink: 0 }}>{right}</div>
-    </div>
-  );
-
-  const Toggle = ({ value, onToggle }) => (
-    <button onClick={onToggle} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-      <div style={{ width: 44, height: 24, borderRadius: 12, background: value ? "#2E7D32" : "var(--border)", position: "relative", transition: "background 0.2s" }}>
-        <div style={{ position: "absolute", top: 3, left: value ? 22 : 3, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left 0.2s", boxShadow: "0 1px 4px rgba(0,0,0,0.2)" }} />
-      </div>
-    </button>
-  );
 
   return (
     <div style={{ maxWidth: 600 }}>
