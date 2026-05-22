@@ -19,6 +19,7 @@ export function ThemeProvider({ children }) {
 
   useEffect(() => {
     const root = document.documentElement;
+    root.classList.toggle("dark", dark);
     if (dark) {
       root.style.setProperty("--bg", "#111");
       root.style.setProperty("--bg-secondary", "#1a1a1a");

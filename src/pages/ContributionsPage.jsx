@@ -24,16 +24,16 @@ export function ContributionsPage({ events, expenses, contributions, user, reloa
   return (
     <div>
       {/* Sélecteur événement */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+      <div className="flex justify-between items-center mb-5 flex-wrap gap-3">
         <div>
           <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2, color: "var(--text)" }}>
             {isBudget ? "💰 Cotisations" : "⊜ Répartition"}
           </h2>
-          <p style={{ color: "var(--text-sub)", fontSize: 12 }}>
+          <p className="text-[12px]" style={{ color: "var(--text-sub)" }}>
             {isBudget ? "Gestion des cotisations et contributions" : "Soldes calculés en temps réel"}
           </p>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <div className="flex gap-2 flex-wrap items-center">
           <select style={{ ...S.input, width: "auto" }} value={filterEvent} onChange={e => setFilterEvent(e.target.value)}>
             {events.map(ev => <option key={ev.id} value={ev.id}>{ev.event_type === "budget" ? "🏦 " : "💸 "}{ev.name}</option>)}
           </select>

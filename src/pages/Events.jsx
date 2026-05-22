@@ -744,12 +744,12 @@ export function Events({ events, expenses, contributions, user, reload, isMobile
         </Modal>
       )}
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
-        <div style={{ flex: "1 1 auto", minWidth: 0 }}>
-          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2 }}>Événements</h2>
-          <p style={{ color: "#888", fontSize: 12 }}>{events.filter(e => e.event_type !== 'personal').length} événement{events.filter(e => e.event_type !== 'personal').length > 1 ? "s" : ""}</p>
+      <div className="flex justify-between items-start mb-5 flex-wrap gap-3">
+        <div className="flex-1 min-w-0">
+          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2, color: "var(--text)" }}>Événements</h2>
+          <p className="text-[12px]" style={{ color: "var(--text-sub)" }}>{events.filter(e => e.event_type !== 'personal').length} événement{events.filter(e => e.event_type !== 'personal').length > 1 ? "s" : ""}</p>
         </div>
-        <div style={{ display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap", alignItems: "center", justifyContent: "flex-end" }}>
+        <div className="flex gap-2 flex-shrink-0 flex-wrap items-center justify-end">
           {templates.length > 0 && (
             <button onClick={() => setShowTemplates(!showTemplates)}
               style={{ ...S.btnGhost, fontSize: 12, padding: "8px 14px", whiteSpace: "nowrap" }}>

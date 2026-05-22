@@ -348,12 +348,12 @@ export function Expenses({ events, expenses, contributions, user, reload, isMobi
         </Modal>
       )}
 
-      {!hideHeader && <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
+      {!hideHeader && <div className="flex justify-between items-center mb-4 flex-wrap gap-2.5">
         <div>
-          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2 }}>Charges</h2>
-          <p style={{ color: "#888", fontSize: 12 }}>{expenses.length} dépense{expenses.length > 1 ? "s" : ""}</p>
+          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2, color: "var(--text)" }}>Charges</h2>
+          <p className="text-[12px]" style={{ color: "var(--text-sub)" }}>{expenses.length} dépense{expenses.length > 1 ? "s" : ""}</p>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div className="flex gap-2 flex-wrap">
           {filterEvent !== "all" && events.find(e => e.id === filterEvent) && (
             <button onClick={() => {
               const ev = events.find(e => e.id === filterEvent);

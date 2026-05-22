@@ -144,10 +144,10 @@ export function NotificationsPage({ notifications, events, expenses, pendingActi
         </Modal>
       )}
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+      <div className="flex justify-between items-center mb-5">
         <div>
-          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2 }}>{t ? t("notif_title") : "Notifications"}</h2>
-          <p style={{ color: "#888", fontSize: 12 }}>{notifications.filter(n => !n.is_read).length} non lue(s) · {pendingActions.length} demande(s)</p>
+          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2, color: "var(--text)" }}>{t ? t("notif_title") : "Notifications"}</h2>
+          <p className="text-[12px]" style={{ color: "var(--text-sub)" }}>{notifications.filter(n => !n.is_read).length} non lue(s) · {pendingActions.length} demande(s)</p>
         </div>
         <button onClick={onMarkAll} style={S.btnGhost}>{t ? t("notif_mark_all") : "Tout marquer lu"}</button>
       </div>
@@ -251,22 +251,22 @@ export function NotificationsPage({ notifications, events, expenses, pendingActi
       {notifications.length === 0 && pendingActions.length === 0 ? (
         <EmptyState icon="🔔" title="Aucune notification" subtitle="Vous êtes à jour ! Les notifications apparaîtront ici." />
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div className="flex flex-col gap-2">
           {notifications.map(n => {
             const ev = events.find(e => e.id === n.event_id);
             return (
-              <div key={n.id} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "13px 16px", borderRadius: 14, background: n.is_read ? "#fafafa" : typeBg(n.type), border: `1px solid ${n.is_read ? "#eee" : typeColor(n.type) + "44"}`, opacity: n.is_read ? 0.7 : 1, transition: "all 0.15s" }}>
-                <div style={{ width: 10, height: 10, borderRadius: "50%", background: n.is_read ? "#e0e0e0" : typeColor(n.type), marginTop: 4, flexShrink: 0 }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
-                    <div style={{ fontSize: 13, color: n.is_read ? "#999" : "#333", lineHeight: 1.4 }}>{n.message}</div>
-                    {n.is_read && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 10, background: "#e0e0e0", color: "#888", fontWeight: 700, flexShrink: 0 }}>Lu</span>}
+              <div key={n.id} className="flex items-start gap-3 px-4 py-[13px] rounded-2xl transition-all duration-150" style={{ background: n.is_read ? "var(--bg-secondary)" : typeBg(n.type), border: `1px solid ${n.is_read ? "var(--border)" : typeColor(n.type) + "44"}`, opacity: n.is_read ? 0.7 : 1 }}>
+                <div className="mt-1 flex-shrink-0 rounded-full" style={{ width: 10, height: 10, background: n.is_read ? "var(--border)" : typeColor(n.type) }} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <div className="text-[13px] leading-snug" style={{ color: n.is_read ? "var(--text-sub)" : "var(--text)" }}>{n.message}</div>
+                    {n.is_read && <span className="text-[9px] px-1.5 py-px rounded-full font-bold flex-shrink-0" style={{ background: "var(--border)", color: "var(--text-sub)" }}>Lu</span>}
                   </div>
-                  <div style={{ fontSize: 11, color: "#bbb", marginTop: 2 }}>
+                  <div className="text-[11px] mt-0.5" style={{ color: "var(--text-sub)" }}>
                     {ev ? `${ev.name} · ` : ""}{timeAgo(n.created_at)}
                   </div>
                 </div>
-                <button onClick={() => onDismiss(n.id)} style={{ background: "none", border: "none", color: "#ccc", cursor: "pointer", fontSize: 18, padding: 0, flexShrink: 0, lineHeight: 1 }}>×</button>
+                <button onClick={() => onDismiss(n.id)} className="flex-shrink-0 bg-transparent border-0 cursor-pointer text-lg leading-none p-0" style={{ color: "var(--text-sub)" }}>×</button>
               </div>
             );
           })}

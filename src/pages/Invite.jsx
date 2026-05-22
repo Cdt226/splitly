@@ -365,7 +365,7 @@ export function Invite({ events, user, isMobile, addToast}) {
       )}
 
       <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 4, color: "var(--text)" }}>Invitations</h2>
-      <p style={{ color: "var(--text-sub)", fontSize: 12, marginBottom: 20 }}>Gérez l'accès et les droits de vos invités</p>
+      <p className="text-[12px] mb-5" style={{ color: "var(--text-sub)" }}>Gérez l'accès et les droits de vos invités</p>
 
       {/* ─── Formulaire invitation ─── */}
       <div style={S.card}>

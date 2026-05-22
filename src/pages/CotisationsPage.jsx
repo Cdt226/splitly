@@ -209,7 +209,7 @@ export function CotisationsPage({ events, expenses, user, reload, isMobile, addT
   if (budgetEvents.length === 0) return (
     <div>
       <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 4, color: "var(--text)" }}>💰 Cotisations</h2>
-      <p style={{ color: "var(--text-sub)", fontSize: 12, marginBottom: 20 }}>Gestion des cotisations et contributions</p>
+      <p className="text-[12px] mb-5" style={{ color: "var(--text-sub)" }}>Gestion des cotisations et contributions</p>
       <EmptyState icon="🏦" title="Aucun événement Budget ouvert"
         subtitle="Créez un événement de type Budget pour gérer les cotisations." />
     </div>
@@ -220,10 +220,10 @@ export function CotisationsPage({ events, expenses, user, reload, isMobile, addT
       {confirm && <ConfirmModal {...confirm} />}
 
       {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
+      <div className="flex justify-between items-start mb-4 flex-wrap gap-2.5">
         <div>
           <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2, color: "var(--text)" }}>💰 Cotisations</h2>
-          <p style={{ color: "var(--text-sub)", fontSize: 12 }}>Gestion des cotisations et contributions</p>
+          <p className="text-[12px]" style={{ color: "var(--text-sub)" }}>Gestion des cotisations et contributions</p>
         </div>
         <select style={{ ...S.input, width: "auto" }} value={filterEvent} onChange={e => { setFilterEvent(e.target.value); setShowForm(false); setShowGroupForm(false); }}>
           {budgetEvents.map(ev => <option key={ev.id} value={ev.id}>🏦 {ev.name}</option>)}

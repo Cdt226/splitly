@@ -472,12 +472,12 @@ export function PersonalPage({ events, expenses, contributions, user, reload, is
       )}
 
       {/* ── En-tête ── */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
+      <div className="flex justify-between items-start mb-5 flex-wrap gap-2.5">
         <div>
           <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 4, color: "var(--text)" }}>
             🧍 {t("personal_title") || "Mes dépenses personnelles"}
           </h2>
-          <p style={{ color: "var(--text-sub)", fontSize: 12 }}>
+          <p className="text-[12px]" style={{ color: "var(--text-sub)" }}>
             {t("personal_base_currency") || "Devise de base"} : <strong>{baseCurrency}</strong>
             {" "}·{" "}
             <button
@@ -488,7 +488,7 @@ export function PersonalPage({ events, expenses, contributions, user, reload, is
             </button>
           </p>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div className="flex gap-2 flex-wrap">
           <button onClick={() => { setShowBudgetModal(true); setShowOCR(false); setShowForm(false); }} style={{ ...S.btnGhost, fontSize: 12, padding: "8px 14px" }}>
             ⚙️ {t("personal_budgets") || "Budgets"}
           </button>

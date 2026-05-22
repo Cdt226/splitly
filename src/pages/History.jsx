@@ -112,10 +112,10 @@ export function History({ events, history, user, reload, isMobile, addToast }) {
   return (
     <div>
       {confirm && <ConfirmModal {...confirm} />}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+      <div className="flex justify-between items-center mb-5">
         <div>
-          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2 }}>{t ? t("hist_title") : "Historique"}</h2>
-          <p style={{ color: "#888", fontSize: 12 }}>{t ? t("hist_subtitle") : "Toutes les modifications"}</p>
+          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2, color: "var(--text)" }}>{t ? t("hist_title") : "Historique"}</h2>
+          <p className="text-[12px]" style={{ color: "var(--text-sub)" }}>{t ? t("hist_subtitle") : "Toutes les modifications"}</p>
         </div>
         <select style={{ ...S.input, width: "auto" }} value={filterEvent} onChange={e => setFilterEvent(e.target.value)}>
           <option value="all">{t ? t("hist_all_events") : "Tous les événements"}</option>
@@ -126,23 +126,23 @@ export function History({ events, history, user, reload, isMobile, addToast }) {
       {filtered.length === 0 ? (
         <EmptyState icon="📋" title={t ? t("hist_no_history") : "Aucune modification"} subtitle={t ? t("hist_no_history_desc") : ""} />
       ) : (
-        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #eee", overflow: "hidden" }}>
+        <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)" }}>
           {[...filtered].reverse().map((h, i) => {
             const ev = events.find(e => e.id === h.event_id);
             const color = h.invalidated ? "#ddd" : h.action.includes("supprim") ? "#C62828" : h.action.includes("ajout") || h.action.includes("créé") ? "#2E7D32" : "#1565C0";
             return (
-              <div key={h.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 18px", borderBottom: i < filtered.length - 1 ? "1px solid #f5f5f5" : "none", opacity: h.invalidated ? 0.4 : 1, transition: "opacity 0.2s" }}>
+              <div key={h.id} className="flex items-center gap-3.5 px-[18px] py-[13px]" style={{ borderBottom: i < filtered.length - 1 ? "1px solid var(--border)" : "none", opacity: h.invalidated ? 0.4 : 1, transition: "opacity 0.2s" }}>
                 <div style={{ width: 10, height: 10, borderRadius: "50%", background: color, flexShrink: 0 }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {h.action} {h.invalidated && <span style={{ fontSize: 10, color: "#aaa", fontWeight: 400 }}>{t ? t("hist_invalidated_label") : "(invalidé)"}</span>}
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-semibold truncate" style={{ color: "var(--text)" }}>
+                    {h.action} {h.invalidated && <span className="text-[10px] font-normal" style={{ color: "var(--text-sub)" }}>{t ? t("hist_invalidated_label") : "(invalidé)"}</span>}
                   </div>
-                  <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>
+                  <div className="text-[11px] mt-0.5" style={{ color: "var(--text-sub)" }}>
                     {ev?.name || "–"} · {new Date(h.created_at).toLocaleString("fr-FR")}
                   </div>
                 </div>
                 {!h.invalidated && ev?.status === "open" && (
-                  <button onClick={() => handleRollback(h)} style={{ padding: "5px 12px", borderRadius: 8, border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828", fontSize: 11, cursor: "pointer", fontWeight: 700, flexShrink: 0, whiteSpace: "nowrap" }}>
+                  <button onClick={() => handleRollback(h)} className="flex-shrink-0 whitespace-nowrap text-[11px] font-bold cursor-pointer px-3 py-1.5 rounded-lg" style={{ border: "1.5px solid #ffcdd2", background: "#fff5f5", color: "#C62828" }}>
                     {t ? t("hist_rollback_btn") : "↩ Invalider"}
                   </button>
                 )}

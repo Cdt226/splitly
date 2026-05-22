@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { fileURLToPath, URL } from 'node:url'
 
 // SplitLy uses a hand-crafted service worker (public/sw.js) that handles
 // push notifications, offline caching, and notificationclick.
@@ -9,6 +10,11 @@ import react from '@vitejs/plugin-react'
 // The manual approach is production-ready and gives full control over caching.
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+    },
+  },
   build: {
     // Warn on chunks > 600 kB (default 500)
     chunkSizeWarningLimit: 600,

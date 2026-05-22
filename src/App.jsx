@@ -417,7 +417,7 @@ function AppInner() {
   };
 
   return (
-    <div style={{ display: "flex", height: "100vh", width: "100%", maxWidth: "100%", background: "var(--bg)", fontFamily: "'DM Sans', sans-serif", overflow: "hidden" }}>
+    <div className="flex h-screen w-full max-w-full overflow-hidden font-['DM_Sans',sans-serif]" style={{ background: "var(--bg)" }}>
       <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
       <style>{`
         *, *::before, *::after { box-sizing: border-box; }
@@ -433,20 +433,20 @@ function AppInner() {
       `}</style>
       <ToastContainer toasts={toasts} removeToast={removeToast} />
       {!isOnline && (
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 9999, background: "#F57F17", color: "#fff", textAlign: "center", padding: "8px 16px", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 12 }}>
+        <div className="fixed top-0 left-0 right-0 z-[9999] bg-amber-500 text-white text-center py-2 px-4 text-[13px] font-semibold flex items-center justify-center gap-3">
           ⚠️ {t("error_no_internet") || t("app_offline_banner")}
-          <button onClick={loadAll} style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.4)", borderRadius: 8, padding: "3px 12px", color: "#fff", fontSize: 12, cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
+          <button onClick={loadAll} className="bg-white/20 border border-white/40 rounded-lg px-3 py-0.5 text-white text-xs cursor-pointer font-bold">
             {t("error_retry") || "Réessayer"}
           </button>
         </div>
       )}
       {serverError && isOnline && (
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 9998, background: "#C62828", color: "#fff", textAlign: "center", padding: "8px 16px", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 12 }}>
+        <div className="fixed top-0 left-0 right-0 z-[9998] bg-red-700 text-white text-center py-2 px-4 text-[13px] font-semibold flex items-center justify-center gap-3">
           🔌 {t("error_server_down") || "Le service est temporairement indisponible."}
-          <button onClick={() => { setServerError(false); loadAll(); }} style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.4)", borderRadius: 8, padding: "3px 12px", color: "#fff", fontSize: 12, cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
+          <button onClick={() => { setServerError(false); loadAll(); }} className="bg-white/20 border border-white/40 rounded-lg px-3 py-0.5 text-white text-xs cursor-pointer font-bold">
             {t("error_retry") || "Réessayer"}
           </button>
-          <button onClick={() => setServerError(false)} style={{ background: "none", border: "1px solid rgba(255,255,255,0.4)", borderRadius: 8, padding: "3px 10px", color: "#fff", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>×</button>
+          <button onClick={() => setServerError(false)} className="bg-transparent border border-white/40 rounded-lg px-2.5 py-0.5 text-white text-xs cursor-pointer">×</button>
         </div>
       )}
       {showOnboarding && <OnboardingWizard onComplete={() => setShowOnboarding(false)} />}
@@ -455,25 +455,25 @@ function AppInner() {
         t={t} lang={lang} setLang={setLang} searchQuery={searchQuery} setSearchQuery={setSearchQuery}
         isAdmin={isAdmin} hasBudgetEvents={hasBudgetEvents} hasPersonalEvent={hasPersonalEvent} hasNewNotif={hasNewNotif} />
 
-      <main role="main" style={{ flex: 1, overflow: "hidden", minWidth: 0, background: "var(--bg)", display: "flex", flexDirection: "column" }}>
-        {/* Topbar desktop — breadcrumb léger */}
+      <main role="main" className="flex-1 overflow-hidden min-w-0 flex flex-col" style={{ background: "var(--bg)" }}>
+        {/* Topbar desktop */}
         {!isMobile && (
-          <div style={{ padding: "10px 32px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10, background: "var(--bg)", flexShrink: 0 }}>
+          <div className="px-8 py-2.5 border-b flex items-center gap-2.5 flex-shrink-0" style={{ borderColor: "var(--border)", background: "var(--bg)" }}>
             {navHistory.length > 1 && (
-              <button onClick={goBack} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 7, padding: "3px 10px", cursor: "pointer", color: "var(--text-muted)", fontSize: 12, fontFamily: "inherit" }}>
+              <button onClick={goBack} className="bg-transparent border rounded-lg px-2.5 py-0.5 cursor-pointer text-xs" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
                 ←
               </button>
             )}
-            <span style={{ fontSize: 12, color: "var(--text-sub)" }}>SplitLy</span>
-            <span style={{ color: "var(--border)", fontSize: 12 }}>/</span>
-            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{NAV_LABELS[active]}</span>
-            <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--text-sub)", opacity: 0.4 }}>G + lettre</span>
+            <span className="text-xs" style={{ color: "var(--text-sub)" }}>SplitLy</span>
+            <span className="text-xs" style={{ color: "var(--border)" }}>/</span>
+            <span className="text-[13px] font-bold" style={{ color: "var(--text)" }}>{NAV_LABELS[active]}</span>
+            <span className="ml-auto text-[10px] opacity-40" style={{ color: "var(--text-sub)" }}>G + lettre</span>
           </div>
         )}
 
-        {/* Contenu scrollable */}
-        <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: isMobile ? "72px 16px 80px" : "28px 32px" }}>
-          <div style={{ maxWidth: 1100, margin: "0 auto", width: "100%" }}>
+        {/* Scrollable content */}
+        <div className={`flex-1 overflow-y-auto overflow-x-hidden ${isMobile ? "px-4 pt-[72px] pb-20" : "px-8 py-7"}`}>
+          <div className="max-w-[1100px] mx-auto w-full">
             <div key={pageKey} className="page-transition">
           <ErrorBoundary>
           <Suspense fallback={<div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: 200 }}><Spinner /></div>}>
