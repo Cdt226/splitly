@@ -49,9 +49,28 @@ export default async function handler(req, res) {
       return res.status(403).json({ error: 'Accès refusé — droits insuffisants' });
     }
 
-    // ── GET — liste des utilisateurs ──────────────────────
+    // ── GET — routes spécialisées ────────────────────────
     if (req.method === 'GET') {
-      // Récupérer tous les utilisateurs auth
+      const type = req.query?.type;
+
+      if (type === 'reports') {
+        const { data: reports } = await supabaseAdmin
+          .from('reports')
+          .select('*')
+          .order('created_at', { ascending: false });
+        return res.status(200).json({ reports: reports || [] });
+      }
+
+      if (type === 'ocr') {
+        const { data: ocrData } = await supabaseAdmin
+          .from('ocr_logs')
+          .select('user_id, success, level_rejected, classification_method, created_at')
+          .order('created_at', { ascending: false })
+          .limit(5000);
+        return res.status(200).json({ ocr_logs: ocrData || [] });
+      }
+
+      // ── liste des utilisateurs (défaut) ───────────────
       const { data: { users }, error: usersError } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
       if (usersError) throw usersError;
 
@@ -114,12 +133,6 @@ export default async function handler(req, res) {
       });
 
       return res.status(200).json({ users: enriched });
-    }
-
-    // ── GET reports ───────────────────────────────────────────
-    if (req.method === 'GET' && req.query?.type === 'reports') {
-      const { data: reports } = await supabaseAdmin.from('reports').select('*').order('created_at', { ascending: false });
-      return res.status(200).json({ reports: reports || [] });
     }
 
     // ── POST — actions admin (bloquer / débloquer / supprimer) ──

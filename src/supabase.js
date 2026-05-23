@@ -970,11 +970,14 @@ export async function createReport({ userId, userEmail, category, message, event
 }
 
 export async function fetchReports() {
-  const { data, error } = await supabase
-    .from('reports')
-    .select('*')
-    .order('created_at', { ascending: false });
-  return { data, error };
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return { data: null, error: new Error('Non connecté') };
+  const response = await fetch('/api/admin-users?type=reports', {
+    headers: { 'Authorization': `Bearer ${session.access_token}` },
+  });
+  const json = await response.json();
+  if (!response.ok) return { data: null, error: new Error(json.error) };
+  return { data: json.reports, error: null };
 }
 export async function fetchProfile(userId) {
   const { data, error } = await supabase

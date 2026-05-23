@@ -44,12 +44,12 @@ export function SuperAdminPage({ user, isMobile, addToast }) {
       setReports(rData || []);
     } catch {}
     try {
-      const { data: ocrData } = await supabase
-        .from('ocr_logs')
-        .select('user_id, success, level_rejected, classification_method, created_at')
-        .order('created_at', { ascending: false })
-        .limit(5000);
-      setOcrLogs(ocrData || []);
+      const { data: { session: ocrSession } } = await supabase.auth.getSession();
+      const ocrRes = await fetch('/api/admin-users?type=ocr', {
+        headers: { 'Authorization': `Bearer ${ocrSession?.access_token}` },
+      });
+      const ocrJson = await ocrRes.json();
+      setOcrLogs(ocrJson.ocr_logs || []);
     } catch {}
     try {
       const { data: blData } = await supabase
