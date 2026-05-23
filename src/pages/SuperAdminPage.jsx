@@ -299,13 +299,13 @@ export function SuperAdminPage({ user, isMobile, addToast }) {
       )}
 
       {/* Header */}
-      <div className="flex justify-between items-start mb-5 flex-wrap gap-2.5">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
         <div>
-          <h2 className="flex items-center gap-2.5" style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 4, color: "var(--text)" }}>
+          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 4, color: "var(--text)", display: "flex", alignItems: "center", gap: 10 }}>
             ⚡ Super Admin
             <span style={{ background: "#FFF8E1", color: "#F57F17", fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, border: "1px solid #FFE08244" }}>Back-office</span>
           </h2>
-          <p className="text-[12px]" style={{ color: "var(--text-sub)" }}>Administration SplitLy</p>
+          <p style={{ color: "var(--text-sub)", fontSize: 12 }}>Administration SplitLy</p>
         </div>
         <button onClick={load} style={{ ...S.btnGhost, fontSize: 12, padding: "8px 14px" }}>↻ Actualiser</button>
       </div>

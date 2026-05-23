@@ -105,10 +105,10 @@ export function Analytics({ events, expenses, contributions, isMobile, defaultTa
   return (
     <div>
       {/* ── Header ── */}
-      <div className="flex justify-between items-start mb-5 flex-wrap gap-3">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
         <div>
           <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2, color: "var(--text)" }}>{t ? t("ana_title") : "Analyses"}</h2>
-          <p className="text-[12px]" style={{ color: "var(--text-sub)" }}>{t ? t("ana_subtitle") : "Statistiques détaillées"}</p>
+          <p style={{ color: "var(--text-sub)", fontSize: 12 }}>{t ? t("ana_subtitle") : "Statistiques détaillées"}</p>
         </div>
         <TabBar />
       </div>

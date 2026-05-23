@@ -435,8 +435,8 @@ export function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
         {/* ─── ONGLET ÉVÉNEMENTS ─── */}
         {active === "events" && (
           <div>
-            <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
-              <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700, color: "var(--text)" }}>Événements partagés</h2>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
+              <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700, color: "#0F0F0F" }}>Événements partagés</h2>
             </div>
             {events.length === 0 ? (
               <EmptyState icon="🎊" title="Aucun événement" subtitle="Aucun événement n'a encore été partagé avec vous." />
@@ -447,7 +447,7 @@ export function GuestView({ guestEmail, onSignOut, isMobile, addToast }) {
                   const evTotal = expenses.filter(e => e.event_id === ev.id).reduce((s, e) => s + e.qty * (e.unit_price ?? 0), 0);
                   const myPerms = normalizePerms(permissionsMap[ev.id] || []);
                   return (
-                    <div key={ev.id} style={{ background: "var(--bg-secondary)", borderRadius: 14, padding: "14px 18px", border: `1px solid ${ev.event_type === "budget" ? "#FFE082" : "var(--border)"}` }}>
+                    <div key={ev.id} style={{ background: "#fff", borderRadius: 14, padding: "14px 18px", border: `1px solid ${ev.event_type === "budget" ? "#FFE082" : "#eee"}` }}>
                       <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
                         <div style={{ fontSize: 24, flexShrink: 0 }}>{ev.status === "closed" ? "🔒" : ev.event_type === "budget" ? "🏦" : "🎊"}</div>
                         <div style={{ flex: 1, minWidth: 0 }}>

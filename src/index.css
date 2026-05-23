@@ -1,82 +1,3 @@
-@tailwind base;
-@tailwind components;
-
-/* ─── Tailwind / shadcn design tokens ─────────────────────────── */
-/* Utilise le préfixe --tw- pour coexister avec les variables       */
-/* legacy de Splitly (--bg, --border, --text…) sans conflit.        */
-
-:root {
-  /* Backgrounds */
-  --tw-background: 0 0% 95%;
-  --tw-foreground: 0 0% 10%;
-
-  /* Card / Popover */
-  --tw-card: 0 0% 100%;
-  --tw-card-foreground: 0 0% 10%;
-  --tw-popover: 0 0% 100%;
-  --tw-popover-foreground: 0 0% 10%;
-
-  /* Primary — violet #aa3bff → hsl(274 100% 61%) */
-  --tw-primary: 274 100% 61%;
-  --tw-primary-foreground: 0 0% 100%;
-
-  /* Secondary */
-  --tw-secondary: 274 30% 93%;
-  --tw-secondary-foreground: 274 60% 35%;
-
-  /* Muted */
-  --tw-muted: 0 0% 96%;
-  --tw-muted-foreground: 0 0% 33%;
-
-  /* Accent (même teinte que primary) */
-  --tw-accent: 274 100% 61%;
-  --tw-accent-foreground: 0 0% 100%;
-
-  /* Destructive — rose #f43f5e */
-  --tw-destructive: 350 89% 60%;
-  --tw-destructive-foreground: 0 0% 100%;
-
-  /* Border / Input / Ring */
-  --tw-border: 0 0% 90%;
-  --tw-input: 0 0% 90%;
-  --tw-ring: 274 100% 61%;
-
-  /* Radius */
-  --radius: 0.625rem;
-}
-
-.dark {
-  --tw-background: 0 0% 7%;
-  --tw-foreground: 0 0% 94%;
-
-  --tw-card: 0 0% 12%;
-  --tw-card-foreground: 0 0% 94%;
-  --tw-popover: 0 0% 12%;
-  --tw-popover-foreground: 0 0% 94%;
-
-  /* Primary — violet clair #c084fc → hsl(270 95% 75%) */
-  --tw-primary: 270 95% 75%;
-  --tw-primary-foreground: 0 0% 7%;
-
-  --tw-secondary: 274 20% 18%;
-  --tw-secondary-foreground: 270 95% 80%;
-
-  --tw-muted: 0 0% 15%;
-  --tw-muted-foreground: 0 0% 53%;
-
-  --tw-accent: 270 95% 75%;
-  --tw-accent-foreground: 0 0% 7%;
-
-  --tw-destructive: 350 89% 55%;
-  --tw-destructive-foreground: 0 0% 100%;
-
-  --tw-border: 0 0% 17%;
-  --tw-input: 0 0% 17%;
-  --tw-ring: 270 95% 75%;
-}
-
-/* ─── Variables legacy Splitly (gérées par useTheme.jsx) ──────── */
-
 :root {
   --text: #6b6375;
   --text-h: #08060d;
@@ -134,8 +55,11 @@ body {
 }
 
 #root {
-  width: 100%;
+  width: 1126px;
   max-width: 100%;
+  margin: 0 auto;
+  text-align: center;
+  border-inline: 1px solid var(--border);
   min-height: 100svh;
   display: flex;
   flex-direction: column;
@@ -185,5 +109,3 @@ code {
   padding: 4px 8px;
   background: var(--code-bg);
 }
-
-@tailwind utilities;

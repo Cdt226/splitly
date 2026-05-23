@@ -11,36 +11,33 @@ import { useTranslation, LanguageMenu } from "../i18n.jsx";
 
 function Section({ title, children }) {
   return (
-    <div className="rounded-2xl overflow-hidden mb-4" style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)" }}>
-      <div className="px-5 py-3.5 text-[11px] font-bold uppercase tracking-widest" style={{ borderBottom: "1px solid var(--border)", color: "var(--text-sub)" }}>
+    <div style={{ background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border)", overflow: "hidden", marginBottom: 16 }}>
+      <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border)", fontSize: 12, fontWeight: 700, color: "var(--text-sub)", textTransform: "uppercase", letterSpacing: 1 }}>
         {title}
       </div>
-      <div className="py-1">{children}</div>
+      <div style={{ padding: "4px 0" }}>{children}</div>
     </div>
   );
 }
 
 function Row({ icon, label, desc, right }) {
   return (
-    <div className="flex items-center gap-3.5 px-5 py-3.5" style={{ borderBottom: "1px solid var(--border)" }}>
-      <div className="text-xl w-8 text-center flex-shrink-0">{icon}</div>
-      <div className="flex-1 min-w-0">
-        <div className="text-[14px] font-semibold" style={{ color: "var(--text)" }}>{label}</div>
-        {desc && <div className="text-[12px] mt-0.5" style={{ color: "var(--text-sub)" }}>{desc}</div>}
+    <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 20px", borderBottom: "1px solid var(--border)" }}>
+      <div style={{ fontSize: 20, width: 32, textAlign: "center", flexShrink: 0 }}>{icon}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>{label}</div>
+        {desc && <div style={{ fontSize: 12, color: "var(--text-sub)", marginTop: 2 }}>{desc}</div>}
       </div>
-      <div className="flex-shrink-0">{right}</div>
+      <div style={{ flexShrink: 0 }}>{right}</div>
     </div>
   );
 }
 
 function Toggle({ value, onToggle }) {
   return (
-    <button onClick={onToggle} className="bg-transparent border-0 cursor-pointer p-0">
-      <div className="relative w-11 h-6 rounded-full transition-colors duration-200" style={{ background: value ? "#10b981" : "var(--border)" }}>
-        <div
-          className="absolute top-[3px] w-[18px] h-[18px] rounded-full bg-white transition-all duration-200 shadow"
-          style={{ left: value ? "22px" : "3px" }}
-        />
+    <button onClick={onToggle} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+      <div style={{ width: 44, height: 24, borderRadius: 12, background: value ? "#2E7D32" : "var(--border)", position: "relative", transition: "background 0.2s" }}>
+        <div style={{ position: "absolute", top: 3, left: value ? 22 : 3, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left 0.2s", boxShadow: "0 1px 4px rgba(0,0,0,0.2)" }} />
       </div>
     </button>
   );

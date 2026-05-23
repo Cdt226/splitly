@@ -194,16 +194,16 @@ export function Balance({ events, expenses, contributions, user, reload, isMobil
         </Modal>
       )}
 
-      <div className="flex justify-between items-center mb-5 flex-wrap gap-2.5">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
         {!hideHeader && <div>
-          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2, color: "var(--text)" }}>
+          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: isMobile ? 22 : 26, fontWeight: 700, marginBottom: 2 }}>
             {ev?.event_type === "budget" ? "🏦 Budget" : (t ? t("bal_title") : "Répartition")}
           </h2>
-          <p className="text-[12px]" style={{ color: "var(--text-sub)" }}>
+          <p style={{ color: "var(--text-sub)", fontSize: 12 }}>
             {ev?.event_type === "budget" ? "Les événements Budget n'ont pas de répartition — voir l'onglet Cotisations" : (t ? t("bal_subtitle") : "Soldes calculés en temps réel")}
           </p>
         </div>}
-        <div className="flex gap-2 flex-wrap">
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {!hideHeader && <select style={{ ...S.input, width: "auto" }} value={filterEvent} onChange={e => setFilterEvent(e.target.value)}>
             {events.map(ev => <option key={ev.id} value={ev.id}>{ev.event_type === "budget" ? "🏦 " : "💸 "}{ev.name}</option>)}
           </select>}
